@@ -1,0 +1,40 @@
+include: package:very_good_analysis/analysis_options.yaml
+
+analyzer:
+  errors:
+    # Bạn có thể đổi mức độ cảnh báo tại đây
+    unused_import: error   # Coi việc dư import là lỗi (gạch đỏ)
+    unused_local_variable: warning # Cảnh báo (gạch vàng)
+    dead_code: info # Thông tin (gạch xanh)
+    # Buộc phải gọi super.initState() hoặc super.dispose() trong StatefulWidget
+    must_call_super: true
+    lines_longer_than_80_chars: ignore
+
+linter:
+  rules:
+    # Cảnh báo khi có các tham số không sử dụng
+    always_declare_return_types: true
+    # Ép buộc sử dụng 'const' cho các widget không thay đổi (tăng hiệu năng)
+    prefer_const_constructors: true
+    prefer_const_literals_to_create_immutables: true
+    # Ép buộc sử dụng dấu phẩy cuối cùng (Trailing Commas)
+    # Rất quan trọng để dart format tự động xuống dòng đẹp
+    require_trailing_commas: true
+    # Ưu tiên sử dụng dấu nháy đơn '' thay vì dấu nháy kép ""
+    prefer_single_quotes: true
+    # Sắp xếp các câu lệnh import theo thứ tự (alphabet, nội bộ/bên ngoài)
+    directives_ordering: true
+    # Không sử dụng dấu gạch dưới cho tên biến trừ khi là private
+    non_constant_identifier_names: true
+    # Cảnh báo khi so sánh một giá trị với null bằng == thay vì dùng ?? hoặc ?.
+    avoid_returning_null_for_void: true
+    # Tránh sử dụng kiểu dữ liệu 'dynamic' khi có thể xác định rõ kiểu
+    avoid_annotating_with_dynamic: true
+    # Tránh dùng print() trong code production (nên dùng debugPrint)
+    avoid_print: true
+    # Tắt rule bạn không thích (ví dụ không muốn viết doc cho mọi hàm public)
+    public_member_api_docs: false
+    
+    # Bật thêm các rule cực kỳ hữu ích
+    annotate_overrides: true
+    unawaited_futures: true # Cảnh báo nếu quên 'await' cho một hàm Future
