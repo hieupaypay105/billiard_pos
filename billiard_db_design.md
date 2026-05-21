@@ -268,12 +268,16 @@ Rất quan trọng trong kinh doanh Bida nhằm ghi nhận tất cả hành vi s
 ## 3. MẪU DDL SQL KHỞI TẠO CƠ SỞ DỮ LIỆU (POSTGRESQL)
 
 ```sql
--- Kích hoạt extension sinh UUID
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Khởi tạo UUID trong PostgreSQL:
+-- 1. PostgreSQL 13+ tích hợp sẵn gen_random_uuid() mặc định mà không cần cài extension.
+-- 2. Nếu dùng Postgres cũ hơn (ví dụ dưới 13), bạn có thể dùng extension pgcrypto để kích hoạt gen_random_uuid():
+--    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- 3. Hoặc nếu muốn dùng uuid_generate_v4() thì phải kích hoạt extension:
+--    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 1. Bảng users
 CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username VARCHAR(50) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     display_name VARCHAR(100) NOT NULL,
@@ -295,7 +299,7 @@ CREATE TABLE membership_tiers (
 
 -- 3. Bảng members
 CREATE TABLE members (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     full_name VARCHAR(100) NOT NULL,
     phone_number VARCHAR(15) UNIQUE NOT NULL,
     email VARCHAR(100),
@@ -337,7 +341,7 @@ CREATE TABLE table_prices (
 
 -- 7. Bảng tables
 CREATE TABLE tables (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     table_name VARCHAR(50) NOT NULL,
     area_id INT REFERENCES areas(id) ON DELETE CASCADE,
     table_type_id INT REFERENCES table_types(id) ON DELETE CASCADE,
@@ -356,7 +360,7 @@ CREATE TABLE product_categories (
 
 -- 9. Bảng products
 CREATE TABLE products (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     product_name VARCHAR(100) NOT NULL,
     category_id INT REFERENCES product_categories(id) ON DELETE SET NULL,
     unit VARCHAR(20) NOT NULL,
@@ -371,7 +375,7 @@ CREATE TABLE products (
 
 -- 10. Bảng shifts
 CREATE TABLE shifts (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) ON DELETE RESTRICT,
     start_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     end_time TIMESTAMP,
@@ -387,7 +391,7 @@ CREATE TABLE shifts (
 
 -- 11. Bảng orders
 CREATE TABLE orders (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     table_id UUID REFERENCES tables(id) ON DELETE RESTRICT,
     member_id UUID REFERENCES members(id) ON DELETE SET NULL,
     shift_id UUID REFERENCES shifts(id) ON DELETE RESTRICT,
@@ -412,7 +416,7 @@ ALTER TABLE tables ADD CONSTRAINT fk_current_order FOREIGN KEY (current_order_id
 
 -- 12. Bảng order_details
 CREATE TABLE order_details (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
     product_id UUID REFERENCES products(id) ON DELETE RESTRICT,
     quantity INT NOT NULL CHECK (quantity > 0),
@@ -438,7 +442,7 @@ CREATE TABLE iot_configs (
 
 -- 14. Bảng audit_logs
 CREATE TABLE audit_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) ON DELETE SET NULL,
     action_type VARCHAR(50) NOT NULL,
     table_id UUID REFERENCES tables(id) ON DELETE SET NULL,
