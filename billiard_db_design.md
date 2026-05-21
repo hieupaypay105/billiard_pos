@@ -464,17 +464,17 @@ CREATE INDEX idx_members_phone ON members(phone_number);
 CREATE INDEX idx_audit_logs_action ON audit_logs(action_type);
 ```
 
-### 3.2. Dành cho MySQL (Từ version 8.0+)
+### 3.2. Dành cho MySQL (Tương thích MySQL 8.0+ và MySQL 9.3.0)
 
 ```sql
--- Khởi tạo UUID trong MySQL:
--- 1. MySQL 8.0+ hỗ trợ gán DEFAULT (UUID()) trực tiếp dưới dạng biểu thức (lưu ý phải có cặp dấu ngoặc đơn bọc ngoài biểu thức).
--- 2. Dữ liệu UUID được lưu dưới dạng VARCHAR(36) (hoặc CHAR(36)).
+-- Khởi tạo UUID trong MySQL (tương thích MySQL 8.0+ và MySQL 9.3.0):
+-- 1. MySQL 8.0.13+ và 9.x hỗ trợ gán DEFAULT (UUID()) trực tiếp dưới dạng biểu thức (bọc ngoài bởi cặp dấu ngoặc đơn).
+-- 2. Dữ liệu UUID được lưu dưới dạng CHAR(36) thay vì VARCHAR(36) để tối ưu hiệu năng index (do UUID có độ dài cố định 36 ký tự).
 -- 3. Cập nhật tự động thời gian dùng DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP.
 
 -- 1. Bảng users
 CREATE TABLE users (
-    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     username VARCHAR(50) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     display_name VARCHAR(100) NOT NULL,
@@ -496,7 +496,7 @@ CREATE TABLE membership_tiers (
 
 -- 3. Bảng members
 CREATE TABLE members (
-    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     full_name VARCHAR(100) NOT NULL,
     phone_number VARCHAR(15) UNIQUE NOT NULL,
     email VARCHAR(100),
@@ -531,7 +531,7 @@ CREATE TABLE table_prices (
     price_per_hour DECIMAL(10,2) NOT NULL CHECK (price_per_hour >= 0),
     start_hour TIME DEFAULT '00:00:00',
     end_hour TIME DEFAULT '23:59:59',
-    days_of_week VARCHAR(50) DEFAULT NULL, -- MySQL không hỗ trợ ARRAY, lưu dạng JSON string '[1,2,3]' hoặc CSV
+    days_of_week JSON DEFAULT NULL, -- MySQL 8.0+ / 9.x hỗ trợ kiểu JSON để lưu danh sách ngày (ví dụ: '[1,2,3]')
     is_active BOOLEAN DEFAULT TRUE,
     priority INT DEFAULT 0,
     CONSTRAINT chk_hours CHECK (start_hour < end_hour),
@@ -540,12 +540,12 @@ CREATE TABLE table_prices (
 
 -- 7. Bảng tables
 CREATE TABLE tables (
-    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     table_name VARCHAR(50) NOT NULL,
     area_id INT,
     table_type_id INT,
     status VARCHAR(20) DEFAULT 'idle' CHECK (status IN ('idle', 'active', 'booked', 'maintenance')),
-    current_order_id VARCHAR(36) DEFAULT NULL, -- Sẽ thêm ràng buộc khóa ngoại sau khi bảng orders được tạo
+    current_order_id CHAR(36) DEFAULT NULL, -- Sẽ thêm ràng buộc khóa ngoại sau khi bảng orders được tạo
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE CASCADE,
@@ -561,7 +561,7 @@ CREATE TABLE product_categories (
 
 -- 9. Bảng products
 CREATE TABLE products (
-    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     product_name VARCHAR(100) NOT NULL,
     category_id INT,
     unit VARCHAR(20) NOT NULL,
@@ -577,8 +577,8 @@ CREATE TABLE products (
 
 -- 10. Bảng shifts
 CREATE TABLE shifts (
-    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
-    user_id VARCHAR(36),
+    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    user_id CHAR(36),
     start_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     end_time TIMESTAMP NULL DEFAULT NULL,
     initial_cash DECIMAL(12,2) NOT NULL CHECK (initial_cash >= 0),
@@ -594,10 +594,10 @@ CREATE TABLE shifts (
 
 -- 11. Bảng orders
 CREATE TABLE orders (
-    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
-    table_id VARCHAR(36),
-    member_id VARCHAR(36),
-    shift_id VARCHAR(36),
+    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    table_id CHAR(36),
+    member_id CHAR(36),
+    shift_id CHAR(36),
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'paid', 'cancelled')),
     start_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     end_time TIMESTAMP NULL DEFAULT NULL,
@@ -608,8 +608,8 @@ CREATE TABLE orders (
     tax_amount DECIMAL(12,2) DEFAULT 0.00 CHECK (tax_amount >= 0),
     total_amount DECIMAL(12,2) DEFAULT 0.00 CHECK (total_amount >= 0),
     payment_method VARCHAR(20) CHECK (payment_method IN ('cash', 'card', 'transfer')),
-    created_by VARCHAR(36),
-    closed_by VARCHAR(36),
+    created_by CHAR(36),
+    closed_by CHAR(36),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE RESTRICT,
@@ -624,13 +624,13 @@ ALTER TABLE tables ADD CONSTRAINT fk_current_order FOREIGN KEY (current_order_id
 
 -- 12. Bảng order_details
 CREATE TABLE order_details (
-    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
-    order_id VARCHAR(36),
-    product_id VARCHAR(36),
+    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    order_id CHAR(36),
+    product_id CHAR(36),
     quantity INT NOT NULL CHECK (quantity > 0),
     unit_price DECIMAL(10,2) NOT NULL CHECK (unit_price >= 0),
     total_price DECIMAL(12,2) NOT NULL,
-    added_by VARCHAR(36),
+    added_by CHAR(36),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
@@ -640,7 +640,7 @@ CREATE TABLE order_details (
 -- 13. Bảng iot_configs
 CREATE TABLE iot_configs (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    table_id VARCHAR(36) UNIQUE,
+    table_id CHAR(36) UNIQUE,
     connection_type VARCHAR(20) NOT NULL CHECK (connection_type IN ('serial', 'tcp_ip')),
     ip_address VARCHAR(50),
     port VARCHAR(20),
@@ -654,11 +654,11 @@ CREATE TABLE iot_configs (
 
 -- 14. Bảng audit_logs
 CREATE TABLE audit_logs (
-    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
-    user_id VARCHAR(36),
+    id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    user_id CHAR(36),
     action_type VARCHAR(50) NOT NULL,
-    table_id VARCHAR(36),
-    order_id VARCHAR(36),
+    table_id CHAR(36),
+    order_id CHAR(36),
     description TEXT NOT NULL,
     device_info VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
