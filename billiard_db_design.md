@@ -265,7 +265,9 @@ Rất quan trọng trong kinh doanh Bida nhằm ghi nhận tất cả hành vi s
 
 ---
 
-## 3. MẪU DDL SQL KHỞI TẠO CƠ SỞ DỮ LIỆU (POSTGRESQL)
+## 3. MẪU DDL SQL KHỞI TẠO CƠ SỞ DỮ LIỆU
+
+### 3.1. Dành cho PostgreSQL
 
 ```sql
 -- Khởi tạo UUID trong PostgreSQL:
@@ -460,6 +462,220 @@ CREATE INDEX idx_orders_table_id ON orders(table_id);
 CREATE INDEX idx_order_details_order_id ON order_details(order_id);
 CREATE INDEX idx_members_phone ON members(phone_number);
 CREATE INDEX idx_audit_logs_action ON audit_logs(action_type);
+```
+
+### 3.2. Dành cho MySQL (Từ version 8.0+)
+
+```sql
+-- Khởi tạo UUID trong MySQL:
+-- 1. MySQL 8.0+ hỗ trợ gán DEFAULT (UUID()) trực tiếp dưới dạng biểu thức (lưu ý phải có cặp dấu ngoặc đơn bọc ngoài biểu thức).
+-- 2. Dữ liệu UUID được lưu dưới dạng VARCHAR(36) (hoặc CHAR(36)).
+-- 3. Cập nhật tự động thời gian dùng DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP.
+
+-- 1. Bảng users
+CREATE TABLE users (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    display_name VARCHAR(100) NOT NULL,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'waiter')),
+    phone_number VARCHAR(15),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- 2. Bảng membership_tiers
+CREATE TABLE membership_tiers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tier_name VARCHAR(50) UNIQUE NOT NULL,
+    min_points INT DEFAULT 0 CHECK (min_points >= 0),
+    discount_percentage DECIMAL(5,2) DEFAULT 0.00 CHECK (discount_percentage >= 0 AND discount_percentage <= 100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Bảng members
+CREATE TABLE members (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    full_name VARCHAR(100) NOT NULL,
+    phone_number VARCHAR(15) UNIQUE NOT NULL,
+    email VARCHAR(100),
+    membership_tier_id INT,
+    total_points INT DEFAULT 0 CHECK (total_points >= 0),
+    accumulated_spend DECIMAL(12,2) DEFAULT 0.00 CHECK (accumulated_spend >= 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (membership_tier_id) REFERENCES membership_tiers(id) ON DELETE SET NULL
+);
+
+-- 4. Bảng areas
+CREATE TABLE areas (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    area_name VARCHAR(50) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 5. Bảng table_types
+CREATE TABLE table_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    type_name VARCHAR(50) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 6. Bảng table_prices
+CREATE TABLE table_prices (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    table_type_id INT,
+    price_per_hour DECIMAL(10,2) NOT NULL CHECK (price_per_hour >= 0),
+    start_hour TIME DEFAULT '00:00:00',
+    end_hour TIME DEFAULT '23:59:59',
+    days_of_week VARCHAR(50) DEFAULT NULL, -- MySQL không hỗ trợ ARRAY, lưu dạng JSON string '[1,2,3]' hoặc CSV
+    is_active BOOLEAN DEFAULT TRUE,
+    priority INT DEFAULT 0,
+    CONSTRAINT chk_hours CHECK (start_hour < end_hour),
+    FOREIGN KEY (table_type_id) REFERENCES table_types(id) ON DELETE CASCADE
+);
+
+-- 7. Bảng tables
+CREATE TABLE tables (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    table_name VARCHAR(50) NOT NULL,
+    area_id INT,
+    table_type_id INT,
+    status VARCHAR(20) DEFAULT 'idle' CHECK (status IN ('idle', 'active', 'booked', 'maintenance')),
+    current_order_id VARCHAR(36) DEFAULT NULL, -- Sẽ thêm ràng buộc khóa ngoại sau khi bảng orders được tạo
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (area_id) REFERENCES areas(id) ON DELETE CASCADE,
+    FOREIGN KEY (table_type_id) REFERENCES table_types(id) ON DELETE CASCADE
+);
+
+-- 8. Bảng product_categories
+CREATE TABLE product_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category_name VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 9. Bảng products
+CREATE TABLE products (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    product_name VARCHAR(100) NOT NULL,
+    category_id INT,
+    unit VARCHAR(20) NOT NULL,
+    selling_price DECIMAL(10,2) NOT NULL CHECK (selling_price >= 0),
+    cost_price DECIMAL(10,2) DEFAULT 0.00 CHECK (cost_price >= 0),
+    stock_quantity INT DEFAULT 0 CHECK (stock_quantity >= 0),
+    barcode VARCHAR(50) UNIQUE,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL
+);
+
+-- 10. Bảng shifts
+CREATE TABLE shifts (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    user_id VARCHAR(36),
+    start_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    end_time TIMESTAMP NULL DEFAULT NULL,
+    initial_cash DECIMAL(12,2) NOT NULL CHECK (initial_cash >= 0),
+    expected_cash DECIMAL(12,2) DEFAULT 0.00,
+    actual_cash DECIMAL(12,2) NULL DEFAULT NULL,
+    total_card_amount DECIMAL(12,2) DEFAULT 0.00,
+    total_transfer_amount DECIMAL(12,2) DEFAULT 0.00,
+    discrepancy_amount DECIMAL(12,2) DEFAULT 0.00,
+    note TEXT,
+    status VARCHAR(20) DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+);
+
+-- 11. Bảng orders
+CREATE TABLE orders (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    table_id VARCHAR(36),
+    member_id VARCHAR(36),
+    shift_id VARCHAR(36),
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'paid', 'cancelled')),
+    start_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    end_time TIMESTAMP NULL DEFAULT NULL,
+    total_play_time_minutes INT DEFAULT 0 CHECK (total_play_time_minutes >= 0),
+    total_play_time_amount DECIMAL(12,2) DEFAULT 0.00 CHECK (total_play_time_amount >= 0),
+    total_product_amount DECIMAL(12,2) DEFAULT 0.00 CHECK (total_product_amount >= 0),
+    discount_amount DECIMAL(12,2) DEFAULT 0.00 CHECK (discount_amount >= 0),
+    tax_amount DECIMAL(12,2) DEFAULT 0.00 CHECK (tax_amount >= 0),
+    total_amount DECIMAL(12,2) DEFAULT 0.00 CHECK (total_amount >= 0),
+    payment_method VARCHAR(20) CHECK (payment_method IN ('cash', 'card', 'transfer')),
+    created_by VARCHAR(36),
+    closed_by VARCHAR(36),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE RESTRICT,
+    FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE SET NULL,
+    FOREIGN KEY (shift_id) REFERENCES shifts(id) ON DELETE RESTRICT,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT,
+    FOREIGN KEY (closed_by) REFERENCES users(id) ON DELETE RESTRICT
+);
+
+-- Thêm khóa ngoại cho trường current_order_id trong bảng tables
+ALTER TABLE tables ADD CONSTRAINT fk_current_order FOREIGN KEY (current_order_id) REFERENCES orders(id) ON DELETE SET NULL;
+
+-- 12. Bảng order_details
+CREATE TABLE order_details (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    order_id VARCHAR(36),
+    product_id VARCHAR(36),
+    quantity INT NOT NULL CHECK (quantity > 0),
+    unit_price DECIMAL(10,2) NOT NULL CHECK (unit_price >= 0),
+    total_price DECIMAL(12,2) NOT NULL,
+    added_by VARCHAR(36),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
+    FOREIGN KEY (added_by) REFERENCES users(id) ON DELETE RESTRICT
+);
+
+-- 13. Bảng iot_configs
+CREATE TABLE iot_configs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    table_id VARCHAR(36) UNIQUE,
+    connection_type VARCHAR(20) NOT NULL CHECK (connection_type IN ('serial', 'tcp_ip')),
+    ip_address VARCHAR(50),
+    port VARCHAR(20),
+    relay_channel INT NOT NULL CHECK (relay_channel > 0),
+    command_on VARCHAR(255) NOT NULL,
+    command_off VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE
+);
+
+-- 14. Bảng audit_logs
+CREATE TABLE audit_logs (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    user_id VARCHAR(36),
+    action_type VARCHAR(50) NOT NULL,
+    table_id VARCHAR(36),
+    order_id VARCHAR(36),
+    description TEXT NOT NULL,
+    device_info VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE SET NULL,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
+);
+
+-- Index tối ưu hóa truy vấn tìm kiếm
+CREATE INDEX idx_tables_status ON tables(status);
+CREATE INDEX idx_products_barcode ON products(barcode);
+CREATE INDEX idx_orders_status ON orders(status);
+CREATE INDEX idx_orders_table_id ON orders(table_id);
+CREATE INDEX idx_order_details_order_id ON order_details(order_id);
+CREATE INDEX idx_members_phone ON members(phone_number);
+CREATE INDEX idx_audit_logs_action ON audit_logs(action_type);
+```
 ```
 
 ---
