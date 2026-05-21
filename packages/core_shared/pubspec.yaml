@@ -1,0 +1,11 @@
+name: core_shared
+description: Shared models and core logic for Billiard POS
+version: 1.0.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  equatable: ^2.0.8

@@ -1,0 +1,15 @@
+name: iot_controller
+description: IoT Controller drivers and simulator for Billiard POS
+version: 1.0.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  core_shared:
+    path: ../core_shared
+  flutter_libserialport: ^0.2.2

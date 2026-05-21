@@ -1,0 +1,11 @@
+name: billiard_pos_monorepo
+publish_to: none
+environment:
+  sdk: ^3.10.0
+
+workspace:
+  - apps/billiard_desktop
+  - apps/billiard_pos_mobile
+  - apps/billiard_manager_mobile
+  - packages/core_shared
+  - packages/iot_controller

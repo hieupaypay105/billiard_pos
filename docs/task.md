@@ -1,0 +1,26 @@
+# Tasks - Phase 1: Database Design, Monorepo Setup, and IoT Simulation
+
+- `[x]` Project Cleanup & Monorepo Initialization
+  - `[x]` Delete/Backup old `anholding_app` assets, libs, and config files
+  - `[x]` Configure root `pubspec.yaml` as a Dart workspace
+  - `[x]` Configure root `.gitignore` and `README.md`
+- `[x]` Create and implement package `core_shared`
+  - `[x]` Initialize `packages/core_shared/pubspec.yaml`
+  - `[x]` Implement DB models (`UserModel`, `MembershipTierModel`, `MemberModel`, `AreaModel`, `TableTypeModel`, `TableModel`, `TablePriceModel`, `ProductCategoryModel`, `ProductModel`, `ShiftModel`, `OrderModel`, `OrderDetailModel`, `IotConfigModel`, `AuditLogModel`)
+  - `[x]` Export models in `packages/core_shared/lib/core_shared.dart`
+- `[x]` Create and implement package `iot_controller`
+  - `[x]` Initialize `packages/iot_controller/pubspec.yaml`
+  - `[x]` Create `BilliardIoTController` interface
+  - `[x]` Create `SimulatedBilliardIoTController` with hex command logs and latency simulation
+  - `[x]` Create `RealBilliardIoTController` with TCP/IP Socket implementation and Serial COM stubs
+- `[x]` Create Application Workspaces (Skeletons)
+  - `[x]` Initialize `apps/billiard_desktop`
+  - `[x]` Initialize `apps/billiard_pos_mobile`
+  - `[x]` Initialize `apps/billiard_manager_mobile`
+- `[x]` Develop desktop simulation UI in `apps/billiard_desktop`
+  - `[x]` Build layout displaying the table grid
+  - `[x]` Add table detailed view with power status switch
+  - `[x]` Integrate `iot_controller` and show command log console output
+- `[x]` Verification
+  - `[x]` Write and run unit tests for `core_shared` and `iot_controller`
+  - `[x]` Manually test simulation and check Hex logs
