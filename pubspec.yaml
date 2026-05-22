@@ -9,3 +9,8 @@ workspace:
   - apps/billiard_manager_mobile
   - packages/core_shared
   - packages/iot_controller
+
+dependency_overrides:
+  # Resolve conflict: flutter_libserialport requires ffi ^1.0 but
+  # path_provider_windows requires ffi ^2.0. ffi 2.x is backward-compatible.
+  ffi: ^2.1.0

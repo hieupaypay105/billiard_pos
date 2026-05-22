@@ -1,31 +1,67 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:billiard_desktop/main.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:billiard_desktop/app.dart';
 
 void main() {
-  testWidgets('Dashboard UI renders tables and elements', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const BilliardDesktopApp());
+  testWidgets('App start: redirects to Login screen when not authenticated', (WidgetTester tester) async {
+    // Set desktop window size
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
 
-    // Verify title is rendered
-    expect(find.text('Billiard POS & IoT Control'), findsOneWidget);
+    SharedPreferences.setMockInitialValues({});
 
-    // Verify table grid headers
-    expect(find.text('SƠ ĐỒ BÀN (TABLE GRID SYSTEM)'), findsOneWidget);
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: BilliardDesktopApp(),
+      ),
+    );
 
-    // Verify presence of some mock tables
-    expect(find.text('Bàn 01 (Pool)'), findsNWidgets(2));
+    // Pump để xử lý routing và async providers
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Verify Login Screen headers and fields are rendered
+    expect(find.text('Đăng nhập'), findsWidgets); // Both title and button
+    expect(find.text('Tên đăng nhập'), findsOneWidget);
+    expect(find.text('Mật khẩu'), findsOneWidget);
+  });
+
+  testWidgets('App start: renders Tables screen when authenticated', (WidgetTester tester) async {
+    // Set desktop window size
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues({
+      'auth_token': 'fake-token-123',
+      'current_user': '{"id": "1", "username": "admin", "display_name": "Test Cashier", "role": "admin", "is_active": true}'
+    });
+
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: BilliardDesktopApp(),
+      ),
+    );
+
+    // Pump đủ thời gian để async SQLite read + routing hoàn thành.
+    // Không dùng pumpAndSettle vì app có timer liên tục (đồng hồ bàn).
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Verify Tables Screen elements are rendered (mock fallback data)
+    expect(find.text('Sơ đồ bàn'), findsOneWidget);
+    expect(find.text('Bàn 01 (Pool)'), findsOneWidget);
     expect(find.text('Bàn 04 (Carom)'), findsOneWidget);
     expect(find.text('Bàn 06 (Snooker)'), findsOneWidget);
-
-    // Verify console is rendered
-    expect(find.text('CONSOLE COMMUNICATIONS LOGS (HEX TRAFFIC)'), findsOneWidget);
-
-    // Tap a table card (e.g. Bàn 02) and verify selection focuses on it
-    await tester.tap(find.text('Bàn 02 (Pool)'));
-    await tester.pump();
-
-    // Verify detail pane updates header for selected table
-    expect(find.text('Bàn 02 (Pool)'), findsAtLeastNWidgets(1));
   });
 }

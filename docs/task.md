@@ -1,26 +1,9 @@
-# Tasks - Phase 1: Database Design, Monorepo Setup, and IoT Simulation
+# Tasks
 
-- `[x]` Project Cleanup & Monorepo Initialization
-  - `[x]` Delete/Backup old `anholding_app` assets, libs, and config files
-  - `[x]` Configure root `pubspec.yaml` as a Dart workspace
-  - `[x]` Configure root `.gitignore` and `README.md`
-- `[x]` Create and implement package `core_shared`
-  - `[x]` Initialize `packages/core_shared/pubspec.yaml`
-  - `[x]` Implement DB models (`UserModel`, `MembershipTierModel`, `MemberModel`, `AreaModel`, `TableTypeModel`, `TableModel`, `TablePriceModel`, `ProductCategoryModel`, `ProductModel`, `ShiftModel`, `OrderModel`, `OrderDetailModel`, `IotConfigModel`, `AuditLogModel`)
-  - `[x]` Export models in `packages/core_shared/lib/core_shared.dart`
-- `[x]` Create and implement package `iot_controller`
-  - `[x]` Initialize `packages/iot_controller/pubspec.yaml`
-  - `[x]` Create `BilliardIoTController` interface
-  - `[x]` Create `SimulatedBilliardIoTController` with hex command logs and latency simulation
-  - `[x]` Create `RealBilliardIoTController` with TCP/IP Socket implementation and Serial COM stubs
-- `[x]` Create Application Workspaces (Skeletons)
-  - `[x]` Initialize `apps/billiard_desktop`
-  - `[x]` Initialize `apps/billiard_pos_mobile`
-  - `[x]` Initialize `apps/billiard_manager_mobile`
-- `[x]` Develop desktop simulation UI in `apps/billiard_desktop`
-  - `[x]` Build layout displaying the table grid
-  - `[x]` Add table detailed view with power status switch
-  - `[x]` Integrate `iot_controller` and show command log console output
-- `[x]` Verification
-  - `[x]` Write and run unit tests for `core_shared` and `iot_controller`
-  - `[x]` Manually test simulation and check Hex logs
+- `[x]` Thêm phương thức `clearAllData()` vào `LocalDbService` in `local_db_service.dart`
+- `[x]` Thêm phương thức `clearAllLocalData()` vào `SyncService` in `sync_service.dart`
+- `[x]` Cập nhật `SyncNotifier` in `sync_provider.dart` để hỗ trợ `clearAllLocalData()`
+- `[x]` Cập nhật `tablesProvider` và `TablesNotifier` in `tables_provider.dart` để tự động reload bàn khi sync hoàn tất hoặc cache bị xóa
+- `[x]` Refactor `AddProductPanel` in `add_product_panel.dart` để nạp dữ liệu sản phẩm động từ SQLite cache, map fields và tự động lắng nghe sự kiện đồng bộ
+- `[x]` Thêm nút bấm "Xóa dữ liệu local" và AlertDialog xác nhận vào `SyncScreen` in `sync_screen.dart`
+- `[x]` Chạy kiểm thử tự động `flutter test` để xác minh không phát sinh lỗi biên dịch và logic mới chạy đúng

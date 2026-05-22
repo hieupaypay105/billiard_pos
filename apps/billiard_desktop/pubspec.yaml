@@ -16,10 +16,49 @@ dependencies:
     path: ../../packages/iot_controller
   cupertino_icons: ^1.0.8
 
+  # State Management
+  flutter_riverpod: ^2.6.1
+
+  # Navigation
+  go_router: ^14.6.1
+
+  # HTTP Client & API
+  dio: ^5.7.0
+
+  # Local Storage
+  shared_preferences: ^2.3.3
+  sqflite: ^2.4.0
+  path_provider: ^2.1.5
+  path: ^1.9.0
+
+  # Utilities
+  intl: ^0.19.0
+  uuid: ^4.5.1
+  connectivity_plus: ^6.1.1
+
+  # UI / Charts
+  fl_chart: ^0.69.0
+  data_table_2: ^2.5.14
+
+  # Receipt Printing (K80) - TODO: integrate when printer hardware confirmed
+  # esc_pos_utils_plus: ^2.0.4  # add when ready to integrate
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  mockito: ^5.4.4
+  build_runner: ^2.4.13
 
 flutter:
   uses-material-design: true
+  # fonts:
+  #   - family: Inter
+  #     fonts:
+  #       - asset: assets/fonts/Inter-Regular.ttf
+  #       - asset: assets/fonts/Inter-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/Inter-SemiBold.ttf
+  #         weight: 600
+  #       - asset: assets/fonts/Inter-Bold.ttf
+  #         weight: 700

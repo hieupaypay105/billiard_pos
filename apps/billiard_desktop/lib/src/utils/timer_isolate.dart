@@ -41,9 +41,7 @@ void timerIsolateEntryPoint(SendPort mainSendPort) {
       final startTimeMs = message['startTime'] as int;
       activeTables[tableId] = DateTime.fromMillisecondsSinceEpoch(startTimeMs);
       
-      if (periodicTimer == null) {
-        periodicTimer = Timer.periodic(const Duration(seconds: 1), handleTick);
-      }
+      periodicTimer ??= Timer.periodic(const Duration(seconds: 1), handleTick);
     } else if (action == 'stop') {
       final tableId = message['tableId'] as String;
       activeTables.remove(tableId);

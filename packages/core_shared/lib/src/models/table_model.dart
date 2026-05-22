@@ -54,6 +54,7 @@ class TableModel extends Equatable {
     int? tableTypeId,
     String? status,
     String? currentOrderId,
+    bool clearCurrentOrderId = false,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -63,7 +64,7 @@ class TableModel extends Equatable {
       areaId: areaId ?? this.areaId,
       tableTypeId: tableTypeId ?? this.tableTypeId,
       status: status ?? this.status,
-      currentOrderId: currentOrderId ?? this.currentOrderId,
+      currentOrderId: clearCurrentOrderId ? null : (currentOrderId ?? this.currentOrderId),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

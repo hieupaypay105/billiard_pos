@@ -1,93 +1,78 @@
-# Implementation Plan - Phase 2: Desktop POS Core & IoT Development
+# Kế hoạch tích hợp Xóa dữ liệu local & Tự động cập nhật UI sau Đồng bộ
 
-This plan outlines the steps to execute Phase 2 of the Billiard POS system development, which builds the core cashier desktop client interface, implements background timer calculations using a Dart Isolate, connects the actual serial port hardware via `flutter_libserialport`, and adds cashier operational tools (ordering, K80 receipt printing, shift closing).
-
-## User Review Required
-
-> [!NOTE]
-> We will add `flutter_libserialport` to the `iot_controller` package. This package relies on compiling native libraries for serial port communication. During build/run, Flutter will download and compile the serial port C dependencies for the local operating system (Windows, macOS, or Linux).
-
-## Proposed Changes
-
-We will modularize the `billiard_desktop` application code by moving UI code from a single `main.dart` into clean, reusable component files under `lib/src/`. We will also implement the background timer isolate and integrate the real serial port library.
+Kế hoạch này chi tiết việc triển khai chức năng xóa toàn bộ dữ liệu lưu trữ ngoại tuyến (local cache SQLite) và khắc phục lỗi UI không tự động cập nhật dữ liệu bàn chơi, sản phẩm, hóa đơn sau khi quá trình đồng bộ (Synchronization) từ server hoàn tất.
 
 ---
 
-### [Component 1] Package `iot_controller`
+## 1. Nội dung cần Người dùng Duyệt (User Review Required)
 
-We will integrate `flutter_libserialport` to support real serial connections (RS485/USB) on Windows, macOS, and Linux.
-
-#### [MODIFY] [pubspec.yaml](file:///Users/hieukona/Downloads/app/billiard_pos/packages/iot_controller/pubspec.yaml)
-- Add `flutter_libserialport: ^0.2.2` to the dependencies.
-- Add `flutter: sdk: flutter` to support plugins.
-
-#### [MODIFY] [real_billiard_iot_controller.dart](file:///Users/hieukona/Downloads/app/billiard_pos/packages/iot_controller/lib/src/real_billiard_iot_controller.dart)
-- Import `package:flutter_libserialport/flutter_libserialport.dart`.
-- In `connect`, initialize `SerialPort` with the configured port name.
-- Configure port options (baudrate 9600, data bits 8, stop bits 1, parity none).
-- Use `SerialPortReader` to listen to incoming serial byte traffic and print log events.
-- In `turnOn` and `turnOff`, write commands to the serial port as bytes using `SerialPort.write`.
-- Log any serial port exceptions or connection errors to the status diagnostics console.
+> [!IMPORTANT]
+> - **Xóa dữ liệu local**: Khi người dùng nhấn chọn "Xóa dữ liệu local", chúng ta sẽ thực hiện `DELETE` toàn bộ dữ liệu trong các bảng SQLite (`pending_orders`, `cached_tables`, `cached_products`, `cached_members`, `app_settings`). Phiên đăng nhập (SharedPreferences) vẫn được giữ nguyên để nhân viên có thể tiếp tục thực hiện đồng bộ ngay lập tức mà không phải đăng nhập lại.
+> - **Cập nhật UI tự động**: Tận dụng cơ chế lắng nghe của Riverpod (`ref.listen`). Khi `syncStateProvider` chuyển đổi từ trạng thái đang đồng bộ (`isSyncing = true`) sang hoàn tất (`isSyncing = false`), các Provider của Bàn chơi (`tablesProvider`) và Panel Sản phẩm (`AddProductPanel`) sẽ tự động gọi hàm nạp lại dữ liệu để cập nhật UI ngay lập tức.
 
 ---
 
-### [Component 2] Background Isolate Timer in `billiard_desktop`
+## 2. Các thay đổi đề xuất (Proposed Changes)
 
-We will offload elapsed play time calculations and ticks from the main UI thread to a background Isolate to ensure a constant 60fps+ frame rate.
+### 2.1. Local Database & Sync Service
 
-#### [NEW] [timer_isolate.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/src/utils/timer_isolate.dart)
-- Implement `timerIsolateEntryPoint(SendPort mainSendPort)` which sets up a bidirectional communication channel.
-- Accept command messages: `start` (registers a table ID with start time), `stop` (removes table ID), and `clear`.
-- Use a background `Timer.periodic(const Duration(seconds: 1))` to calculate duration for all active tables.
-- Send ticks containing `{tableId: elapsedSeconds}` back to the main UI thread.
+#### [MODIFY] [local_db_service.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/core/services/local_db_service.dart)
+- Thêm phương thức `clearAllData()` để xóa sạch bản ghi ở mọi bảng trong SQLite:
+  ```dart
+  Future<void> clearAllData() async {
+    final db = await database;
+    await db.delete('pending_orders');
+    await db.delete('cached_tables');
+    await db.delete('cached_products');
+    await db.delete('cached_members');
+    await db.delete('app_settings');
+  }
+  ```
 
----
+#### [MODIFY] [sync_service.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/core/services/sync_service.dart)
+- Thêm phương thức `clearAllLocalData()` gọi xuống `LocalDbService.clearAllData()` và cập nhật log tiến trình.
 
-### [Component 3] Desktop POS Application Refactoring & Features
-
-We will refactor the massive `main.dart` and build modular components for the UI, adding the POS features required.
-
-#### [NEW] [table_card.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/src/widgets/table_card.dart)
-- Individual card for each table.
-- Implement minimalist Scandinavian design with subtle hover micro-animations.
-- Use distinct background/border states: Idle (white/grey), Active (soft teal/blue), Maintenance (soft red/pink).
-- Display elapsed time (from Isolate ticks) and current play cost real-time calculations.
-
-#### [NEW] [table_grid.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/src/widgets/table_grid.dart)
-- Grid layout displaying tables.
-- Add Search text field to filter tables by name.
-- Add Filter buttons to filter tables by type (Pool, Carom, Snooker) and status (Idle, Active).
-
-#### [NEW] [order_dialog.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/src/widgets/order_dialog.dart)
-- Dialogue to select from food/beverage products.
-- Allow configuring order quantities and add items directly to an active table's services.
-
-#### [NEW] [receipt_preview_dialog.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/src/widgets/receipt_preview_dialog.dart)
-- Monospace K80 receipt preview showing billiard club information, play times, ordered products, subtotal, and total amount.
-- Style the dialogue to resemble an authentic thermal receipt paper.
-
-#### [NEW] [shift_dialog.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/src/widgets/shift_dialog.dart)
-- Operational cashier dashboard.
-- Display initial cash, hourly play revenues, product revenues, payment breakdown.
-- Prompt user to enter actual cash in drawer to automatically calculate discrepancy, write closing note, and close current shift.
-
-#### [MODIFY] [main.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/main.dart)
-- Clean up to initialize the background Timer Isolate.
-- Maintain states: Active Shift (from `ShiftModel`), List of all Tables, Table IoT Configurations, Table Start Times, Table Current Orders (product lists), Isolate Durations.
-- Render the main Scaffold using the new modular widgets: `TableGrid`, `ControlPanel`, diagnostics `ConsolePanel`.
-- Support launching `OrderDialog`, `ReceiptPreviewDialog`, and `ShiftDialog`.
+#### [MODIFY] [sync_provider.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/features/sync/sync_provider.dart)
+- Thêm phương thức `clearAllLocalData()` trong `SyncNotifier` để UI gọi và theo dõi tiến trình.
 
 ---
 
-## Verification Plan
+### 2.2. Giao diện Đồng bộ dữ liệu (Sync Screen)
 
-### Automated Tests
-- Run `flutter test` to ensure that models, UI components, and the background isolate function correctly.
-- Add unit tests for the background Isolate timer to verify ticks, starts, and stops.
+#### [MODIFY] [sync_screen.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/features/sync/sync_screen.dart)
+- Cập nhật Widget `_StatusCard` để nhận thêm callback `onClearAllData`.
+- Thêm nút bấm **Xóa dữ liệu local** (sử dụng icon `Icons.delete_forever` màu đỏ) kế bên nút giả lập.
+- Hiển thị hộp thoại xác nhận `AlertDialog` trước khi tiến hành xóa dữ liệu để tránh thao tác nhầm của cashier.
 
-### Manual Verification
-1. Run `billiard_desktop` locally.
-2. Turn on tables, verify that the elapsed time is calculated using the background Isolate tick updates.
-3. Add multiple beverages (Sting, Coca, Red Bull) and food items to an active table, verify details update instantly.
-4. Turn off a table, view the K80 thermal print preview, and complete billing.
-5. Click "Đóng ca" (Close Shift) to verify revenues, cash drawer math, cash discrepancy calculation, and closing transactions.
+---
+
+### 2.3. Cập nhật Bàn chơi & Sản phẩm phản ứng với Sync
+
+#### [MODIFY] [tables_provider.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/features/tables/tables_provider.dart)
+- Trong định nghĩa `tablesProvider`, dùng `ref.listen(syncStateProvider, ...)` để tự động gọi `loadTables()` khi tiến trình sync kết thúc.
+- Cập nhật `loadTables()` trong `TablesNotifier`: nếu cache SQLite trống (sau khi xóa dữ liệu local), reset các trạng thái trong memory (`tableStartTimes`, `tableOrders`, `tableDiscounts`, `tableMembers`).
+
+#### [MODIFY] [add_product_panel.dart](file:///Users/hieukona/Downloads/app/billiard_pos/apps/billiard_desktop/lib/features/billing/add_product_panel.dart)
+- Chuyển `AddProductPanel` thành nạp danh sách sản phẩm động từ SQLite cache bằng cách gọi `LocalDbService.getCachedProducts()`.
+- Map dữ liệu từ schema của API (`product_name` -> `name`, `selling_price` -> `price`, `category_name` -> `category`) và bổ sung thuật toán gán Emoji tương ứng dựa trên tên/danh mục sản phẩm.
+- Tự động lắng nghe `syncStateProvider` trong hàm `build` để reload lại danh sách sản phẩm khi sync thành công hoặc khi cache bị xóa.
+- Tính toán động danh sách bộ lọc danh mục sản phẩm từ dữ liệu thực tế thay vì mảng cứng.
+
+---
+
+## 3. Kế hoạch xác minh & kiểm thử (Verification Plan)
+
+### Kiểm thử tự động (Automated Tests)
+- Chạy toàn bộ test suite `flutter test` trong thư mục `apps/billiard_desktop` để đảm bảo không phát sinh lỗi biên dịch và logic mới tương thích hoàn hảo.
+
+### Xác minh thủ công (Manual Verification)
+1. **Xác minh Xóa dữ liệu**:
+   - Truy cập trang đồng bộ dữ liệu. Nhấn chọn "Xóa dữ liệu local".
+   - Kiểm tra xem Dialog xác nhận có hiển thị hay không. Xác nhận xóa.
+   - Kiểm tra log console trong trang Sync xem các dòng log "Bắt đầu xóa..." và "Đã xóa dữ liệu SQLite local..." hiển thị đúng không.
+   - Quay lại sơ đồ bàn chơi: kiểm tra xem các bàn chơi hoạt động có được giải phóng và nạp dữ liệu sạch/mặc định hay không.
+2. **Xác minh Đồng bộ cập nhật UI tự động**:
+   - Sau khi xóa dữ liệu local, tiến hành nhấn nút "Sync ngay" khi có kết nối mạng.
+   - Đợi quá trình sync hoàn tất.
+   - Kiểm tra sơ đồ bàn chơi: UI bàn chơi cập nhật dữ liệu online ngay lập tức mà không cần F5/khởi động lại app.
+   - Nhấn mở một bàn chơi bất kỳ, kiểm tra Panel thêm sản phẩm: danh sách sản phẩm được load động đầy đủ từ SQLite vừa sync về từ server kèm theo Emoji tự động và các bộ lọc phân loại chính xác.
