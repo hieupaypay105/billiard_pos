@@ -17,9 +17,9 @@ class TablesState {
   final Map<String, double> hourlyRates;
   final String? selectedTableId;
   final Map<String, DateTime> tableStartTimes;
-  final Map<String, List<Map<String, dynamic>>> tableOrders; // tableId → items
-  final Map<String, double> tableDiscounts; // tableId → discount percent
-  final Map<String, Map<String, dynamic>> tableMembers; // tableId → member info
+  final Map<String, List<Map<String, dynamic>>> tableOrders;
+  final Map<String, double> tableDiscounts;
+  final Map<String, Map<String, dynamic>> tableMembers;
   final bool isLoading;
   final String? error;
   final bool useSimulator;
@@ -27,7 +27,8 @@ class TablesState {
   const TablesState({
     this.tables = const [],
     this.iotConfigs = const {},
-    this.hourlyRates = const {},
+    // hourlyRates mặc định theo loại bàn: 1=Pool, 2=Carom, 3=Snooker
+    this.hourlyRates = const {'1': 80000.0, '2': 90000.0, '3': 120000.0},
     this.selectedTableId,
     this.tableStartTimes = const {},
     this.tableOrders = const {},
@@ -38,11 +39,14 @@ class TablesState {
     this.useSimulator = true,
   });
 
+  // Sử dụng Object? sentinel để phân biệt "không truyền" và "truyền null"
+  static const _absent = Object();
+
   TablesState copyWith({
     List<TableModel>? tables,
     Map<String, IotConfigModel>? iotConfigs,
     Map<String, double>? hourlyRates,
-    String? selectedTableId,
+    Object? selectedTableId = _absent,
     Map<String, DateTime>? tableStartTimes,
     Map<String, List<Map<String, dynamic>>>? tableOrders,
     Map<String, double>? tableDiscounts,
@@ -55,7 +59,9 @@ class TablesState {
       tables: tables ?? this.tables,
       iotConfigs: iotConfigs ?? this.iotConfigs,
       hourlyRates: hourlyRates ?? this.hourlyRates,
-      selectedTableId: selectedTableId ?? this.selectedTableId,
+      selectedTableId: identical(selectedTableId, _absent)
+          ? this.selectedTableId
+          : selectedTableId as String?,
       tableStartTimes: tableStartTimes ?? this.tableStartTimes,
       tableOrders: tableOrders ?? this.tableOrders,
       tableDiscounts: tableDiscounts ?? this.tableDiscounts,
@@ -66,11 +72,15 @@ class TablesState {
     );
   }
 
-  TableModel? get selectedTable =>
-      selectedTableId != null
-          ? tables.firstWhere((t) => t.id == selectedTableId,
-              orElse: () => tables.first)
-          : null;
+  /// Bàn đang được chọn; null nếu danh sách rỗng hoặc chưa chọn.
+  TableModel? get selectedTable {
+    if (tables.isEmpty) return null;
+    if (selectedTableId == null) return null;
+    return tables.firstWhere(
+      (t) => t.id == selectedTableId,
+      orElse: () => tables.first,
+    );
+  }
 
   Duration playDuration(String tableId) {
     final start = tableStartTimes[tableId];
@@ -79,8 +89,11 @@ class TablesState {
   }
 
   double playCost(String tableId) {
-    final table = tables.firstWhere((t) => t.id == tableId,
-        orElse: () => tables.first);
+    if (tables.isEmpty) return 0.0;
+    final table = tables.firstWhere(
+      (t) => t.id == tableId,
+      orElse: () => tables.first,
+    );
     final rate = hourlyRates[table.tableTypeId.toString()] ?? 80000.0;
     return (playDuration(tableId).inSeconds / 3600.0) * rate;
   }
@@ -102,21 +115,17 @@ class TablesNotifier extends StateNotifier<TablesState> {
         _apiClient = apiClient,
         _syncService = syncService,
         super(const TablesState()) {
-    // Khởi tạo mock ngay lập tức (sync) để UI có dữ liệu fallback
-    // trước khi loadTables() async đọc xong từ SQLite
-    _initMockData();
     loadTables();
   }
 
   Future<void> loadTables() async {
     state = state.copyWith(isLoading: true);
 
-    // ── Nguồn 1: SQLite local DB (source of truth) ───────────────────────────
+    // ── Nguồn duy nhất: SQLite local DB ──────────────────────────────────────
     if (_localDb != null) {
       try {
         final cached = await _localDb.getCachedTables();
         if (cached.isNotEmpty) {
-          // Có dữ liệu SQLite → override mock, hiển thị dữ liệu thực tế
           final loadedTables =
               cached.map((e) => TableModel.fromJson(e)).toList();
           state = state.copyWith(
@@ -124,8 +133,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
             selectedTableId: loadedTables.first.id,
           );
         } else {
-          // Cache trống (sau khi xóa dữ liệu local): reset in-memory session
+          // Cache trống (sau khi xóa dữ liệu local): xóa hết session
           state = state.copyWith(
+            tables: const [],
+            selectedTableId: null,
             tableStartTimes: const {},
             tableOrders: const {},
             tableDiscounts: const {},
@@ -133,8 +144,12 @@ class TablesNotifier extends StateNotifier<TablesState> {
           );
         }
       } catch (e) {
-        state = state.copyWith(error: e.toString());
+        state = state.copyWith(error: e.toString(), isLoading: false);
+        return;
       }
+    } else {
+      // Không có DB (môi trường test): dùng mock data làm fallback
+      _initMockData();
     }
 
     // ── Fetch IoT configs online (tách biệt, không phải bàn) ─────────────────
