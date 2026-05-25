@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import 'auth_provider.dart';
+import '../sync/sync_provider.dart';
+
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -43,7 +45,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           username: _usernameCtrl.text.trim(),
           password: _passwordCtrl.text,
         );
-    if (!ok && mounted) {
+    if (ok && mounted) {
+      // Tự động đồng bộ dữ liệu ngay sau khi đăng nhập thành công
+      ref.read(syncStateProvider.notifier).syncNow();
+    } else if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(ref.read(authProvider).error ?? 'Đăng nhập thất bại'),
         backgroundColor: AppColors.error,

@@ -118,30 +118,58 @@ class TablesNotifier extends StateNotifier<TablesState> {
     loadTables();
   }
 
-  Future<void> loadTables() async {
+  Future<void> loadTables({bool preventAutoPull = false}) async {
     state = state.copyWith(isLoading: true);
 
     // ── Nguồn duy nhất: SQLite local DB ──────────────────────────────────────
     if (_localDb != null) {
       try {
-        final cached = await _localDb.getCachedTables();
-        if (cached.isNotEmpty) {
+        final cachedTables = await _localDb!.getCachedTables();
+        if (cachedTables.isNotEmpty) {
           final loadedTables =
-              cached.map((e) => TableModel.fromJson(e)).toList();
+              cachedTables.map((e) => TableModel.fromJson(e)).toList();
+          loadedTables.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+          // Load IoT Configs from local cache
+          final Map<String, IotConfigModel> loadedIotConfigs = {};
+          final cachedIot = await _localDb!.getCachedIotConfigs();
+          if (cachedIot.isNotEmpty) {
+            for (final item in cachedIot) {
+              final config = IotConfigModel.fromJson(item);
+              loadedIotConfigs[config.tableId] = config;
+            }
+          }
+
+          // Load Table Prices from local cache and map to hourlyRates
+          final Map<String, double> loadedHourlyRates = Map<String, double>.from(state.hourlyRates);
+          final cachedPrices = await _localDb!.getCachedTablePrices();
+          if (cachedPrices.isNotEmpty) {
+            final prices = cachedPrices.map((e) => TablePriceModel.fromJson(e)).toList();
+            for (final p in prices) {
+              if (p.isActive) {
+                loadedHourlyRates[p.tableTypeId.toString()] = p.pricePerHour;
+              }
+            }
+          }
+
           state = state.copyWith(
             tables: loadedTables,
             selectedTableId: loadedTables.first.id,
+            iotConfigs: loadedIotConfigs.isNotEmpty ? loadedIotConfigs : state.iotConfigs,
+            hourlyRates: loadedHourlyRates,
           );
         } else {
-          // Cache trống (sau khi xóa dữ liệu local): xóa hết session
-          state = state.copyWith(
-            tables: const [],
-            selectedTableId: null,
-            tableStartTimes: const {},
-            tableOrders: const {},
-            tableDiscounts: const {},
-            tableMembers: const {},
-          );
+          // Cache trống (sau khi xóa dữ liệu local): xóa hết session và dùng mock data làm fallback
+          _initMockData();
+
+          // Tự động tải dữ liệu từ server khi cache trống và có mạng
+          if (!preventAutoPull && _syncService != null && _syncService!.isOnline) {
+            _syncService!.pullOnlineDataToOffline().then((result) {
+              if (result.success) {
+                loadTables(preventAutoPull: true);
+              }
+            });
+          }
         }
       } catch (e) {
         state = state.copyWith(error: e.toString(), isLoading: false);
@@ -152,24 +180,6 @@ class TablesNotifier extends StateNotifier<TablesState> {
       _initMockData();
     }
 
-    // ── Fetch IoT configs online (tách biệt, không phải bàn) ─────────────────
-    if (_syncService != null && _syncService.isOnline && _apiClient != null) {
-      try {
-        final onlineIot = await _apiClient.getIotConfigs();
-        if (onlineIot.isNotEmpty) {
-          final updatedIot =
-              Map<String, IotConfigModel>.from(state.iotConfigs);
-          for (final item in onlineIot) {
-            if (item is Map<String, dynamic>) {
-              final config = IotConfigModel.fromJson(item);
-              updatedIot[config.tableId] = config;
-            }
-          }
-          state = state.copyWith(iotConfigs: updatedIot);
-        }
-      } catch (_) {}
-    }
-
     state = state.copyWith(isLoading: false);
   }
 
@@ -177,14 +187,14 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final hourlyRates = {'1': 80000.0, '2': 90000.0, '3': 120000.0};
 
     final tables = [
-      const TableModel(id: 't-1', tableName: 'Bàn 01 (Pool)', areaId: 1, tableTypeId: 1, status: 'idle'),
-      const TableModel(id: 't-2', tableName: 'Bàn 02 (Pool)', areaId: 1, tableTypeId: 1, status: 'idle'),
-      const TableModel(id: 't-3', tableName: 'Bàn 03 (Pool)', areaId: 1, tableTypeId: 1, status: 'idle'),
-      const TableModel(id: 't-4', tableName: 'Bàn 04 (Carom)', areaId: 2, tableTypeId: 2, status: 'idle'),
-      const TableModel(id: 't-5', tableName: 'Bàn 05 (Carom)', areaId: 2, tableTypeId: 2, status: 'idle'),
-      const TableModel(id: 't-6', tableName: 'Bàn 06 (Snooker)', areaId: 3, tableTypeId: 3, status: 'idle'),
-      const TableModel(id: 't-7', tableName: 'Bàn VIP 01', areaId: 4, tableTypeId: 1, status: 'idle'),
-      const TableModel(id: 't-8', tableName: 'Bàn VIP 02', areaId: 4, tableTypeId: 2, status: 'idle'),
+      const TableModel(id: 't-1', tableName: 'Bàn 01 (Pool)', areaId: 1, tableTypeId: 1, status: 'idle', sortOrder: 1),
+      const TableModel(id: 't-2', tableName: 'Bàn 02 (Pool)', areaId: 1, tableTypeId: 1, status: 'idle', sortOrder: 2),
+      const TableModel(id: 't-3', tableName: 'Bàn 03 (Pool)', areaId: 1, tableTypeId: 1, status: 'idle', sortOrder: 3),
+      const TableModel(id: 't-4', tableName: 'Bàn 04 (Carom)', areaId: 2, tableTypeId: 2, status: 'idle', sortOrder: 4),
+      const TableModel(id: 't-5', tableName: 'Bàn 05 (Carom)', areaId: 2, tableTypeId: 2, status: 'idle', sortOrder: 5),
+      const TableModel(id: 't-6', tableName: 'Bàn 06 (Snooker)', areaId: 3, tableTypeId: 3, status: 'idle', sortOrder: 6),
+      const TableModel(id: 't-7', tableName: 'Bàn VIP 01', areaId: 4, tableTypeId: 1, status: 'idle', sortOrder: 7),
+      const TableModel(id: 't-8', tableName: 'Bàn VIP 02', areaId: 4, tableTypeId: 2, status: 'idle', sortOrder: 8),
     ];
 
     final iotConfigs = {

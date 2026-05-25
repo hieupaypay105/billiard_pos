@@ -129,4 +129,14 @@ class EnvConfig {
     'SYNC_DESKTOP',
     defaultValue: '/sync/desktop',
   );
+
+  static const String tableTypes = String.fromEnvironment(
+    'TABLE_TYPES',
+    defaultValue: '/table/types',
+  );
+
+  static const String membershipTiers = String.fromEnvironment(
+    'MEMBERSHIP_TIERS',
+    defaultValue: '/member/tiers',
+  );
 }

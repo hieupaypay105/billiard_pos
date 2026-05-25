@@ -53,6 +53,7 @@ class SyncService {
           _log('Network status changed: ${newStatus.name.toUpperCase()}');
           if (newStatus == ConnectivityStatus.online) {
             await _syncPendingRecords();
+            await pullOnlineDataToOffline();
           }
         }
       },
@@ -69,6 +70,13 @@ class SyncService {
         : ConnectivityStatus.offline;
     _statusController.add(_currentStatus);
     await _refreshPendingCount();
+
+    if (_currentStatus == ConnectivityStatus.online) {
+      Future.microtask(() async {
+        await _syncPendingRecords();
+        await pullOnlineDataToOffline();
+      });
+    }
   }
 
   /// Kích hoạt sync thủ công.
@@ -170,6 +178,81 @@ class SyncService {
       totalPulled += membersToCache.length;
     } catch (e) {
       _log('LỖI tải danh sách hội viên: $e');
+    }
+
+    // 4. Đồng bộ Cấu hình IoT
+    try {
+      _log('Đang tải cấu hình IoT từ server...');
+      final configs = await _apiClient.getIotConfigs();
+      final configsToCache = configs.whereType<Map<String, dynamic>>().toList();
+      await _localDb.clearCachedIotConfigs();
+      if (configsToCache.isNotEmpty) {
+        await _localDb.cacheIotConfigs(configsToCache);
+      }
+      _log('Đã lưu offline ${configsToCache.length} cấu hình IoT.');
+      totalPulled += configsToCache.length;
+    } catch (e) {
+      _log('LỖI tải cấu hình IoT: $e');
+    }
+
+    // 5. Đồng bộ Danh mục sản phẩm
+    try {
+      _log('Đang tải danh mục sản phẩm từ server...');
+      final categories = await _apiClient.getProductCategories();
+      final categoriesToCache = categories.whereType<Map<String, dynamic>>().toList();
+      await _localDb.clearCachedProductCategories();
+      if (categoriesToCache.isNotEmpty) {
+        await _localDb.cacheProductCategories(categoriesToCache);
+      }
+      _log('Đã lưu offline ${categoriesToCache.length} danh mục sản phẩm.');
+      totalPulled += categoriesToCache.length;
+    } catch (e) {
+      _log('LỖI tải danh mục sản phẩm: $e');
+    }
+
+    // 6. Đồng bộ Loại bàn chơi
+    try {
+      _log('Đang tải loại bàn chơi từ server...');
+      final types = await _apiClient.getTableTypes();
+      final typesToCache = types.whereType<Map<String, dynamic>>().toList();
+      await _localDb.clearCachedTableTypes();
+      if (typesToCache.isNotEmpty) {
+        await _localDb.cacheTableTypes(typesToCache);
+      }
+      _log('Đã lưu offline ${typesToCache.length} loại bàn chơi.');
+      totalPulled += typesToCache.length;
+    } catch (e) {
+      _log('LỖI tải loại bàn chơi: $e');
+    }
+
+    // 7. Đồng bộ Khung giá giờ
+    try {
+      _log('Đang tải khung giá giờ từ server...');
+      final prices = await _apiClient.getTablePrices();
+      final pricesToCache = prices.whereType<Map<String, dynamic>>().toList();
+      await _localDb.clearCachedTablePrices();
+      if (pricesToCache.isNotEmpty) {
+        await _localDb.cacheTablePrices(pricesToCache);
+      }
+      _log('Đã lưu offline ${pricesToCache.length} khung giá giờ.');
+      totalPulled += pricesToCache.length;
+    } catch (e) {
+      _log('LỖI tải khung giá giờ: $e');
+    }
+
+    // 8. Đồng bộ Hạng thành viên
+    try {
+      _log('Đang tải hạng thành viên từ server...');
+      final tiers = await _apiClient.getMembershipTiers();
+      final tiersToCache = tiers.whereType<Map<String, dynamic>>().toList();
+      await _localDb.clearCachedMembershipTiers();
+      if (tiersToCache.isNotEmpty) {
+        await _localDb.cacheMembershipTiers(tiersToCache);
+      }
+      _log('Đã lưu offline ${tiersToCache.length} hạng thành viên.');
+      totalPulled += tiersToCache.length;
+    } catch (e) {
+      _log('LỖI tải hạng thành viên: $e');
     }
 
     _log('Đồng bộ tải dữ liệu online -> offline hoàn tất. Tổng cộng $totalPulled bản ghi.');

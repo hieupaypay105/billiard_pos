@@ -6,7 +6,9 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import 'tables_provider.dart';
 import '../billing/invoice_dialog.dart';
+import '../sync/sync_provider.dart';
 import '../../core/providers/providers.dart';
+
 
 class TablesScreen extends ConsumerStatefulWidget {
   const TablesScreen({super.key});
@@ -140,31 +142,115 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
 
           // ── TABLE GRID ────────────────────────────────────────────────────
           Expanded(
-            child: GridView.builder(
-              itemCount: filteredTables.length,
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 220,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: 0.82,
-              ),
-              itemBuilder: (context, index) {
-                final table = filteredTables[index];
-                return _TableCard(
-                  table: table,
-                  isSelected: table.id == tablesState.selectedTableId,
-                  playDuration: tablesState.playDuration(table.id),
-                  playCost: tablesState.playCost(table.id),
-                  onSelect: () =>
-                      ref.read(tablesProvider.notifier).selectTable(table.id),
-                  onTogglePower: () => _handleTogglePower(table),
-                  onMaintenance: () => ref
-                      .read(tablesProvider.notifier)
-                      .setTableMaintenance(
-                          table.id, table.status != 'maintenance'),
-                );
-              },
-            ),
+            child: tablesState.isLoading && tablesState.tables.isEmpty
+                ? const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(
+                          color: AppColors.primary,
+                        ),
+                        SizedBox(height: 16),
+                        Text(
+                          'Đang tải danh sách bàn từ database...',
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : tablesState.error != null && tablesState.tables.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error_outline, size: 48, color: AppColors.error),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Lỗi tải dữ liệu: ${tablesState.error}',
+                              style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 14,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: () => ref.read(tablesProvider.notifier).loadTables(),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Thử lại'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : filteredTables.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.table_bar_outlined,
+                                  size: 64,
+                                  color: AppColors.textMuted.withOpacity(0.5),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _filterStatus == 'all'
+                                      ? 'Không có dữ liệu bàn chơi. Vui lòng đồng bộ.'
+                                      : 'Không tìm thấy bàn nào với trạng thái này.',
+                                  style: const TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontSize: 14,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                                if (_filterStatus == 'all') ...[
+                                  const SizedBox(height: 16),
+                                  ElevatedButton.icon(
+                                    onPressed: () => ref.read(syncStateProvider.notifier).syncNow(),
+                                    icon: const Icon(Icons.sync),
+                                    label: const Text('Đồng bộ dữ liệu ngay'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          )
+                        : GridView.builder(
+                            itemCount: filteredTables.length,
+                            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: 220,
+                              crossAxisSpacing: 16,
+                              mainAxisSpacing: 16,
+                              childAspectRatio: 0.82,
+                            ),
+                            itemBuilder: (context, index) {
+                              final table = filteredTables[index];
+                              return _TableCard(
+                                table: table,
+                                isSelected: table.id == tablesState.selectedTableId,
+                                playDuration: tablesState.playDuration(table.id),
+                                playCost: tablesState.playCost(table.id),
+                                onSelect: () =>
+                                    ref.read(tablesProvider.notifier).selectTable(table.id),
+                                onTogglePower: () => _handleTogglePower(table),
+                                onMaintenance: () => ref
+                                    .read(tablesProvider.notifier)
+                                    .setTableMaintenance(
+                                        table.id, table.status != 'maintenance'),
+                              );
+                            },
+                          ),
           ),
         ],
       ),

@@ -7,6 +7,7 @@ class TableModel extends Equatable {
   final int tableTypeId;
   final String status; // 'idle', 'active', 'booked', 'maintenance'
   final String? currentOrderId;
+  final int sortOrder;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -17,20 +18,22 @@ class TableModel extends Equatable {
     required this.tableTypeId,
     this.status = 'idle',
     this.currentOrderId,
+    this.sortOrder = 0,
     this.createdAt,
     this.updatedAt,
   });
 
   factory TableModel.fromJson(Map<String, dynamic> json) {
     return TableModel(
-      id: json['id'] as String,
-      tableName: json['table_name'] as String,
-      areaId: json['area_id'] as int,
-      tableTypeId: json['table_type_id'] as int,
-      status: json['status'] as String? ?? 'idle',
-      currentOrderId: json['current_order_id'] as String?,
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at'] as String) : null,
+      id: (json['id'] ?? json['table_id'] ?? '').toString(),
+      tableName: (json['table_name'] ?? '').toString(),
+      areaId: int.tryParse(json['area_id']?.toString() ?? '') ?? 1,
+      tableTypeId: int.tryParse(json['table_type_id']?.toString() ?? '') ?? 1,
+      status: json['status']?.toString() ?? 'idle',
+      currentOrderId: json['current_order_id']?.toString(),
+      sortOrder: int.tryParse(json['sort_order']?.toString() ?? '') ?? 0,
+      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'] as String) : null,
+      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'] as String) : null,
     );
   }
 
@@ -42,6 +45,7 @@ class TableModel extends Equatable {
       'table_type_id': tableTypeId,
       'status': status,
       'current_order_id': currentOrderId,
+      'sort_order': sortOrder,
       'created_at': createdAt?.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
     };
@@ -55,6 +59,7 @@ class TableModel extends Equatable {
     String? status,
     String? currentOrderId,
     bool clearCurrentOrderId = false,
+    int? sortOrder,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -65,6 +70,7 @@ class TableModel extends Equatable {
       tableTypeId: tableTypeId ?? this.tableTypeId,
       status: status ?? this.status,
       currentOrderId: clearCurrentOrderId ? null : (currentOrderId ?? this.currentOrderId),
+      sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -78,6 +84,7 @@ class TableModel extends Equatable {
         tableTypeId,
         status,
         currentOrderId,
+        sortOrder,
         createdAt,
         updatedAt,
       ];

@@ -276,6 +276,30 @@ class ApiClient {
     return (res.data['data'] ?? res.data) as List<dynamic>;
   }
 
+  Future<List<dynamic>> getTableTypes() async {
+    final res = await _dio.get(EnvConfig.tableTypes);
+    return (res.data['data'] ?? res.data) as List<dynamic>;
+  }
+
+  Future<List<dynamic>> getTablePrices() async {
+    final res = await _dio.get(EnvConfig.tablePrices);
+    return (res.data['data'] ?? res.data) as List<dynamic>;
+  }
+
+  Future<List<dynamic>> getMembershipTiers() async {
+    final res = await _dio.get(EnvConfig.membershipTiers);
+    return (res.data['data'] ?? res.data) as List<dynamic>;
+  }
+
+  Future<List<dynamic>> getUsers() async {
+    final res = await _dio.get(EnvConfig.userList);
+    final data = res.data['data'] ?? res.data;
+    if (data is Map<String, dynamic> && data.containsKey('items')) {
+      return data['items'] as List<dynamic>;
+    }
+    return data as List<dynamic>;
+  }
+
   // ─── Sync ────────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> syncOrders(Map<String, dynamic> payload) async {

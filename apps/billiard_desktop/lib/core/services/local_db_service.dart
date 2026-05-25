@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 /// Lưu trữ orders chờ sync, cache dữ liệu sản phẩm, bàn, etc.
 class LocalDbService {
   static const _dbName = 'billiard_pos_local.db';
-  static const _dbVersion = 1;
+  static const _dbVersion = 2;
 
   Database? _db;
 
@@ -69,6 +69,52 @@ class LocalDbService {
       )
     ''');
 
+    // Cache IoT configs
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_iot_configs (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    ''');
+
+    // Cache product categories
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_product_categories (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    ''');
+
+    // Cache table types
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_table_types (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    ''');
+
+    // Cache table prices
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_table_prices (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    ''');
+
+    // Cache membership tiers
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_membership_tiers (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    ''');
+
+
     // Session / auth token backup
     await db.execute('''
       CREATE TABLE IF NOT EXISTS app_settings (
@@ -83,7 +129,43 @@ class LocalDbService {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Reserved for future migrations
+    if (oldVersion < 2) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS cached_iot_configs (
+          id TEXT PRIMARY KEY,
+          data TEXT NOT NULL,
+          updated_at TEXT DEFAULT (datetime('now'))
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS cached_product_categories (
+          id TEXT PRIMARY KEY,
+          data TEXT NOT NULL,
+          updated_at TEXT DEFAULT (datetime('now'))
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS cached_table_types (
+          id TEXT PRIMARY KEY,
+          data TEXT NOT NULL,
+          updated_at TEXT DEFAULT (datetime('now'))
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS cached_table_prices (
+          id TEXT PRIMARY KEY,
+          data TEXT NOT NULL,
+          updated_at TEXT DEFAULT (datetime('now'))
+        )
+      ''');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS cached_membership_tiers (
+          id TEXT PRIMARY KEY,
+          data TEXT NOT NULL,
+          updated_at TEXT DEFAULT (datetime('now'))
+        )
+      ''');
+    }
   }
 
   // ─── Pending Orders ───────────────────────────────────────────────────────────
@@ -197,6 +279,119 @@ class LocalDbService {
     return jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
   }
 
+  // ─── Cache IoT Configs ────────────────────────────────────────────────────────
+
+  Future<void> cacheIotConfigs(List<Map<String, dynamic>> configs) async {
+    final db = await database;
+    final batch = db.batch();
+    for (final c in configs) {
+      batch.insert('cached_iot_configs', {
+        'id': c['id']?.toString() ?? c['table_id']?.toString() ?? '',
+        'data': jsonEncode(c),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedIotConfigs() async {
+    final db = await database;
+    final rows = await db.query('cached_iot_configs');
+    return rows
+        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+        .toList();
+  }
+
+  // ─── Cache Product Categories ─────────────────────────────────────────────────
+
+  Future<void> cacheProductCategories(
+    List<Map<String, dynamic>> categories,
+  ) async {
+    final db = await database;
+    final batch = db.batch();
+    for (final c in categories) {
+      batch.insert('cached_product_categories', {
+        'id': c['id']?.toString() ?? '',
+        'data': jsonEncode(c),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedProductCategories() async {
+    final db = await database;
+    final rows = await db.query('cached_product_categories');
+    return rows
+        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+        .toList();
+  }
+
+  // ─── Cache Table Types ────────────────────────────────────────────────────────
+
+  Future<void> cacheTableTypes(List<Map<String, dynamic>> types) async {
+    final db = await database;
+    final batch = db.batch();
+    for (final t in types) {
+      batch.insert('cached_table_types', {
+        'id': t['id']?.toString() ?? '',
+        'data': jsonEncode(t),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedTableTypes() async {
+    final db = await database;
+    final rows = await db.query('cached_table_types');
+    return rows
+        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+        .toList();
+  }
+
+  // ─── Cache Table Prices ───────────────────────────────────────────────────────
+
+  Future<void> cacheTablePrices(List<Map<String, dynamic>> prices) async {
+    final db = await database;
+    final batch = db.batch();
+    for (final p in prices) {
+      batch.insert('cached_table_prices', {
+        'id': p['id']?.toString() ?? '',
+        'data': jsonEncode(p),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedTablePrices() async {
+    final db = await database;
+    final rows = await db.query('cached_table_prices');
+    return rows
+        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+        .toList();
+  }
+
+  // ─── Cache Membership Tiers ───────────────────────────────────────────────────
+
+  Future<void> cacheMembershipTiers(List<Map<String, dynamic>> tiers) async {
+    final db = await database;
+    final batch = db.batch();
+    for (final t in tiers) {
+      batch.insert('cached_membership_tiers', {
+        'id': t['id']?.toString() ?? '',
+        'data': jsonEncode(t),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<List<Map<String, dynamic>>> getCachedMembershipTiers() async {
+    final db = await database;
+    final rows = await db.query('cached_membership_tiers');
+    return rows
+        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+        .toList();
+  }
+
+
   // ─── App Settings ─────────────────────────────────────────────────────────────
 
   Future<void> setSetting(String key, String value) async {
@@ -238,6 +433,32 @@ class LocalDbService {
     await db.delete('cached_members');
   }
 
+  Future<void> clearCachedIotConfigs() async {
+    final db = await database;
+    await db.delete('cached_iot_configs');
+  }
+
+  Future<void> clearCachedProductCategories() async {
+    final db = await database;
+    await db.delete('cached_product_categories');
+  }
+
+  Future<void> clearCachedTableTypes() async {
+    final db = await database;
+    await db.delete('cached_table_types');
+  }
+
+  Future<void> clearCachedTablePrices() async {
+    final db = await database;
+    await db.delete('cached_table_prices');
+  }
+
+  Future<void> clearCachedMembershipTiers() async {
+    final db = await database;
+    await db.delete('cached_membership_tiers');
+  }
+
+
   // ─── Clear All Data ───────────────────────────────────────────────────────────
 
   /// Xóa toàn bộ dữ liệu trong tất cả các bảng SQLite local.
@@ -248,6 +469,11 @@ class LocalDbService {
     await db.delete('cached_tables');
     await db.delete('cached_products');
     await db.delete('cached_members');
+    await db.delete('cached_iot_configs');
+    await db.delete('cached_product_categories');
+    await db.delete('cached_table_types');
+    await db.delete('cached_table_prices');
+    await db.delete('cached_membership_tiers');
     await db.delete('app_settings');
   }
 
@@ -256,4 +482,3 @@ class LocalDbService {
     _db = null;
   }
 }
-
