@@ -15,7 +15,7 @@ class AreaModel extends Equatable {
 
   factory AreaModel.fromJson(Map<String, dynamic> json) {
     return AreaModel(
-      id: json['id'] as int,
+      id: int.tryParse(json['id']?.toString() ?? '') ?? 0,
       areaName: json['area_name'] as String,
       description: json['description'] as String?,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : null,

@@ -15,7 +15,7 @@ class TableTypeModel extends Equatable {
 
   factory TableTypeModel.fromJson(Map<String, dynamic> json) {
     return TableTypeModel(
-      id: json['id'] as int,
+      id: int.tryParse(json['id']?.toString() ?? '') ?? 0,
       typeName: json['type_name'] as String,
       description: json['description'] as String?,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : null,

@@ -26,9 +26,9 @@ class OrderDetailModel extends Equatable {
       id: json['id'] as String,
       orderId: json['order_id'] as String,
       productId: json['product_id'] as String,
-      quantity: json['quantity'] as int,
-      unitPrice: (json['unit_price'] as num).toDouble(),
-      totalPrice: (json['total_price'] as num).toDouble(),
+      quantity: int.tryParse(json['quantity']?.toString() ?? '') ?? 0,
+      unitPrice: double.tryParse(json['unit_price']?.toString() ?? '') ?? 0.0,
+      totalPrice: double.tryParse(json['total_price']?.toString() ?? '') ?? 0.0,
       addedBy: json['added_by'] as String,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : null,
     );

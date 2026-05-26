@@ -26,26 +26,26 @@ class TablePriceModel extends Equatable {
     List<int>? parsedDays;
     if (json['days_of_week'] != null) {
       if (json['days_of_week'] is List) {
-        parsedDays = (json['days_of_week'] as List).map((e) => e as int).toList();
+        parsedDays = (json['days_of_week'] as List).map((e) => int.tryParse(e.toString()) ?? 0).toList();
       } else if (json['days_of_week'] is String) {
         try {
           final decoded = jsonDecode(json['days_of_week'] as String);
           if (decoded is List) {
-            parsedDays = decoded.map((e) => e as int).toList();
+            parsedDays = decoded.map((e) => int.tryParse(e.toString()) ?? 0).toList();
           }
         } catch (_) {}
       }
     }
 
     return TablePriceModel(
-      id: json['id'] as int,
-      tableTypeId: json['table_type_id'] as int,
-      pricePerHour: (json['price_per_hour'] as num).toDouble(),
+      id: int.tryParse(json['id']?.toString() ?? '') ?? 0,
+      tableTypeId: int.tryParse(json['table_type_id']?.toString() ?? '') ?? 0,
+      pricePerHour: double.tryParse(json['price_per_hour']?.toString() ?? '') ?? 0.0,
       startHour: json['start_hour'] as String? ?? '00:00:00',
       endHour: json['end_hour'] as String? ?? '23:59:59',
       daysOfWeek: parsedDays,
       isActive: json['is_active'] is bool ? json['is_active'] as bool : (json['is_active'] == 1 || json['is_active'] == 'true'),
-      priority: json['priority'] as int? ?? 0,
+      priority: int.tryParse(json['priority']?.toString() ?? '') ?? 0,
     );
   }
 

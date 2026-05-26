@@ -29,9 +29,9 @@ class MemberModel extends Equatable {
       fullName: json['full_name'] as String,
       phoneNumber: json['phone_number'] as String,
       email: json['email'] as String?,
-      membershipTierId: json['membership_tier_id'] as int?,
-      totalPoints: json['total_points'] as int? ?? 0,
-      accumulatedSpend: (json['accumulated_spend'] as num?)?.toDouble() ?? 0.0,
+      membershipTierId: json['membership_tier_id'] != null ? int.tryParse(json['membership_tier_id'].toString()) : null,
+      totalPoints: int.tryParse(json['total_points']?.toString() ?? '') ?? 0,
+      accumulatedSpend: double.tryParse(json['accumulated_spend']?.toString() ?? '') ?? 0.0,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : null,
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at'] as String) : null,
     );

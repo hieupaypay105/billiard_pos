@@ -13,7 +13,7 @@ class ProductCategoryModel extends Equatable {
 
   factory ProductCategoryModel.fromJson(Map<String, dynamic> json) {
     return ProductCategoryModel(
-      id: json['id'] as int,
+      id: int.tryParse(json['id']?.toString() ?? '') ?? 0,
       categoryName: json['category_name'] as String,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : null,
     );

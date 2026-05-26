@@ -27,12 +27,12 @@ class IotConfigModel extends Equatable {
 
   factory IotConfigModel.fromJson(Map<String, dynamic> json) {
     return IotConfigModel(
-      id: json['id'] as int,
+      id: int.tryParse(json['id']?.toString() ?? '') ?? 0,
       tableId: json['table_id'] as String,
       connectionType: json['connection_type'] as String,
       ipAddress: json['ip_address'] as String?,
       port: json['port']?.toString(),
-      relayChannel: json['relay_channel'] as int,
+      relayChannel: int.tryParse(json['relay_channel']?.toString() ?? '') ?? 1,
       commandOn: json['command_on'] as String,
       commandOff: json['command_off'] as String,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : null,

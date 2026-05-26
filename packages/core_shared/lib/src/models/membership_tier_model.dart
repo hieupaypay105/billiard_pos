@@ -17,10 +17,10 @@ class MembershipTierModel extends Equatable {
 
   factory MembershipTierModel.fromJson(Map<String, dynamic> json) {
     return MembershipTierModel(
-      id: json['id'] as int,
+      id: int.tryParse(json['id']?.toString() ?? '') ?? 0,
       tierName: json['tier_name'] as String,
-      minPoints: json['min_points'] as int? ?? 0,
-      discountPercentage: (json['discount_percentage'] as num?)?.toDouble() ?? 0.0,
+      minPoints: int.tryParse(json['min_points']?.toString() ?? '') ?? 0,
+      discountPercentage: double.tryParse(json['discount_percentage']?.toString() ?? '') ?? 0.0,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : null,
     );
   }
