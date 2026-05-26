@@ -23,6 +23,7 @@ class TablesState {
   final bool isLoading;
   final String? error;
   final bool useSimulator;
+  final List<TableTypeModel> tableTypes;
 
   const TablesState({
     this.tables = const [],
@@ -37,6 +38,11 @@ class TablesState {
     this.isLoading = false,
     this.error,
     this.useSimulator = true,
+    this.tableTypes = const [
+      TableTypeModel(id: 1, typeName: 'Pool (Bàn lỗ)'),
+      TableTypeModel(id: 2, typeName: 'Carom (Băng)'),
+      TableTypeModel(id: 3, typeName: 'Snooker'),
+    ],
   });
 
   // Sử dụng Object? sentinel để phân biệt "không truyền" và "truyền null"
@@ -54,6 +60,7 @@ class TablesState {
     bool? isLoading,
     String? error,
     bool? useSimulator,
+    List<TableTypeModel>? tableTypes,
   }) {
     return TablesState(
       tables: tables ?? this.tables,
@@ -69,6 +76,7 @@ class TablesState {
       isLoading: isLoading ?? this.isLoading,
       error: error,
       useSimulator: useSimulator ?? this.useSimulator,
+      tableTypes: tableTypes ?? this.tableTypes,
     );
   }
 
@@ -152,11 +160,21 @@ class TablesNotifier extends StateNotifier<TablesState> {
             }
           }
 
+          // Load Table Types from local cache
+          final List<TableTypeModel> loadedTableTypes = [];
+          final cachedTypes = await _localDb!.getCachedTableTypes();
+          if (cachedTypes.isNotEmpty) {
+            loadedTableTypes.addAll(
+              cachedTypes.map((e) => TableTypeModel.fromJson(e)),
+            );
+          }
+
           state = state.copyWith(
             tables: loadedTables,
             selectedTableId: loadedTables.first.id,
             iotConfigs: loadedIotConfigs.isNotEmpty ? loadedIotConfigs : state.iotConfigs,
             hourlyRates: loadedHourlyRates,
+            tableTypes: loadedTableTypes.isNotEmpty ? loadedTableTypes : state.tableTypes,
           );
         } else {
           // Cache trống (sau khi xóa dữ liệu local): xóa hết session và dùng mock data làm fallback

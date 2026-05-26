@@ -9,6 +9,7 @@ import '../sync/sync_provider.dart';
 // ─── Emoji mapping helpers ─────────────────────────────────────────────────────
 
 String _resolveEmoji(Map<String, dynamic> product) {
+  /*
   final name = (product['name'] as String? ?? '').toLowerCase();
   final category = (product['category'] as String? ?? '').toLowerCase();
 
@@ -46,38 +47,22 @@ String _resolveEmoji(Map<String, dynamic> product) {
   if (category.contains('uống') || category.contains('drink') || category.contains('beverage')) return '🥤';
   if (category.contains('ăn') || category.contains('food')) return '🍜';
   if (category.contains('thuốc')) return '🚬';
+  */
 
   return '🛍️';
 }
 
 /// Map từ API schema → UI schema thống nhất
-Map<String, dynamic> _mapProductFields(Map<String, dynamic> raw) {
+Map<String, dynamic> _mapProductFields(Map<String, dynamic> raw, [Map<String, String> catMap = const {}]) {
+  final catIdStr = raw['category_id']?.toString();
+  final catName = catMap[catIdStr] ?? raw['category_name'] as String? ?? raw['category'] as String? ?? 'Khác';
   return {
     'id': raw['id']?.toString() ?? raw['product_id']?.toString() ?? '',
     'name': raw['product_name'] as String? ?? raw['name'] as String? ?? '—',
-    'price': (raw['selling_price'] ?? raw['price'] ?? 0.0) is int
-        ? (raw['selling_price'] ?? raw['price'] ?? 0).toDouble()
-        : (raw['selling_price'] ?? raw['price'] ?? 0.0) as double,
-    'category': raw['category_name'] as String? ?? raw['category'] as String? ?? 'Khác',
+    'price': double.tryParse(raw['selling_price']?.toString() ?? raw['price']?.toString() ?? '') ?? 0.0,
+    'category': catName,
   };
 }
-
-// ─── Mock fallback (hiển thị khi cache trống) ─────────────────────────────────
-
-final _mockProducts = [
-  {'id': 'p-1', 'name': 'Sting Dâu Đỏ', 'price': 15000.0, 'category': 'Đồ uống'},
-  {'id': 'p-2', 'name': 'Nước Lọc Aquafina', 'price': 10000.0, 'category': 'Đồ uống'},
-  {'id': 'p-3', 'name': 'Bia Tiger', 'price': 30000.0, 'category': 'Đồ uống'},
-  {'id': 'p-4', 'name': 'Red Bull', 'price': 25000.0, 'category': 'Đồ uống'},
-  {'id': 'p-5', 'name': 'Trà Xanh 0°', 'price': 12000.0, 'category': 'Đồ uống'},
-  {'id': 'p-6', 'name': 'Mì Xào Bò', 'price': 35000.0, 'category': 'Đồ ăn'},
-  {'id': 'p-7', 'name': 'Bánh Mì Kẹp Thịt', 'price': 25000.0, 'category': 'Đồ ăn'},
-  {'id': 'p-8', 'name': 'Snack Bim Bim', 'price': 10000.0, 'category': 'Đồ ăn'},
-  {'id': 'p-9', 'name': 'Thuốc Lá Marlboro', 'price': 28000.0, 'category': 'Thuốc lá'},
-  {'id': 'p-10', 'name': 'Thuốc Lá Du Lịch', 'price': 22000.0, 'category': 'Thuốc lá'},
-  {'id': 'p-11', 'name': 'Găng tay bi-a', 'price': 50000.0, 'category': 'Khác'},
-  {'id': 'p-12', 'name': 'Cơm hộp', 'price': 40000.0, 'category': 'Đồ ăn'},
-];
 
 // ─── Widget ───────────────────────────────────────────────────────────────────
 
@@ -95,6 +80,7 @@ class _AddProductPanelState extends ConsumerState<AddProductPanel> {
   final _searchCtrl = TextEditingController();
 
   List<Map<String, dynamic>> _products = [];
+  List<String> _categoryNames = [];
   bool _isLoading = true;
 
   @override
@@ -114,30 +100,44 @@ class _AddProductPanelState extends ConsumerState<AddProductPanel> {
     setState(() => _isLoading = true);
     try {
       final localDb = ref.read(localDbServiceProvider);
-      if (localDb != null) {
-        final cached = await localDb.getCachedProducts();
-        if (cached.isNotEmpty) {
-          final mapped = cached.map(_mapProductFields).toList();
-          if (mounted) {
-            setState(() {
-              _products = mapped;
-              _isLoading = false;
-            });
-            return;
-          }
-        }
+      final cachedCats = await localDb.getCachedProductCategories();
+      final cached = await localDb.getCachedProducts();
+      
+      final catMap = {
+        for (final c in cachedCats)
+          c['id']?.toString() ?? '': c['category_name'] as String? ?? 'Khác'
+      };
+
+      final mapped = cached.map((p) => _mapProductFields(p, catMap)).toList();
+      final categoryNames = cachedCats
+          .map((c) => c['category_name'] as String? ?? 'Khác')
+          .where((name) => name.isNotEmpty)
+          .toSet()
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _products = mapped;
+          _categoryNames = categoryNames;
+          _isLoading = false;
+        });
       }
-    } catch (_) {}
-    // Fallback sang mock data
-    if (mounted) {
-      setState(() {
-        _products = List<Map<String, dynamic>>.from(_mockProducts);
-        _isLoading = false;
-      });
+    } catch (e, stack) {
+      debugPrint('Error loading products from local DB: $e\n$stack');
+      if (mounted) {
+        setState(() {
+          _products = [];
+          _categoryNames = [];
+          _isLoading = false;
+        });
+      }
     }
   }
 
   List<String> get _categories {
+    if (_categoryNames.isNotEmpty) {
+      return ['Tất cả', ..._categoryNames];
+    }
     final cats = _products.map((p) => p['category'] as String).toSet().toList()
       ..sort();
     return ['Tất cả', ...cats];

@@ -321,7 +321,9 @@ class _MemberReportTab extends StatelessWidget {
                     leading: CircleAvatar(
                       backgroundColor: AppColors.primarySurface,
                       child: Text(
-                          (m['name'] as String)[0],
+                          (m['name'] as String).trim().isNotEmpty
+                              ? (m['name'] as String).trim()[0].toUpperCase()
+                              : '?',
                           style: const TextStyle(
                               color: AppColors.primary,
                               fontWeight: FontWeight.w700)),

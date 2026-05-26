@@ -163,7 +163,9 @@ class _MemberLookupDialogState extends ConsumerState<MemberLookupDialog> {
                           backgroundColor: AppColors.primary,
                           radius: 20,
                           child: Text(
-                            (_foundMember!['full_name'] as String)[0],
+                            (_foundMember!['full_name'] as String).trim().isNotEmpty
+                                ? (_foundMember!['full_name'] as String).trim()[0].toUpperCase()
+                                : '?',
                             style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w700),

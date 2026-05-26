@@ -236,6 +236,20 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                             ),
                             itemBuilder: (context, index) {
                               final table = filteredTables[index];
+                              final typeModel = tablesState.tableTypes.firstWhere(
+                                (t) => t.id == table.tableTypeId,
+                                orElse: () => TableTypeModel(
+                                  id: table.tableTypeId,
+                                  typeName: switch (table.tableTypeId) {
+                                    1 => 'Pool (Bàn lỗ)',
+                                    2 => 'Carom (Băng)',
+                                    3 => 'Snooker',
+                                    _ => 'Bàn Bida',
+                                  },
+                                ),
+                              );
+                              final typeLabel = typeModel.typeName;
+
                               return _TableCard(
                                 table: table,
                                 isSelected: table.id == tablesState.selectedTableId,
@@ -248,6 +262,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                                     .read(tablesProvider.notifier)
                                     .setTableMaintenance(
                                         table.id, table.status != 'maintenance'),
+                                typeLabel: typeLabel,
                               );
                             },
                           ),
@@ -418,6 +433,7 @@ class _TableCard extends StatelessWidget {
   final VoidCallback onSelect;
   final VoidCallback onTogglePower;
   final VoidCallback onMaintenance;
+  final String typeLabel;
 
   const _TableCard({
     required this.table,
@@ -427,6 +443,7 @@ class _TableCard extends StatelessWidget {
     required this.onSelect,
     required this.onTogglePower,
     required this.onMaintenance,
+    required this.typeLabel,
   });
 
   @override
@@ -463,7 +480,6 @@ class _TableCard extends StatelessWidget {
         '${(playDuration.inSeconds % 60).toString().padLeft(2, '0')}';
 
     final costStr = _formatCurrency(playCost);
-    final typeLabel = _tableTypeLabel(table.tableTypeId);
 
     return GestureDetector(
       onTap: onSelect,
@@ -593,15 +609,6 @@ class _TableCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _tableTypeLabel(int typeId) {
-    return switch (typeId) {
-      1 => 'Pool (Bàn lỗ)',
-      2 => 'Carom (Băng)',
-      3 => 'Snooker',
-      _ => 'Bàn Bida',
-    };
   }
 
   String _statusLabel(String status) {
