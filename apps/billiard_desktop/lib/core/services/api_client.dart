@@ -142,12 +142,12 @@ class ApiClient {
   /// Mở hóa đơn mới khi bật bàn. Trả về toàn bộ response (có data.order.id).
   Future<Map<String, dynamic>> openOrder({
     required String tableId,
-    required String shiftId,
+    String? shiftId,
     String? memberId,
   }) async {
     final res = await _dio.post(EnvConfig.orderOpen, data: {
       'table_id': tableId,
-      'shift_id': shiftId,
+      if (shiftId != null && shiftId.isNotEmpty) 'shift_id': shiftId,
       if (memberId != null && memberId.isNotEmpty) 'member_id': memberId,
     });
     return res.data as Map<String, dynamic>;
@@ -185,6 +185,15 @@ class ApiClient {
   Future<Map<String, dynamic>> closeOrder(
       String orderId, Map<String, dynamic> body) async {
     final res = await _dio.post(EnvConfig.orderCheckout, data: body);
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> stopPlayOrder({
+    required String orderId,
+  }) async {
+    final res = await _dio.post(EnvConfig.orderStopPlay, data: {
+      'order_id': orderId,
+    });
     return res.data as Map<String, dynamic>;
   }
 

@@ -655,7 +655,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
 
     // 1. Tạo order trên backend (nếu online)
     String serverOrderId = 'ord-${DateTime.now().millisecondsSinceEpoch}';
-    if (_apiClient != null && shiftId != null && shiftId.isNotEmpty) {
+    if (_apiClient != null) {
       try {
         final res = await _apiClient!.openOrder(
           tableId: tableId,
@@ -773,6 +773,15 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final member = state.tableMembers[tableId];
     final orderId =
         table.currentOrderId ?? 'ord-${DateTime.now().millisecondsSinceEpoch}';
+
+    // Đồng bộ lên backend khi tắt bàn (nếu online và không phải order offline cục bộ)
+    if (_apiClient != null && orderId.isNotEmpty && !orderId.startsWith('ord-')) {
+      try {
+        await _apiClient!.stopPlayOrder(orderId: orderId);
+      } catch (e) {
+        print('Lỗi đồng bộ tắt bàn chơi lên backend: $e');
+      }
+    }
 
     final unpaidInvoice = UnpaidInvoice(
       id: orderId,
