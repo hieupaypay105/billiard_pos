@@ -774,12 +774,12 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final orderId =
         table.currentOrderId ?? 'ord-${DateTime.now().millisecondsSinceEpoch}';
 
-    // Đồng bộ lên backend khi tắt bàn (nếu online và không phải order offline cục bộ)
-    if (_apiClient != null && orderId.isNotEmpty && !orderId.startsWith('ord-')) {
+    // Cập nhật tình trạng bàn về idle trên backend khi tắt bàn
+    if (_apiClient != null) {
       try {
-        await _apiClient!.stopPlayOrder(orderId: orderId);
+        await _apiClient!.updateTableStatus(tableId, 'idle');
       } catch (e) {
-        print('Lỗi đồng bộ tắt bàn chơi lên backend: $e');
+        print('Lỗi cập nhật trạng thái bàn về idle trên backend: $e');
       }
     }
 
@@ -826,6 +826,60 @@ class TablesNotifier extends StateNotifier<TablesState> {
       selectedUnpaidInvoiceId: unpaidInvoice.id,
       selectedTableId: null,
     );
+
+    if (_localDb != null) {
+      try {
+        final productTotal = products.fold(0.0, (sum, p) => sum + (double.tryParse(p['price']?.toString() ?? '') ?? 0.0) * (int.tryParse(p['qty']?.toString() ?? '') ?? 1));
+        final orderModel = OrderModel(
+          id: orderId,
+          tableId: tableId,
+          memberId: member?['id']?.toString(),
+          shiftId: 'shift-default',
+          status: 'active',
+          startTime: startTime,
+          endTime: endTime,
+          totalPlayTimeMinutes: playMinutes,
+          totalPlayTimeAmount: playAmount,
+          totalProductAmount: productTotal,
+          discountAmount: discount,
+          taxAmount: 0.0,
+          totalAmount: playAmount + productTotal - discount,
+          paymentMethod: null,
+          createdBy: 'system',
+          closedBy: null,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+
+        final details = <OrderDetailModel>[];
+        for (int i = 0; i < products.length; i++) {
+          final p = products[i];
+          final pid = p['product_id']?.toString() ?? '';
+          final qty = int.tryParse(p['qty']?.toString() ?? '') ?? 1;
+          final price = double.tryParse(p['price']?.toString() ?? '') ?? 0.0;
+          details.add(OrderDetailModel(
+            id: 'det-${DateTime.now().millisecondsSinceEpoch}-$pid-$i',
+            orderId: orderId,
+            productId: pid,
+            quantity: qty,
+            unitPrice: price,
+            totalPrice: price * qty,
+            addedBy: 'system',
+            createdAt: DateTime.now(),
+          ));
+        }
+
+        final payload = {
+          'order': orderModel.toJson(),
+          'details': details.map((d) => d.toJson()).toList(),
+          if (member != null) 'member': member,
+        };
+
+        await _localDb!.saveOrderLocally(orderId, payload);
+      } catch (e) {
+        print('Lỗi lưu order tắt bàn vào pending_orders: $e');
+      }
+    }
 
     await _saveSessionState();
     return true;
@@ -990,6 +1044,17 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tableMembers: updatedMembers,
     );
 
+    final orderId = sourceTable.currentOrderId;
+    if (_apiClient != null && orderId != null && !orderId.startsWith('ord-')) {
+      try {
+        await _apiClient!.updateOrder(orderId, {'table_id': targetTableId});
+        await _apiClient!.updateTableStatus(sourceTableId, 'idle');
+        await _apiClient!.updateTableStatus(targetTableId, 'active');
+      } catch (e) {
+        print('Lỗi đồng bộ chuyển bàn lên backend: $e');
+      }
+    }
+
     await _saveSessionState();
     return true;
   }
@@ -1070,6 +1135,16 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tableDiscounts: updatedDiscounts,
       tableMembers: updatedMembers,
     );
+
+    final sourceOrderId = sourceTable.currentOrderId;
+    if (_apiClient != null && sourceOrderId != null && !sourceOrderId.startsWith('ord-')) {
+      try {
+        await _apiClient!.voidOrder(sourceOrderId, 'Gộp bàn vào ${targetTable.tableName}');
+        await _apiClient!.updateTableStatus(sourceTableId, 'idle');
+      } catch (e) {
+        print('Lỗi đồng bộ gộp bàn lên backend: $e');
+      }
+    }
 
     await _saveSessionState();
     return true;
@@ -1157,6 +1232,15 @@ class TablesNotifier extends StateNotifier<TablesState> {
       selectedTableId: targetTableId,
     );
 
+    if (_apiClient != null && !invoiceId.startsWith('ord-')) {
+      try {
+        await _apiClient!.updateOrder(invoiceId, {'table_id': targetTableId, 'status': 'active'});
+        await _apiClient!.updateTableStatus(targetTableId, 'active');
+      } catch (e) {
+        print('Lỗi đồng bộ chuyển hóa đơn chờ lên backend: $e');
+      }
+    }
+
     await _saveSessionState();
     return true;
   }
@@ -1217,6 +1301,14 @@ class TablesNotifier extends StateNotifier<TablesState> {
       selectedUnpaidInvoiceId: null,
       selectedTableId: targetTableId,
     );
+
+    if (_apiClient != null && !invoiceId.startsWith('ord-')) {
+      try {
+        await _apiClient!.voidOrder(invoiceId, 'Gộp hóa đơn chờ vào ${targetTable.tableName}');
+      } catch (e) {
+        print('Lỗi đồng bộ gộp hóa đơn chờ lên backend: $e');
+      }
+    }
 
     await _saveSessionState();
     return true;

@@ -5,6 +5,7 @@ import '../../core/constants/app_text_styles.dart';
 import '../../core/providers/providers.dart';
 import '../tables/tables_provider.dart';
 import '../sync/sync_provider.dart';
+import '../../core/utils/string_utils.dart';
 
 // ─── Emoji mapping helpers ─────────────────────────────────────────────────────
 
@@ -61,6 +62,7 @@ Map<String, dynamic> _mapProductFields(Map<String, dynamic> raw, [Map<String, St
     'name': raw['product_name'] as String? ?? raw['name'] as String? ?? '—',
     'price': double.tryParse(raw['selling_price']?.toString() ?? raw['price']?.toString() ?? '') ?? 0.0,
     'category': catName,
+    'barcode': raw['barcode']?.toString() ?? '',
   };
 }
 
@@ -144,14 +146,22 @@ class _AddProductPanelState extends ConsumerState<AddProductPanel> {
   }
 
   List<Map<String, dynamic>> get _filteredProducts {
+    final normalizedQuery = removeDiacritics(_searchQuery).toLowerCase();
     return _products.where((p) {
       final matchCategory =
           _selectedCategory == 'Tất cả' || p['category'] == _selectedCategory;
-      final matchSearch = _searchQuery.isEmpty ||
-          (p['name'] as String)
-              .toLowerCase()
-              .contains(_searchQuery.toLowerCase());
-      return matchCategory && matchSearch;
+      if (!matchCategory) return false;
+
+      if (_searchQuery.isEmpty) return true;
+
+      final name = p['name'] as String? ?? '';
+      final barcode = p['barcode'] as String? ?? '';
+
+      final normalizedName = removeDiacritics(name).toLowerCase();
+      final normalizedBarcode = removeDiacritics(barcode).toLowerCase();
+
+      return normalizedName.contains(normalizedQuery) ||
+             normalizedBarcode.contains(normalizedQuery);
     }).toList();
   }
 

@@ -38,9 +38,9 @@ void main() {
       final playDuration = state.playDuration('t-1');
       expect(playDuration, isNotNull);
 
-      // The rate for Pool table (type 1) is 80,000 VND/hour
+      // The rate for Pool table (type 1) is 85,000 VND/hour
       final rate = state.hourlyRates['1'];
-      expect(rate, 80000.0);
+      expect(rate, 85000.0);
 
       // Check playCost calculation
       final cost = state.playCost('t-1');

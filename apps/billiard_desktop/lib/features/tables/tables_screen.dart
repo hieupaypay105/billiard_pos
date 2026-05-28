@@ -5,6 +5,7 @@ import 'package:core_shared/core_shared.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import 'tables_provider.dart';
+import '../../core/utils/string_utils.dart';
 import '../billing/member_lookup.dart';
 import '../billing/discount_panel.dart';
 import '../billing/invoice_dialog.dart';
@@ -76,6 +77,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
           'name': p['product_name'] as String? ?? p['name'] as String? ?? '—',
           'price': double.tryParse(p['selling_price']?.toString() ?? p['price']?.toString() ?? '') ?? 0.0,
           'category': catName,
+          'barcode': p['barcode']?.toString() ?? '',
         };
       }).toList();
 
@@ -98,9 +100,16 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
       return;
     }
 
-    final lowercaseQuery = query.toLowerCase();
+    final normalizedQuery = removeDiacritics(query).toLowerCase();
     final matches = _allProducts.where((p) {
-      return (p['name'] as String).toLowerCase().contains(lowercaseQuery);
+      final name = p['name'] as String? ?? '';
+      final barcode = p['barcode'] as String? ?? '';
+      
+      final normalizedName = removeDiacritics(name).toLowerCase();
+      final normalizedBarcode = removeDiacritics(barcode).toLowerCase();
+
+      return normalizedName.contains(normalizedQuery) ||
+             normalizedBarcode.contains(normalizedQuery);
     }).toList();
 
     setState(() {
@@ -523,14 +532,31 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                                           ),
                                           const SizedBox(width: 12),
                                           Expanded(
-                                            child: Text(
-                                              product['name'] as String,
-                                              style: TextStyle(
-                                                fontFamily: 'Inter',
-                                                fontSize: 14,
-                                                fontWeight: isHighlighted ? FontWeight.w600 : FontWeight.w400,
-                                                color: isHighlighted ? AppColors.primary : AppColors.textPrimary,
-                                              ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  product['name'] as String,
+                                                  style: TextStyle(
+                                                    fontFamily: 'Inter',
+                                                    fontSize: 14,
+                                                    fontWeight: isHighlighted ? FontWeight.w600 : FontWeight.w400,
+                                                    color: isHighlighted ? AppColors.primary : AppColors.textPrimary,
+                                                  ),
+                                                ),
+                                                if (product['barcode'] != null && (product['barcode'] as String).isNotEmpty) ...[
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    'Mã: ${product['barcode']}',
+                                                    style: TextStyle(
+                                                      fontFamily: 'Inter',
+                                                      fontSize: 11,
+                                                      color: isHighlighted ? AppColors.primary.withOpacity(0.8) : AppColors.textSecondary,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
                                             ),
                                           ),
                                           Text(
@@ -1641,81 +1667,76 @@ class _InvoicePanel extends ConsumerWidget {
         member: member,
         onConfirm: (paymentMethod) async {
           final serverOrderId = ref.read(tablesProvider).tableServerOrderIds[table.id];
-          final apiClient = ref.read(apiClientProvider);
-          bool onlineCheckedOut = false;
+          final orderId = table.currentOrderId ?? 'ord-${DateTime.now().millisecondsSinceEpoch}';
+          final currentUser = ref.read(currentUserProvider);
+          final currentUserId = currentUser?.id ?? 'system';
 
-          if (serverOrderId != null && serverOrderId.isNotEmpty) {
+          final orderModel = OrderModel(
+            id: orderId,
+            tableId: table.id,
+            memberId: member?['id']?.toString(),
+            shiftId: 'shift-default',
+            status: 'paid',
+            startTime: startTime,
+            endTime: endTime,
+            totalPlayTimeMinutes: playMinutes,
+            totalPlayTimeAmount: finalPlayAmount,
+            totalProductAmount: finalProductTotal,
+            discountAmount: finalDiscountAmount,
+            taxAmount: 0.0,
+            totalAmount: finalNetTotal,
+            paymentMethod: paymentMethod,
+            createdBy: currentUserId,
+            closedBy: currentUserId,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          );
+
+          final details = <OrderDetailModel>[];
+          for (int i = 0; i < products.length; i++) {
+            final p = products[i];
+            final pid = p['product_id']?.toString() ?? '';
+            final qty = int.tryParse(p['qty']?.toString() ?? '') ?? 1;
+            final price = double.tryParse(p['price']?.toString() ?? '') ?? 0.0;
+            details.add(OrderDetailModel(
+              id: 'det-${DateTime.now().millisecondsSinceEpoch}-$pid-$i',
+              orderId: orderId,
+              productId: pid,
+              quantity: qty,
+              unitPrice: price,
+              totalPrice: price * qty,
+              addedBy: currentUserId,
+              createdAt: DateTime.now(),
+            ));
+          }
+
+          final payload = {
+            'order': orderModel.toJson(),
+            'details': details.map((d) => d.toJson()).toList(),
+            if (member != null) 'member': member,
+          };
+
+          final localDb = ref.read(localDbServiceProvider);
+          final syncService = ref.read(syncServiceProvider);
+          final apiClient = ref.read(apiClientProvider);
+
+          try {
+            await localDb.saveOrderLocally(orderId, payload);
+            await syncService.syncNow();
+          } catch (e) {
+            print('Lỗi lưu local/đồng bộ hóa đơn trước checkout: $e');
+          }
+
+          if (serverOrderId != null && serverOrderId.isNotEmpty && !serverOrderId.startsWith('ord-')) {
             try {
-              final res = await apiClient.checkoutOrder(
+              await apiClient.checkoutOrder(
                 orderId: serverOrderId,
                 paymentMethod: paymentMethod,
                 discountAmount: finalDiscountAmount,
               );
-              final status = res['status'];
-              if (status == 1 || status == '1') {
-                onlineCheckedOut = true;
-              }
             } catch (e) {
-              print('Lỗi checkout online: $e. Sẽ fallback sang offline.');
+              print('Lỗi gọi checkout online sau sync: $e');
             }
-          }
-
-          if (!onlineCheckedOut) {
-            final orderId = table.currentOrderId ?? 'ord-${DateTime.now().millisecondsSinceEpoch}';
-            
-            final currentUser = ref.read(currentUserProvider);
-            final currentUserId = currentUser?.id ?? 'system';
-
-            final orderModel = OrderModel(
-              id: orderId,
-              tableId: table.id,
-              memberId: member?['id']?.toString(),
-              shiftId: 'shift-default',
-              status: 'paid',
-              startTime: startTime,
-              endTime: endTime,
-              totalPlayTimeMinutes: playMinutes,
-              totalPlayTimeAmount: finalPlayAmount,
-              totalProductAmount: finalProductTotal,
-              discountAmount: finalDiscountAmount,
-              taxAmount: 0.0,
-              totalAmount: finalNetTotal,
-              paymentMethod: paymentMethod,
-              createdBy: currentUserId,
-              closedBy: currentUserId,
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-            );
-
-            final details = <OrderDetailModel>[];
-            for (int i = 0; i < products.length; i++) {
-              final p = products[i];
-              final pid = p['product_id']?.toString() ?? '';
-              final qty = int.tryParse(p['qty']?.toString() ?? '') ?? 1;
-              final price = double.tryParse(p['price']?.toString() ?? '') ?? 0.0;
-              details.add(OrderDetailModel(
-                id: 'det-${DateTime.now().millisecondsSinceEpoch}-$pid-$i',
-                orderId: orderId,
-                productId: pid,
-                quantity: qty,
-                unitPrice: price,
-                totalPrice: price * qty,
-                addedBy: currentUserId,
-                createdAt: DateTime.now(),
-              ));
-            }
-
-            final payload = {
-              'order': orderModel.toJson(),
-              'details': details.map((d) => d.toJson()).toList(),
-              if (member != null) 'member': member,
-            };
-
-            final localDb = ref.read(localDbServiceProvider);
-            final syncService = ref.read(syncServiceProvider);
-
-            await localDb.saveOrderLocally(orderId, payload);
-            await syncService.syncNow();
           }
 
           await ref.read(tablesProvider.notifier).deactivateTable(table.id);
@@ -2105,82 +2126,77 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
         paymentMethod: method,
         member: member,
         onConfirm: (paymentMethod) async {
-          final serverOrderId = invoice.id;
-          final apiClient = ref.read(apiClientProvider);
-          bool onlineCheckedOut = false;
+          final orderId = invoice.id;
+          final currentUser = ref.read(currentUserProvider);
+          final currentUserId = currentUser?.id ?? 'system';
 
-          // Chỉ checkout online nếu invoice.id không phải local ID (bắt đầu bằng ord-)
+          final orderModel = OrderModel(
+            id: orderId,
+            tableId: invoice.tableId,
+            memberId: member?['id']?.toString(),
+            shiftId: 'shift-default',
+            status: 'paid',
+            startTime: startTime,
+            endTime: endTime,
+            totalPlayTimeMinutes: playMinutes,
+            totalPlayTimeAmount: finalPlayAmount,
+            totalProductAmount: finalProductTotal,
+            discountAmount: finalDiscountAmount,
+            taxAmount: 0.0,
+            totalAmount: finalNetTotal,
+            paymentMethod: paymentMethod,
+            createdBy: currentUserId,
+            closedBy: currentUserId,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          );
+
+          final details = <OrderDetailModel>[];
+          for (int i = 0; i < products.length; i++) {
+            final p = products[i];
+            final pid = p['product_id']?.toString() ?? '';
+            final qty = int.tryParse(p['qty']?.toString() ?? '') ?? 1;
+            final price = double.tryParse(p['price']?.toString() ?? '') ?? 0.0;
+            details.add(OrderDetailModel(
+              id: 'det-${DateTime.now().millisecondsSinceEpoch}-$pid-$i',
+              orderId: orderId,
+              productId: pid,
+              quantity: qty,
+              unitPrice: price,
+              totalPrice: price * qty,
+              addedBy: currentUserId,
+              createdAt: DateTime.now(),
+            ));
+          }
+
+          final payload = {
+            'order': orderModel.toJson(),
+            'details': details.map((d) => d.toJson()).toList(),
+            if (member != null) 'member': member,
+          };
+
+          final localDb = ref.read(localDbServiceProvider);
+          final syncService = ref.read(syncServiceProvider);
+          final apiClient = ref.read(apiClientProvider);
+
+          try {
+            await localDb.saveOrderLocally(orderId, payload);
+            await syncService.syncNow();
+          } catch (e) {
+            print('Lỗi lưu local/đồng bộ hóa đơn trước checkout: $e');
+          }
+
+          final serverOrderId = invoice.id;
           if (serverOrderId.isNotEmpty && !serverOrderId.startsWith('ord-')) {
             try {
-              final res = await apiClient.checkoutOrder(
+              await apiClient.checkoutOrder(
                 orderId: serverOrderId,
                 paymentMethod: paymentMethod,
                 discountAmount: finalDiscountAmount,
               );
-              final status = res['status'];
-              if (status == 1 || status == '1') {
-                onlineCheckedOut = true;
-              }
             } catch (e) {
-              print('Lỗi checkout online cho unpaid invoice: $e. Sẽ fallback sang offline.');
+              print('Lỗi gọi checkout online unpaid invoice sau sync: $e');
             }
-          }
-
-          if (!onlineCheckedOut) {
-            final orderId = invoice.id;
-            final currentUser = ref.read(currentUserProvider);
-            final currentUserId = currentUser?.id ?? 'system';
-
-            final orderModel = OrderModel(
-              id: orderId,
-              tableId: invoice.tableId,
-              memberId: member?['id']?.toString(),
-              shiftId: 'shift-default',
-              status: 'paid',
-              startTime: startTime,
-              endTime: endTime,
-              totalPlayTimeMinutes: playMinutes,
-              totalPlayTimeAmount: finalPlayAmount,
-              totalProductAmount: finalProductTotal,
-              discountAmount: finalDiscountAmount,
-              taxAmount: 0.0,
-              totalAmount: finalNetTotal,
-              paymentMethod: paymentMethod,
-              createdBy: currentUserId,
-              closedBy: currentUserId,
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-            );
-
-            final details = <OrderDetailModel>[];
-            for (int i = 0; i < products.length; i++) {
-              final p = products[i];
-              final pid = p['product_id']?.toString() ?? '';
-              final qty = int.tryParse(p['qty']?.toString() ?? '') ?? 1;
-              final price = double.tryParse(p['price']?.toString() ?? '') ?? 0.0;
-              details.add(OrderDetailModel(
-                id: 'det-${DateTime.now().millisecondsSinceEpoch}-$pid-$i',
-                orderId: orderId,
-                productId: pid,
-                quantity: qty,
-                unitPrice: price,
-                totalPrice: price * qty,
-                addedBy: currentUserId,
-                createdAt: DateTime.now(),
-              ));
-            }
-
-            final payload = {
-              'order': orderModel.toJson(),
-              'details': details.map((d) => d.toJson()).toList(),
-              if (member != null) 'member': member,
-            };
-
-            final localDb = ref.read(localDbServiceProvider);
-            final syncService = ref.read(syncServiceProvider);
-
-            await localDb.saveOrderLocally(orderId, payload);
-            await syncService.syncNow();
           }
 
           ref.read(tablesProvider.notifier).completeUnpaidInvoicePayment(invoice.id);

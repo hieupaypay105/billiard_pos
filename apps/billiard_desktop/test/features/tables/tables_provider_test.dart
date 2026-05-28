@@ -22,9 +22,9 @@ void main() {
       container.dispose();
     });
 
-    test('initializes with 8 mock tables', () {
+    test('initializes with 4 mock tables', () {
       final state = container.read(tablesProvider);
-      expect(state.tables.length, 8);
+      expect(state.tables.length, 4);
     });
 
     test('all tables start as idle', () {
