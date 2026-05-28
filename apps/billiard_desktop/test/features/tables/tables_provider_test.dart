@@ -296,5 +296,109 @@ void main() {
       expect(mergedPlaytime['name'], 'Tiền giờ gộp từ Bàn 01 (Pool)');
       expect(mergedPlaytime['price'], greaterThan(0.0));
     });
+
+    test('deactivateTableAndFreezeInvoice freezes table session into unpaidInvoices', () async {
+      final notifier = container.read(tablesProvider.notifier);
+      await notifier.activateTable('t-1');
+      
+      notifier.addProductToTable('t-1', {
+        'product_id': 'p-1',
+        'name': 'Sting Dâu',
+        'price': 15000.0,
+        'qty': 2,
+      });
+      notifier.applyDiscount('t-1', 10.0);
+      notifier.applyMember('t-1', {
+        'id': 'm-1',
+        'full_name': 'Nguyễn Văn Hùng',
+        'discount': 5.0,
+      });
+
+      final success = await notifier.deactivateTableAndFreezeInvoice('t-1');
+      expect(success, isTrue);
+
+      final state = container.read(tablesProvider);
+      expect(state.tables.firstWhere((t) => t.id == 't-1').status, 'idle');
+      expect(state.unpaidInvoices.length, 1);
+      
+      final inv = state.unpaidInvoices.first;
+      expect(inv.tableId, 't-1');
+      expect(inv.products.length, 1);
+      expect(inv.products.first['product_id'], 'p-1');
+      expect(inv.manualDiscountPercent, 10.0);
+      expect(inv.member?['full_name'], 'Nguyễn Văn Hùng');
+    });
+
+    test('transferUnpaidInvoiceToTable reactivates idle table with unpaid invoice state', () async {
+      final notifier = container.read(tablesProvider.notifier);
+      
+      // Setup unpaid invoice
+      await notifier.activateTable('t-1');
+      notifier.addProductToTable('t-1', {
+        'product_id': 'p-1',
+        'name': 'Sting Dâu',
+        'price': 15000.0,
+        'qty': 2,
+      });
+      notifier.applyDiscount('t-1', 10.0);
+      await notifier.deactivateTableAndFreezeInvoice('t-1');
+
+      final stateBefore = container.read(tablesProvider);
+      expect(stateBefore.unpaidInvoices.length, 1);
+      final invoiceId = stateBefore.unpaidInvoices.first.id;
+
+      // Transfer unpaid invoice to t-2
+      final success = await notifier.transferUnpaidInvoiceToTable(invoiceId, 't-2');
+      expect(success, isTrue);
+
+      final stateAfter = container.read(tablesProvider);
+      expect(stateAfter.unpaidInvoices.isEmpty, isTrue);
+      expect(stateAfter.tables.firstWhere((t) => t.id == 't-2').status, 'active');
+      expect(stateAfter.tableOrders['t-2']!.length, 1);
+      expect(stateAfter.tableOrders['t-2']!.first['product_id'], 'p-1');
+      expect(stateAfter.tableDiscounts['t-2'], 10.0);
+    });
+
+    test('mergeUnpaidInvoiceToTable merges unpaid invoice orders into active table', () async {
+      final notifier = container.read(tablesProvider.notifier);
+      
+      // Setup unpaid invoice
+      await notifier.activateTable('t-1');
+      notifier.addProductToTable('t-1', {
+        'product_id': 'p-1',
+        'name': 'Sting Dâu',
+        'price': 15000.0,
+        'qty': 2,
+      });
+      await notifier.deactivateTableAndFreezeInvoice('t-1');
+
+      final stateBefore = container.read(tablesProvider);
+      expect(stateBefore.unpaidInvoices.length, 1);
+      final invoiceId = stateBefore.unpaidInvoices.first.id;
+
+      // Setup active target table t-2
+      await notifier.activateTable('t-2');
+      notifier.addProductToTable('t-2', {
+        'product_id': 'p-1',
+        'name': 'Sting Dâu',
+        'price': 15000.0,
+        'qty': 1,
+      });
+
+      // Merge unpaid invoice into t-2
+      final success = await notifier.mergeUnpaidInvoiceToTable(invoiceId, 't-2');
+      expect(success, isTrue);
+
+      final stateAfter = container.read(tablesProvider);
+      expect(stateAfter.unpaidInvoices.isEmpty, isTrue);
+      expect(stateAfter.tables.firstWhere((t) => t.id == 't-2').status, 'active');
+      
+      final targetOrders = stateAfter.tableOrders['t-2']!;
+      final stingDau = targetOrders.firstWhere((item) => item['product_id'] == 'p-1');
+      expect(stingDau['qty'], 3); // 2 from unpaid + 1 from active t-2
+      
+      final mergedPlaytime = targetOrders.firstWhere((item) => item['product_id'].toString().startsWith('merged-unpaid-playtime-'));
+      expect(mergedPlaytime['price'], greaterThan(0.0));
+    });
   });
 }

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/tables/tables_screen.dart';
-import '../../features/billing/billing_screen.dart';
 import '../../features/statistics/statistics_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/sync/sync_screen.dart';
@@ -46,27 +45,32 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.tables,
             pageBuilder: (ctx, state) => NoTransitionPage(
-                child: const TablesScreen(), key: state.pageKey),
+              child: const TablesScreen(),
+              key: state.pageKey,
+            ),
           ),
           GoRoute(
             path: AppRoutes.billing,
-            pageBuilder: (ctx, state) => NoTransitionPage(
-                child: const BillingScreen(), key: state.pageKey),
+            redirect: (ctx, state) => AppRoutes.tables,
           ),
           GoRoute(
             path: AppRoutes.statistics,
             pageBuilder: (ctx, state) => NoTransitionPage(
-                child: const StatisticsScreen(), key: state.pageKey),
+              child: const StatisticsScreen(),
+              key: state.pageKey,
+            ),
           ),
           GoRoute(
             path: AppRoutes.reports,
             pageBuilder: (ctx, state) => NoTransitionPage(
-                child: const ReportsScreen(), key: state.pageKey),
+              child: const ReportsScreen(),
+              key: state.pageKey,
+            ),
           ),
           GoRoute(
             path: AppRoutes.sync,
-            pageBuilder: (ctx, state) => NoTransitionPage(
-                child: const SyncScreen(), key: state.pageKey),
+            pageBuilder: (ctx, state) =>
+                NoTransitionPage(child: const SyncScreen(), key: state.pageKey),
           ),
         ],
       ),

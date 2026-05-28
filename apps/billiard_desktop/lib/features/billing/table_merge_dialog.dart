@@ -5,17 +5,27 @@ import '../../core/constants/app_text_styles.dart';
 import '../tables/tables_provider.dart';
 
 class TableMergeDialog extends ConsumerWidget {
-  final String sourceTableId;
-  const TableMergeDialog({super.key, required this.sourceTableId});
+  final String? sourceTableId;
+  final String? sourceInvoiceId;
+  const TableMergeDialog({
+    super.key,
+    this.sourceTableId,
+    this.sourceInvoiceId,
+  }) : assert(sourceTableId != null || sourceInvoiceId != null);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tablesState = ref.watch(tablesProvider);
     final activeTables = tablesState.tables
-        .where((t) => t.status == 'active' && t.id != sourceTableId)
+        .where((t) => t.status == 'active' && (sourceTableId == null || t.id != sourceTableId))
         .toList();
-    final sourceTable =
-        tablesState.tables.firstWhere((t) => t.id == sourceTableId);
+    final String sourceName = sourceInvoiceId != null
+        ? (tablesState.unpaidInvoices.any((inv) => inv.id == sourceInvoiceId)
+            ? tablesState.unpaidInvoices.firstWhere((inv) => inv.id == sourceInvoiceId).tableName
+            : 'Hóa đơn chờ')
+        : (tablesState.tables.any((t) => t.id == sourceTableId)
+            ? tablesState.tables.firstWhere((t) => t.id == sourceTableId).tableName
+            : 'Bàn');
 
     return Dialog(
       backgroundColor: Colors.white,
@@ -38,7 +48,7 @@ class TableMergeDialog extends ConsumerWidget {
               ]),
               const SizedBox(height: 8),
               Text(
-                'Gộp hóa đơn của ${sourceTable.tableName} sang bàn khác đang hoạt động.',
+                'Gộp hóa đơn của $sourceName sang bàn khác đang hoạt động.',
                 style: AppTextStyles.bodySmall,
               ),
               const SizedBox(height: 20),
@@ -68,15 +78,19 @@ class TableMergeDialog extends ConsumerWidget {
                           style: AppTextStyles.labelSmall),
                       trailing: ElevatedButton(
                         onPressed: () async {
-                          final success = await ref
-                              .read(tablesProvider.notifier)
-                              .mergeTable(sourceTableId, t.id);
+                          final success = sourceInvoiceId != null
+                              ? await ref
+                                  .read(tablesProvider.notifier)
+                                  .mergeUnpaidInvoiceToTable(sourceInvoiceId!, t.id)
+                              : await ref
+                                  .read(tablesProvider.notifier)
+                                  .mergeTable(sourceTableId!, t.id);
                           if (success) {
                             if (context.mounted) {
                               Navigator.of(context).pop();
                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                                 content: Text(
-                                    'Đã gộp ${sourceTable.tableName} → ${t.tableName}'),
+                                    'Đã gộp $sourceName → ${t.tableName}'),
                                 backgroundColor: AppColors.success,
                                 behavior: SnackBarBehavior.floating,
                               ));
@@ -117,17 +131,27 @@ class TableMergeDialog extends ConsumerWidget {
 }
 
 class TableTransferDialog extends ConsumerWidget {
-  final String sourceTableId;
-  const TableTransferDialog({super.key, required this.sourceTableId});
+  final String? sourceTableId;
+  final String? sourceInvoiceId;
+  const TableTransferDialog({
+    super.key,
+    this.sourceTableId,
+    this.sourceInvoiceId,
+  }) : assert(sourceTableId != null || sourceInvoiceId != null);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tablesState = ref.watch(tablesProvider);
     final idleTables = tablesState.tables
-        .where((t) => t.status == 'idle' && t.id != sourceTableId)
+        .where((t) => t.status == 'idle' && (sourceTableId == null || t.id != sourceTableId))
         .toList();
-    final sourceTable =
-        tablesState.tables.firstWhere((t) => t.id == sourceTableId);
+    final String sourceName = sourceInvoiceId != null
+        ? (tablesState.unpaidInvoices.any((inv) => inv.id == sourceInvoiceId)
+            ? tablesState.unpaidInvoices.firstWhere((inv) => inv.id == sourceInvoiceId).tableName
+            : 'Hóa đơn chờ')
+        : (tablesState.tables.any((t) => t.id == sourceTableId)
+            ? tablesState.tables.firstWhere((t) => t.id == sourceTableId).tableName
+            : 'Bàn');
 
     return Dialog(
       backgroundColor: Colors.white,
@@ -150,7 +174,7 @@ class TableTransferDialog extends ConsumerWidget {
               ]),
               const SizedBox(height: 8),
               Text(
-                'Chuyển khách từ ${sourceTable.tableName} sang bàn trống khác.',
+                'Chuyển khách từ $sourceName sang bàn trống khác.',
                 style: AppTextStyles.bodySmall,
               ),
               const SizedBox(height: 20),
@@ -178,21 +202,63 @@ class TableTransferDialog extends ConsumerWidget {
                           .copyWith(color: AppColors.success)),
                       trailing: ElevatedButton(
                         onPressed: () async {
-                          final success = await ref
-                              .read(tablesProvider.notifier)
-                              .transferTable(sourceTableId, t.id);
+                          final notifier = ref.read(tablesProvider.notifier);
+                          final success = sourceInvoiceId != null
+                              ? await notifier.transferUnpaidInvoiceToTable(sourceInvoiceId!, t.id)
+                              : await notifier.transferTable(sourceTableId!, t.id);
                           if (success) {
                             if (context.mounted) {
                               Navigator.of(context).pop();
                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                                 content: Text(
-                                    'Đã chuyển ${sourceTable.tableName} → ${t.tableName}'),
+                                    'Đã chuyển $sourceName → ${t.tableName}'),
                                 backgroundColor: AppColors.info,
                                 behavior: SnackBarBehavior.floating,
                               ));
                             }
                           } else {
                             if (context.mounted) {
+                              if (sourceInvoiceId != null) {
+                                final force = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Row(
+                                      children: [
+                                        Icon(Icons.warning_amber_rounded, color: AppColors.error),
+                                        SizedBox(width: 8),
+                                        Text('Lỗi kết nối IoT'),
+                                      ],
+                                    ),
+                                    content: const Text(
+                                      'Không thể kết nối đến Relay IoT cho bàn trống này.\n'
+                                      'Bạn có muốn bật bàn thủ công (không sử dụng IoT rơ-le) để tiếp tục chuyển hóa đơn không?'
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(false),
+                                        child: const Text('Hủy', style: TextStyle(color: AppColors.textSecondary)),
+                                      ),
+                                      ElevatedButton(
+                                        onPressed: () => Navigator.of(context).pop(true),
+                                        style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+                                        child: const Text('Bật thủ công'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (force == true && context.mounted) {
+                                  final forceOk = await notifier.transferUnpaidInvoiceToTable(sourceInvoiceId!, t.id, ignoreIotError: true);
+                                  if (forceOk && context.mounted) {
+                                    Navigator.of(context).pop();
+                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                      content: Text('Đã chuyển $sourceName → ${t.tableName} thủ công'),
+                                      backgroundColor: AppColors.success,
+                                      behavior: SnackBarBehavior.floating,
+                                    ));
+                                    return;
+                                  }
+                                }
+                              }
                               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                                 content: Text('Chuyển bàn thất bại!'),
                                 backgroundColor: AppColors.error,

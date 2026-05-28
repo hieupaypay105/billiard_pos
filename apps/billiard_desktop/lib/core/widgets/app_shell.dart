@@ -32,12 +32,6 @@ const _navItems = [
     label: 'Bàn',
   ),
   _NavItem(
-    route: AppRoutes.billing,
-    icon: Icons.receipt_long_outlined,
-    activeIcon: Icons.receipt_long_rounded,
-    label: 'Hóa đơn',
-  ),
-  _NavItem(
     route: AppRoutes.statistics,
     icon: Icons.bar_chart_outlined,
     activeIcon: Icons.bar_chart_rounded,
@@ -64,8 +58,9 @@ class AppShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).matchedLocation;
-    final currentIndex =
-        _navItems.indexWhere((n) => location.startsWith(n.route));
+    final currentIndex = _navItems.indexWhere(
+      (n) => location.startsWith(n.route),
+    );
     final activeIndex = currentIndex < 0 ? 0 : currentIndex;
     final user = ref.watch(currentUserProvider);
     final syncState = ref.watch(syncStateProvider);
@@ -99,7 +94,10 @@ class AppShell extends ConsumerWidget {
   }
 
   Widget _buildTopBar(
-      BuildContext context, WidgetRef ref, SyncState syncState) {
+    BuildContext context,
+    WidgetRef ref,
+    SyncState syncState,
+  ) {
     return Container(
       height: 56,
       decoration: const BoxDecoration(
@@ -109,15 +107,14 @@ class AppShell extends ConsumerWidget {
             color: Color(0x1A000000),
             blurRadius: 8,
             offset: Offset(0, 2),
-          )
+          ),
         ],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
           // Logo
-          const Icon(Icons.table_bar_rounded,
-              color: Colors.white, size: 26),
+          const Icon(Icons.table_bar_rounded, color: Colors.white, size: 26),
           const SizedBox(width: 10),
           const Text(
             'Billiard POS',
@@ -151,9 +148,7 @@ class AppShell extends ConsumerWidget {
   Widget _buildNavRail(BuildContext context, int activeIndex) {
     return Container(
       width: 80,
-      decoration: const BoxDecoration(
-        color: AppColors.navRailBg,
-      ),
+      decoration: const BoxDecoration(color: AppColors.navRailBg),
       child: Column(
         children: [
           const SizedBox(height: 12),
@@ -359,21 +354,22 @@ class _UserMenu extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(user.displayName,
-                  style: AppTextStyles.labelLarge),
-              Text(user.role,
-                  style: AppTextStyles.labelSmall),
+              Text(user.displayName, style: AppTextStyles.labelLarge),
+              Text(user.role, style: AppTextStyles.labelSmall),
             ],
           ),
         ),
         const PopupMenuDivider(),
         const PopupMenuItem(
-            value: 'logout',
-            child: Row(children: [
+          value: 'logout',
+          child: Row(
+            children: [
               Icon(Icons.logout, size: 16),
               SizedBox(width: 8),
               Text('Đăng xuất'),
-            ])),
+            ],
+          ),
+        ),
       ],
       onSelected: (val) async {
         if (val == 'logout') {
@@ -391,9 +387,10 @@ class _UserMenu extends ConsumerWidget {
                   ? user.displayName[0].toUpperCase()
                   : 'U',
               style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600),
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -421,8 +418,11 @@ class _UserMenu extends ConsumerWidget {
             ],
           ),
           const SizedBox(width: 4),
-          Icon(Icons.keyboard_arrow_down,
-              color: Colors.white.withOpacity(0.7), size: 18),
+          Icon(
+            Icons.keyboard_arrow_down,
+            color: Colors.white.withOpacity(0.7),
+            size: 18,
+          ),
         ],
       ),
     );

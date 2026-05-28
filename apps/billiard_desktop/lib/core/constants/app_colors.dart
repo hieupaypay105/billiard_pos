@@ -19,6 +19,7 @@ class AppColors {
   static const Color surface = Colors.white;
   static const Color surfaceVariant = Color(0xFFECEFF1);
   static const Color surfaceDark = Color(0xFF1E1E1E);
+  static const Color dialogBg = Color(0xFF1A3333);
 
   // --- Text ---
   static const Color textPrimary = Color(0xFF212121);

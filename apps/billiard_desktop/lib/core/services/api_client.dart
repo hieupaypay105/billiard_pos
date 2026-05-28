@@ -139,6 +139,21 @@ class ApiClient {
 
   // ─── Orders ──────────────────────────────────────────────────────────────────
 
+  /// Mở hóa đơn mới khi bật bàn. Trả về toàn bộ response (có data.order.id).
+  Future<Map<String, dynamic>> openOrder({
+    required String tableId,
+    required String shiftId,
+    String? memberId,
+  }) async {
+    final res = await _dio.post(EnvConfig.orderOpen, data: {
+      'table_id': tableId,
+      'shift_id': shiftId,
+      if (memberId != null && memberId.isNotEmpty) 'member_id': memberId,
+    });
+    return res.data as Map<String, dynamic>;
+  }
+
+  /// [Legacy] Tạo order với body tùy ý (dùng cho sync batch).
   Future<Map<String, dynamic>> createOrder(Map<String, dynamic> body) async {
     final res = await _dio.post(EnvConfig.orderOpen, data: body);
     return res.data as Map<String, dynamic>;
@@ -150,9 +165,36 @@ class ApiClient {
     return res.data as Map<String, dynamic>;
   }
 
+  /// Checkout hóa đơn trực tiếp (real-time). Trả về toàn bộ response.
+  Future<Map<String, dynamic>> checkoutOrder({
+    required String orderId,
+    required String paymentMethod,
+    double discountAmount = 0.0,
+    double taxPercentage = 0.0,
+  }) async {
+    final res = await _dio.post(EnvConfig.orderCheckout, data: {
+      'order_id': orderId,
+      'payment_method': paymentMethod,
+      'discount_amount': discountAmount,
+      'tax_percentage': taxPercentage,
+    });
+    return res.data as Map<String, dynamic>;
+  }
+
+  /// [Legacy] closeOrder dùng body tùy ý.
   Future<Map<String, dynamic>> closeOrder(
       String orderId, Map<String, dynamic> body) async {
     final res = await _dio.post(EnvConfig.orderCheckout, data: body);
+    return res.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> voidOrder(
+      String orderId, String reason) async {
+    final res = await _dio.post(EnvConfig.orderVoid, data: {
+      'order_id': orderId,
+      'reason': reason,
+      'cancelled_at': DateTime.now().toIso8601String(),
+    });
     return res.data as Map<String, dynamic>;
   }
 
@@ -173,12 +215,45 @@ class ApiClient {
 
   // ─── Order Details ────────────────────────────────────────────────────────────
 
+  /// Thêm sản phẩm vào order. Trả về detail data (có id là detailId server).
+  Future<Map<String, dynamic>> addProductToOrder({
+    required String orderId,
+    required String productId,
+    required int quantity,
+  }) async {
+    final res = await _dio.post(EnvConfig.orderAddDetail, data: {
+      'order_id': orderId,
+      'product_id': productId,
+      'quantity': quantity,
+    });
+    return res.data as Map<String, dynamic>;
+  }
+
+  /// Cập nhật số lượng sản phẩm trong order.
+  Future<Map<String, dynamic>> updateProductQty({
+    required String detailId,
+    required int quantity,
+  }) async {
+    final res = await _dio.post(EnvConfig.orderUpdateDetail, data: {
+      'detail_id': detailId,
+      'quantity': quantity,
+    });
+    return res.data as Map<String, dynamic>;
+  }
+
+  /// Xóa sản phẩm khỏi order.
+  Future<void> deleteProductFromOrder({required String detailId}) async {
+    await _dio.post(EnvConfig.orderDeleteDetail, data: {'detail_id': detailId});
+  }
+
+  /// [Legacy] addOrderDetail dùng body tùy ý.
   Future<Map<String, dynamic>> addOrderDetail(
       String orderId, Map<String, dynamic> body) async {
     final res = await _dio.post(EnvConfig.orderAddDetail, data: body);
     return res.data as Map<String, dynamic>;
   }
 
+  /// [Legacy] deleteOrderDetail dùng orderId + detailId.
   Future<void> deleteOrderDetail(String orderId, String detailId) async {
     await _dio.post(EnvConfig.orderDeleteDetail, data: {'detail_id': detailId});
   }
