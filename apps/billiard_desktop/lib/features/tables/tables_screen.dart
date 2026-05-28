@@ -12,8 +12,6 @@ import '../billing/table_merge_dialog.dart';
 import '../sync/sync_provider.dart';
 import '../../core/providers/providers.dart';
 import '../auth/auth_provider.dart';
-import 'shift_provider.dart';
-import '../../core/widgets/status_bar.dart';
 import 'package:flutter/services.dart';
 
 
@@ -566,20 +564,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
     final notifier = ref.read(tablesProvider.notifier);
 
     if (table.status == 'idle') {
-      // Bắt buộc mở ca làm việc
-      var currentShiftId = ref.read(currentShiftIdProvider);
-      if (currentShiftId == null) {
-        final success = await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => OpenShiftDialog(
-            userId: ref.read(currentUserProvider)?.id ?? 'cashier',
-          ),
-        );
-        if (success != true || !mounted) return;
-        currentShiftId = ref.read(currentShiftIdProvider);
-      }
-
       // Xác nhận trước khi bật bàn
       final confirmActivate = await showDialog<bool>(
         context: context,
@@ -611,7 +595,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
 
       if (confirmActivate != true || !mounted) return;
 
-      final ok = await notifier.activateTable(table.id, shiftId: currentShiftId);
+      final ok = await notifier.activateTable(table.id);
       if (!ok && mounted) {
         final forceActivate = await showDialog<bool>(
           context: context,
@@ -648,7 +632,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
         );
 
         if (forceActivate == true && mounted) {
-          final forceOk = await notifier.activateTable(table.id, ignoreIotError: true, shiftId: currentShiftId);
+          final forceOk = await notifier.activateTable(table.id, ignoreIotError: true);
           if (forceOk && mounted) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
               content: Text('Đã bật bàn thủ công thành công.'),
@@ -1629,20 +1613,6 @@ class _InvoicePanel extends ConsumerWidget {
     double rate,
     Map<String, dynamic>? member,
   ) async {
-    // 1. Kiểm tra ca làm việc
-    var activeShiftId = ref.read(currentShiftIdProvider);
-    if (activeShiftId == null) {
-      final success = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => OpenShiftDialog(
-          userId: ref.read(currentUserProvider)?.id ?? 'cashier',
-        ),
-      );
-      if (success != true || !context.mounted) return;
-      activeShiftId = ref.read(currentShiftIdProvider);
-    }
-
     final endTime = DateTime.now();
     final playMinutes = endTime.difference(startTime).inMinutes + 1;
     final finalPlayAmount = (playMinutes / 60.0) * rate;
@@ -1700,7 +1670,7 @@ class _InvoicePanel extends ConsumerWidget {
               id: orderId,
               tableId: table.id,
               memberId: member?['id']?.toString(),
-              shiftId: activeShiftId ?? 'shift-default',
+              shiftId: 'shift-default',
               status: 'paid',
               startTime: startTime,
               endTime: endTime,
@@ -2111,20 +2081,6 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
     double rate,
     Map<String, dynamic>? member,
   ) async {
-    // 1. Kiểm tra ca làm việc
-    var activeShiftId = ref.read(currentShiftIdProvider);
-    if (activeShiftId == null) {
-      final success = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => OpenShiftDialog(
-          userId: ref.read(currentUserProvider)?.id ?? 'cashier',
-        ),
-      );
-      if (success != true || !context.mounted) return;
-      activeShiftId = ref.read(currentShiftIdProvider);
-    }
-
     final playMinutes = invoice.playMinutes;
     final finalPlayAmount = playAmount;
     final finalProductTotal = productTotal;
@@ -2179,7 +2135,7 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
               id: orderId,
               tableId: invoice.tableId,
               memberId: member?['id']?.toString(),
-              shiftId: activeShiftId ?? 'shift-default',
+              shiftId: 'shift-default',
               status: 'paid',
               startTime: startTime,
               endTime: endTime,
