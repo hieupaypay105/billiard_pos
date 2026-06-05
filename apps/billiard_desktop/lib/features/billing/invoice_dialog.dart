@@ -16,8 +16,14 @@ class InvoiceDialog extends ConsumerStatefulWidget {
   final double discountAmount;
   final double netTotal;
   final Map<String, dynamic>? member;
-  final String? paymentMethod;
-  final Future<void> Function(String paymentMethod) onConfirm;
+  final String initialStatus;
+  final Future<void> Function({
+    required String status,
+    required String? paymentMethod,
+    required double discountAmount,
+    required double netTotal,
+    required String? note,
+  }) onConfirm;
 
   const InvoiceDialog({
     super.key,
@@ -33,7 +39,7 @@ class InvoiceDialog extends ConsumerStatefulWidget {
     required this.discountAmount,
     required this.netTotal,
     this.member,
-    this.paymentMethod,
+    required this.initialStatus,
     required this.onConfirm,
   });
 
@@ -42,13 +48,21 @@ class InvoiceDialog extends ConsumerStatefulWidget {
 }
 
 class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
-  String _selectedMethod = 'cash';
+  late String _selectedStatus;
+  final TextEditingController _reasonController = TextEditingController();
+  String? _reasonError;
   bool _isProcessing = false;
 
   @override
   void initState() {
     super.initState();
-    _selectedMethod = widget.paymentMethod ?? 'cash';
+    _selectedStatus = widget.initialStatus;
+  }
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
   }
 
   String _fmtCurrency(double v) {
@@ -68,6 +82,11 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final isUnpaid = _selectedStatus == 'unpaid';
+    final currentDiscountPercent = isUnpaid ? 100.0 : widget.discountPercent;
+    final currentDiscountAmount = isUnpaid ? widget.totalAmount : widget.discountAmount;
+    final currentNetTotal = isUnpaid ? 0.0 : widget.netTotal;
+
     return Dialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -224,7 +243,7 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                     ],
 
                     const Divider(height: 24),
-                    if (widget.discountPercent > 0) ...[
+                    if (currentDiscountPercent > 0) ...[
                       Row(children: [
                         const Text('Tạm tính', style: TextStyle(
                             fontFamily: 'Inter',
@@ -241,13 +260,13 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                       ]),
                       const SizedBox(height: 6),
                       Row(children: [
-                        Text('Chiết khấu (${widget.discountPercent.toInt()}%)', style: const TextStyle(
+                        Text('Chiết khấu (${currentDiscountPercent.toInt()}%)', style: const TextStyle(
                             fontFamily: 'Inter',
                             fontWeight: FontWeight.w500,
                             fontSize: 13,
                             color: AppColors.accent)),
                         const Spacer(),
-                        Text('-${_fmtCurrency(widget.discountAmount)}',
+                        Text('-${_fmtCurrency(currentDiscountAmount)}',
                             style: const TextStyle(
                                 fontFamily: 'Inter',
                                 fontWeight: FontWeight.w500,
@@ -264,32 +283,36 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                               fontWeight: FontWeight.w700,
                               fontSize: 14)),
                       const Spacer(),
-                      Text(_fmtCurrency(widget.netTotal),
+                      Text(_fmtCurrency(currentNetTotal),
                           style: AppTextStyles.currency),
                     ]),
 
                     const SizedBox(height: 20),
-                    // Payment method selector
-                    Text('Phương thức thanh toán:',
+                    // Payment selector
+                    Text('Trạng thái hóa đơn:',
                         style: AppTextStyles.titleMedium),
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        ('cash', 'Tiền mặt', Icons.money,
-                            AppColors.cash),
-                        ('card', 'Thẻ', Icons.credit_card,
-                            AppColors.card),
-                        ('transfer', 'QR/CK', Icons.qr_code,
-                            AppColors.transfer),
+                        ('paid', 'Thanh toán', Icons.check_circle_rounded,
+                            AppColors.primary),
+                        ('unpaid', 'Không thanh toán', Icons.money_off_rounded,
+                            AppColors.error),
                       ].map((m) {
                         final (val, label, icon, color) = m;
-                        final isSel = _selectedMethod == val;
+                        final isSel = _selectedStatus == val;
                         return Expanded(
                           child: Padding(
                             padding: const EdgeInsets.only(right: 6),
                             child: InkWell(
-                              onTap: () =>
-                                  setState(() => _selectedMethod = val),
+                              onTap: () {
+                                setState(() {
+                                  _selectedStatus = val;
+                                  if (val != 'unpaid') {
+                                    _reasonError = null;
+                                  }
+                                });
+                              },
                               borderRadius: BorderRadius.circular(10),
                               child: AnimatedContainer(
                                 duration:
@@ -335,6 +358,40 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                         );
                       }).toList(),
                     ),
+
+                    if (isUnpaid) ...[
+                      const SizedBox(height: 16),
+                      Text('Lý do không thanh toán:',
+                          style: AppTextStyles.titleMedium),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _reasonController,
+                        onChanged: (val) {
+                          if (val.trim().isNotEmpty && _reasonError != null) {
+                            setState(() {
+                              _reasonError = null;
+                            });
+                          }
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'Nhập lý do (khuyến mãi 100% hóa đơn)...',
+                          hintStyle: AppTextStyles.bodySmall,
+                          errorText: _reasonError,
+                          errorStyle: const TextStyle(
+                            fontFamily: 'Inter',
+                            color: AppColors.error,
+                            fontSize: 12,
+                          ),
+                          filled: true,
+                          fillColor: AppColors.surfaceVariant,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -369,10 +426,22 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                     onPressed: _isProcessing
                         ? null
                         : () async {
+                            if (_selectedStatus == 'unpaid' && _reasonController.text.trim().isEmpty) {
+                              setState(() {
+                                _reasonError = 'Vui lòng nhập lý do không thanh toán';
+                              });
+                              return;
+                            }
                             final navigator = Navigator.of(context);
                             setState(() => _isProcessing = true);
                             try {
-                              await widget.onConfirm(_selectedMethod);
+                              await widget.onConfirm(
+                                status: _selectedStatus,
+                                paymentMethod: _selectedStatus == 'unpaid' ? null : 'cash',
+                                discountAmount: currentDiscountAmount,
+                                netTotal: currentNetTotal,
+                                note: _selectedStatus == 'unpaid' ? _reasonController.text.trim() : null,
+                              );
                             } finally {
                               if (mounted) {
                                 setState(() => _isProcessing = false);

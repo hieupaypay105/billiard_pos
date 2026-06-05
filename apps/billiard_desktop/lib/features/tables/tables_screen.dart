@@ -1555,13 +1555,13 @@ class _InvoicePanel extends ConsumerWidget {
                     child: Row(
                       children: [
                         _PayButton(
-                          label: 'Tiền mặt',
-                          icon: Icons.money,
-                          color: AppColors.cash,
+                          label: 'Thanh toán',
+                          icon: Icons.payment_rounded,
+                          color: AppColors.primary,
                           onTap: () => _checkout(
                             context,
                             ref,
-                            'cash',
+                            'paid',
                             playAmount,
                             productTotal,
                             discountPercent,
@@ -1573,35 +1573,15 @@ class _InvoicePanel extends ConsumerWidget {
                             member,
                           ),
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: 6),
                         _PayButton(
-                          label: 'Thẻ',
-                          icon: Icons.credit_card,
-                          color: AppColors.card,
+                          label: 'Không thanh toán',
+                          icon: Icons.money_off_rounded,
+                          color: AppColors.error,
                           onTap: () => _checkout(
                             context,
                             ref,
-                            'card',
-                            playAmount,
-                            productTotal,
-                            discountPercent,
-                            discountAmount,
-                            netTotal,
-                            startTime,
-                            products,
-                            rate,
-                            member,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        _PayButton(
-                          label: 'QR',
-                          icon: Icons.qr_code,
-                          color: AppColors.transfer,
-                          onTap: () => _checkout(
-                            context,
-                            ref,
-                            'transfer',
+                            'unpaid',
                             playAmount,
                             productTotal,
                             discountPercent,
@@ -1628,7 +1608,7 @@ class _InvoicePanel extends ConsumerWidget {
   Future<void> _checkout(
     BuildContext context,
     WidgetRef ref,
-    String method,
+    String initialStatus,
     double playAmount,
     double productTotal,
     double discountPercent,
@@ -1663,9 +1643,15 @@ class _InvoicePanel extends ConsumerWidget {
         discountAmount: finalDiscountAmount,
         netTotal: finalNetTotal,
         totalAmount: finalPlayAmount + finalProductTotal,
-        paymentMethod: method,
+        initialStatus: initialStatus,
         member: member,
-        onConfirm: (paymentMethod) async {
+        onConfirm: ({
+          required status,
+          required paymentMethod,
+          required discountAmount,
+          required netTotal,
+          required note,
+        }) async {
           final serverOrderId = ref.read(tablesProvider).tableServerOrderIds[table.id];
           final orderId = table.currentOrderId ?? 'ord-${DateTime.now().millisecondsSinceEpoch}';
           final currentUser = ref.read(currentUserProvider);
@@ -1676,20 +1662,21 @@ class _InvoicePanel extends ConsumerWidget {
             tableId: table.id,
             memberId: member?['id']?.toString(),
             shiftId: 'shift-default',
-            status: 'paid',
+            status: status,
             startTime: startTime,
             endTime: endTime,
             totalPlayTimeMinutes: playMinutes,
             totalPlayTimeAmount: finalPlayAmount,
             totalProductAmount: finalProductTotal,
-            discountAmount: finalDiscountAmount,
+            discountAmount: discountAmount,
             taxAmount: 0.0,
-            totalAmount: finalNetTotal,
+            totalAmount: netTotal,
             paymentMethod: paymentMethod,
             createdBy: currentUserId,
             closedBy: currentUserId,
             createdAt: DateTime.now(),
             updatedAt: DateTime.now(),
+            note: note,
           );
 
           final details = <OrderDetailModel>[];
@@ -2004,13 +1991,13 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
               Row(
                 children: [
                   _PayButton(
-                    label: 'Tiền mặt',
-                    icon: Icons.money,
-                    color: AppColors.cash,
+                    label: 'Thanh toán',
+                    icon: Icons.payment_rounded,
+                    color: AppColors.primary,
                     onTap: () => _checkoutUnpaid(
                       context,
                       ref,
-                      'cash',
+                      'paid',
                       playAmount,
                       productTotal,
                       discountPercent,
@@ -2023,36 +2010,15 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
                       member,
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                   _PayButton(
-                    label: 'Thẻ',
-                    icon: Icons.credit_card,
-                    color: AppColors.card,
+                    label: 'Không thanh toán',
+                    icon: Icons.money_off_rounded,
+                    color: AppColors.error,
                     onTap: () => _checkoutUnpaid(
                       context,
                       ref,
-                      'card',
-                      playAmount,
-                      productTotal,
-                      discountPercent,
-                      discountAmount,
-                      netTotal,
-                      startTime,
-                      endTime,
-                      products,
-                      rate,
-                      member,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  _PayButton(
-                    label: 'QR',
-                    icon: Icons.qr_code,
-                    color: AppColors.transfer,
-                    onTap: () => _checkoutUnpaid(
-                      context,
-                      ref,
-                      'transfer',
+                      'unpaid',
                       playAmount,
                       productTotal,
                       discountPercent,
@@ -2077,7 +2043,7 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
   Future<void> _checkoutUnpaid(
     BuildContext context,
     WidgetRef ref,
-    String method,
+    String initialStatus,
     double playAmount,
     double productTotal,
     double discountPercent,
@@ -2110,9 +2076,15 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
         discountAmount: finalDiscountAmount,
         netTotal: finalNetTotal,
         totalAmount: finalPlayAmount + finalProductTotal,
-        paymentMethod: method,
+        initialStatus: initialStatus,
         member: member,
-        onConfirm: (paymentMethod) async {
+        onConfirm: ({
+          required status,
+          required paymentMethod,
+          required discountAmount,
+          required netTotal,
+          required note,
+        }) async {
           final orderId = invoice.id;
           final currentUser = ref.read(currentUserProvider);
           final currentUserId = currentUser?.id ?? 'system';
@@ -2122,20 +2094,21 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
             tableId: invoice.tableId,
             memberId: member?['id']?.toString(),
             shiftId: 'shift-default',
-            status: 'paid',
+            status: status,
             startTime: startTime,
             endTime: endTime,
             totalPlayTimeMinutes: playMinutes,
             totalPlayTimeAmount: finalPlayAmount,
             totalProductAmount: finalProductTotal,
-            discountAmount: finalDiscountAmount,
+            discountAmount: discountAmount,
             taxAmount: 0.0,
-            totalAmount: finalNetTotal,
+            totalAmount: netTotal,
             paymentMethod: paymentMethod,
             createdBy: currentUserId,
             closedBy: currentUserId,
             createdAt: DateTime.now(),
             updatedAt: DateTime.now(),
+            note: note,
           );
 
           final details = <OrderDetailModel>[];
