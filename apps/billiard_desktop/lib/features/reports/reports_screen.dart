@@ -2,6 +2,275 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/providers/providers.dart';
+import '../../features/sync/sync_provider.dart';
+
+// ─── Data Models ──────────────────────────────────────────────────────────────
+
+class _ReportRow {
+  final String date;
+  final int count;
+  final double play;
+  final double service;
+  final double total;
+
+  const _ReportRow({
+    required this.date,
+    required this.count,
+    required this.play,
+    required this.service,
+    required this.total,
+  });
+}
+
+class _MemberRow {
+  final String name;
+  final String phone;
+  final String tier;
+  final int points;
+  final double spend;
+
+  const _MemberRow({
+    required this.name,
+    required this.phone,
+    required this.tier,
+    required this.points,
+    required this.spend,
+  });
+}
+
+class _ProductRow {
+  final String name;
+  final String category;
+  final int sold;
+  final int stock;
+  final double revenue;
+
+  const _ProductRow({
+    required this.name,
+    required this.category,
+    required this.sold,
+    required this.stock,
+    required this.revenue,
+  });
+}
+
+// ─── State ────────────────────────────────────────────────────────────────────
+
+class _ReportData {
+  final List<_ReportRow> invoiceRows;
+  final List<_MemberRow> memberRows;
+  final List<_ProductRow> productRows;
+  final bool isOffline;
+
+  const _ReportData({
+    this.invoiceRows = const [],
+    this.memberRows = const [],
+    this.productRows = const [],
+    this.isOffline = false,
+  });
+}
+
+// ─── Mock fallback data (khi offline & local DB rỗng) ────────────────────────
+
+const _mockInvoiceRows = [
+  _ReportRow(date: '22/05/2026', count: 12, play: 1200000, service: 450000, total: 1650000),
+  _ReportRow(date: '21/05/2026', count: 9, play: 850000, service: 320000, total: 1170000),
+  _ReportRow(date: '20/05/2026', count: 15, play: 1500000, service: 600000, total: 2100000),
+  _ReportRow(date: '19/05/2026', count: 7, play: 620000, service: 210000, total: 830000),
+  _ReportRow(date: '18/05/2026', count: 11, play: 980000, service: 390000, total: 1370000),
+];
+
+const _mockMemberRows = [
+  _MemberRow(name: 'Nguyễn Văn Hùng', phone: '0901234567', tier: 'Gold', points: 1250, spend: 12500000),
+  _MemberRow(name: 'Trần Thị Mai', phone: '0987654321', tier: 'Silver', points: 480, spend: 4800000),
+  _MemberRow(name: 'Lê Văn Dũng', phone: '0912345678', tier: 'Diamond', points: 3200, spend: 32000000),
+  _MemberRow(name: 'Phạm Minh Tuấn', phone: '0923456789', tier: 'Silver', points: 230, spend: 2300000),
+];
+
+const _mockProductRows = [
+  _ProductRow(name: 'Sting Dâu Đỏ', category: 'Đồ uống', sold: 148, stock: 52, revenue: 2220000),
+  _ProductRow(name: 'Bia Tiger', category: 'Đồ uống', sold: 95, stock: 35, revenue: 2850000),
+  _ProductRow(name: 'Mì Xào Bò', category: 'Đồ ăn', sold: 62, stock: 0, revenue: 2170000),
+  _ProductRow(name: 'Red Bull', category: 'Đồ uống', sold: 58, stock: 24, revenue: 1450000),
+  _ProductRow(name: 'Thuốc Lá Marlboro', category: 'Thuốc lá', sold: 41, stock: 12, revenue: 1148000),
+];
+
+// ─── Provider ─────────────────────────────────────────────────────────────────
+
+final _reportDataProvider = FutureProvider.family<_ReportData, DateTimeRange>(
+  (ref, range) async {
+    final syncState = ref.watch(syncStateProvider);
+    final isOnline = syncState.isOnline;
+
+    if (isOnline) {
+      // Fetch từ API
+      try {
+        final api = ref.read(apiClientProvider);
+        final dateFrom = _fmtIso(range.start);
+        final dateTo = _fmtIso(range.end);
+
+        final List<dynamic> orders = await api.getOrders(
+          dateFrom: dateFrom,
+          dateTo: dateTo,
+        );
+
+        final invoiceRows = _buildInvoiceRowsFromApi(orders, range);
+        final memberRows = await _buildMemberRowsFromApi(api);
+        final productRows = await _buildProductRowsFromApi(api, dateFrom, dateTo);
+
+        return _ReportData(
+          invoiceRows: invoiceRows,
+          memberRows: memberRows,
+          productRows: productRows,
+          isOffline: false,
+        );
+      } catch (e) {
+        // API lỗi → fallback sang local
+        return _buildOfflineData(ref, range);
+      }
+    } else {
+      return _buildOfflineData(ref, range);
+    }
+  },
+);
+
+String _fmtIso(DateTime d) =>
+    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+/// Xây dựng dữ liệu từ API orders
+List<_ReportRow> _buildInvoiceRowsFromApi(List<dynamic> orders, DateTimeRange range) {
+  // Nhóm orders theo ngày
+  final Map<String, List<dynamic>> byDay = {};
+  for (final o in orders) {
+    final raw = o as Map<String, dynamic>;
+    final createdAt = raw['created_at'] as String? ??
+        raw['opened_at'] as String? ??
+        raw['date'] as String? ?? '';
+    DateTime? dt;
+    try {
+      dt = DateTime.parse(createdAt);
+    } catch (_) {}
+    if (dt == null) continue;
+
+    final key =
+        '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+    byDay.putIfAbsent(key, () => []).add(raw);
+  }
+
+  return byDay.entries.map((e) {
+    final rows = e.value;
+    double play = 0, service = 0, total = 0;
+    for (final r in rows) {
+      play += _toDouble(r['play_amount'] ?? r['amount_play'] ?? r['table_fee'] ?? 0);
+      service += _toDouble(r['service_amount'] ?? r['amount_service'] ?? r['food_fee'] ?? 0);
+      total += _toDouble(r['total_amount'] ?? r['total'] ?? r['grand_total'] ?? 0);
+    }
+    // Nếu total = 0, tính lại từ play + service
+    if (total == 0) total = play + service;
+    return _ReportRow(
+      date: e.key,
+      count: rows.length,
+      play: play,
+      service: service,
+      total: total,
+    );
+  }).toList()
+    ..sort((a, b) => b.date.compareTo(a.date));
+}
+
+Future<List<_MemberRow>> _buildMemberRowsFromApi(dynamic api) async {
+  try {
+    final members = await api.getMembers();
+    return (members as List<dynamic>).map((m) {
+      final r = m as Map<String, dynamic>;
+      return _MemberRow(
+        name: r['name'] as String? ?? r['full_name'] as String? ?? 'N/A',
+        phone: r['phone_number'] as String? ?? r['phone'] as String? ?? '',
+        tier: r['tier'] as String? ?? r['membership_tier'] as String? ?? 'Standard',
+        points: _toInt(r['points'] ?? r['loyalty_points'] ?? 0),
+        spend: _toDouble(r['total_spend'] ?? r['total_amount'] ?? r['spend'] ?? 0),
+      );
+    }).toList();
+  } catch (_) {
+    return _mockMemberRows;
+  }
+}
+
+Future<List<_ProductRow>> _buildProductRowsFromApi(
+    dynamic api, String dateFrom, String dateTo) async {
+  try {
+    final products = await api.getTopProducts(
+      dateFrom: dateFrom,
+      dateTo: dateTo,
+      limit: 20,
+    );
+    return (products as List<dynamic>).map((p) {
+      final r = p as Map<String, dynamic>;
+      return _ProductRow(
+        name: r['name'] as String? ?? r['product_name'] as String? ?? 'N/A',
+        category: r['category'] as String? ?? r['category_name'] as String? ?? '',
+        sold: _toInt(r['sold'] ?? r['quantity_sold'] ?? r['total_quantity'] ?? 0),
+        stock: _toInt(r['stock'] ?? r['quantity_stock'] ?? r['stock_quantity'] ?? 0),
+        revenue: _toDouble(r['revenue'] ?? r['total_revenue'] ?? r['total_amount'] ?? 0),
+      );
+    }).toList();
+  } catch (_) {
+    return _mockProductRows;
+  }
+}
+
+/// Lấy dữ liệu từ local DB khi offline
+Future<_ReportData> _buildOfflineData(Ref ref, DateTimeRange range) async {
+  try {
+    final localDb = ref.read(localDbServiceProvider);
+    final localOrders = await localDb.getOrdersInDateRange(range.start, range.end);
+
+    if (localOrders.isEmpty) {
+      // Không có dữ liệu local → dùng mock data
+      return const _ReportData(
+        invoiceRows: _mockInvoiceRows,
+        memberRows: _mockMemberRows,
+        productRows: _mockProductRows,
+        isOffline: true,
+      );
+    }
+
+    final invoiceRows = _buildInvoiceRowsFromApi(localOrders, range);
+    // Members & products không có local cache → dùng mock
+    return _ReportData(
+      invoiceRows: invoiceRows.isEmpty ? _mockInvoiceRows : invoiceRows,
+      memberRows: _mockMemberRows,
+      productRows: _mockProductRows,
+      isOffline: true,
+    );
+  } catch (_) {
+    return const _ReportData(
+      invoiceRows: _mockInvoiceRows,
+      memberRows: _mockMemberRows,
+      productRows: _mockProductRows,
+      isOffline: true,
+    );
+  }
+}
+
+double _toDouble(dynamic v) {
+  if (v == null) return 0;
+  if (v is double) return v;
+  if (v is int) return v.toDouble();
+  if (v is String) return double.tryParse(v) ?? 0;
+  return 0;
+}
+
+int _toInt(dynamic v) {
+  if (v == null) return 0;
+  if (v is int) return v;
+  if (v is double) return v.toInt();
+  if (v is String) return int.tryParse(v) ?? 0;
+  return 0;
+}
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -13,7 +282,7 @@ class ReportsScreen extends ConsumerStatefulWidget {
 class _ReportsScreenState extends ConsumerState<ReportsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
-  DateTimeRange? _dateRange;
+  late DateTimeRange _dateRange;
 
   @override
   void initState() {
@@ -36,6 +305,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final syncState = ref.watch(syncStateProvider);
+    final reportAsync = ref.watch(_reportDataProvider(_dateRange));
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -53,6 +325,24 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                       style: AppTextStyles.bodySmall),
                 ]),
                 const Spacer(),
+                // Offline badge
+                if (!syncState.isOnline)
+                  Container(
+                    margin: const EdgeInsets.only(right: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.cloud_off_outlined, size: 14, color: AppColors.error),
+                      const SizedBox(width: 6),
+                      Text('Offline – dữ liệu cục bộ',
+                          style: AppTextStyles.labelSmall
+                              .copyWith(color: AppColors.error)),
+                    ]),
+                  ),
                 // Date range picker
                 OutlinedButton.icon(
                   onPressed: () async {
@@ -74,7 +364,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                   },
                   icon: const Icon(Icons.date_range_outlined, size: 16),
                   label: Text(
-                    '${_fmtDate(_dateRange!.start)} – ${_fmtDate(_dateRange!.end)}',
+                    '${_fmtDate(_dateRange.start)} – ${_fmtDate(_dateRange.end)}',
                   ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
@@ -84,23 +374,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                   ),
                 ),
                 const SizedBox(width: 10),
-                ElevatedButton.icon(
+                // Refresh button
+                OutlinedButton.icon(
                   onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Đang xuất báo cáo CSV...'),
-                          behavior: SnackBarBehavior.floating,
-                          backgroundColor: AppColors.success,
-                        ));
+                    ref.invalidate(_reportDataProvider(_dateRange));
                   },
-                  icon: const Icon(Icons.download_outlined, size: 16),
-                  label: const Text('Xuất CSV'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
+                  icon: const Icon(Icons.refresh_outlined, size: 16),
+                  label: const Text('Làm mới'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.primary),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8)),
-                    elevation: 0,
                   ),
                 ),
               ]),
@@ -122,13 +407,52 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         ),
         const Divider(height: 1),
         Expanded(
-          child: TabBarView(
-            controller: _tabCtrl,
-            children: [
-              _InvoiceReportTab(dateRange: _dateRange!),
-              _MemberReportTab(),
-              _ProductReportTab(),
-            ],
+          child: reportAsync.when(
+            loading: () => const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Đang tải dữ liệu báo cáo...'),
+                ],
+              ),
+            ),
+            error: (e, _) => Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline,
+                      size: 48, color: AppColors.error),
+                  const SizedBox(height: 12),
+                  Text('Không thể tải báo cáo', style: AppTextStyles.headlineSmall),
+                  const SizedBox(height: 8),
+                  Text(e.toString(), style: AppTextStyles.bodySmall),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () =>
+                        ref.invalidate(_reportDataProvider(_dateRange)),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Thử lại'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                      elevation: 0,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            data: (data) => TabBarView(
+              controller: _tabCtrl,
+              children: [
+                _InvoiceReportTab(rows: data.invoiceRows, isOffline: data.isOffline),
+                _MemberReportTab(rows: data.memberRows),
+                _ProductReportTab(products: data.productRows),
+              ],
+            ),
           ),
         ),
       ],
@@ -139,8 +463,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 // ─── Tab 1: Invoice Report ────────────────────────────────────────────────────
 
 class _InvoiceReportTab extends StatelessWidget {
-  final DateTimeRange dateRange;
-  const _InvoiceReportTab({required this.dateRange});
+  final List<_ReportRow> rows;
+  final bool isOffline;
+  const _InvoiceReportTab({required this.rows, required this.isOffline});
 
   String _fmtCurrency(double v) {
     final s = v.toStringAsFixed(0);
@@ -156,33 +481,38 @@ class _InvoiceReportTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const mockData = [
-      {'date': '22/05/2026', 'count': 12, 'play': 1200000.0, 'service': 450000.0, 'total': 1650000.0},
-      {'date': '21/05/2026', 'count': 9, 'play': 850000.0, 'service': 320000.0, 'total': 1170000.0},
-      {'date': '20/05/2026', 'count': 15, 'play': 1500000.0, 'service': 600000.0, 'total': 2100000.0},
-      {'date': '19/05/2026', 'count': 7, 'play': 620000.0, 'service': 210000.0, 'total': 830000.0},
-      {'date': '18/05/2026', 'count': 11, 'play': 980000.0, 'service': 390000.0, 'total': 1370000.0},
-    ];
+    if (rows.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.receipt_long_outlined, size: 48, color: AppColors.textMuted),
+            SizedBox(height: 12),
+            Text('Không có hóa đơn trong khoảng thời gian này'),
+          ],
+        ),
+      );
+    }
 
-    final grandTotal =
-        mockData.fold(0.0, (s, r) => s + (r['total'] as double));
+    final grandTotal = rows.fold(0.0, (s, r) => s + r.total);
+    final totalCount = rows.fold(0, (s, r) => s + r.count);
 
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
+          // Offline notice
+          if (isOffline) _OfflineNotice(),
+          if (isOffline) const SizedBox(height: 12),
           // Summary
           Row(children: [
-            _ReportCard('Tổng hóa đơn',
-                '${mockData.fold(0, (s, r) => s + (r['count'] as int))} HĐ',
-                AppColors.info),
+            _ReportCard('Tổng hóa đơn', '$totalCount HĐ', AppColors.info),
             const SizedBox(width: 12),
-            _ReportCard(
-                'Tổng doanh thu', _fmtCurrency(grandTotal), AppColors.success),
+            _ReportCard('Tổng doanh thu', _fmtCurrency(grandTotal), AppColors.success),
             const SizedBox(width: 12),
             _ReportCard(
                 'TB hàng ngày',
-                _fmtCurrency(grandTotal / mockData.length),
+                _fmtCurrency(rows.isNotEmpty ? grandTotal / rows.length : 0),
                 AppColors.accent),
           ]),
           const SizedBox(height: 20),
@@ -214,36 +544,34 @@ class _InvoiceReportTab extends StatelessWidget {
                   Expanded(
                     child: ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      itemCount: mockData.length,
+                      itemCount: rows.length,
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (_, i) {
-                        final r = mockData[i];
+                        final r = rows[i];
                         return Padding(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 12),
                           child: Row(children: [
                             Expanded(
                                 flex: 2,
-                                child: Text(r['date'] as String,
+                                child: Text(r.date,
                                     style: AppTextStyles.bodyMedium)),
                             Expanded(
                                 flex: 1,
-                                child: Text('${r['count']} HĐ',
+                                child: Text('${r.count} HĐ',
+                                    style: AppTextStyles.bodySmall)),
+                            Expanded(
+                                flex: 2,
+                                child: Text(_fmtCurrency(r.play),
+                                    style: AppTextStyles.bodySmall)),
+                            Expanded(
+                                flex: 2,
+                                child: Text(_fmtCurrency(r.service),
                                     style: AppTextStyles.bodySmall)),
                             Expanded(
                                 flex: 2,
                                 child: Text(
-                                    _fmtCurrency(r['play'] as double),
-                                    style: AppTextStyles.bodySmall)),
-                            Expanded(
-                                flex: 2,
-                                child: Text(
-                                    _fmtCurrency(r['service'] as double),
-                                    style: AppTextStyles.bodySmall)),
-                            Expanded(
-                                flex: 2,
-                                child: Text(
-                                    _fmtCurrency(r['total'] as double),
+                                    _fmtCurrency(r.total),
                                     style: AppTextStyles.labelLarge.copyWith(
                                         color: AppColors.primary))),
                           ]),
@@ -264,12 +592,8 @@ class _InvoiceReportTab extends StatelessWidget {
 // ─── Tab 2: Member Report ─────────────────────────────────────────────────────
 
 class _MemberReportTab extends StatelessWidget {
-  final _mockMembers = const [
-    {'name': 'Nguyễn Văn Hùng', 'phone': '0901234567', 'tier': 'Gold', 'points': 1250, 'spend': 12500000.0},
-    {'name': 'Trần Thị Mai', 'phone': '0987654321', 'tier': 'Silver', 'points': 480, 'spend': 4800000.0},
-    {'name': 'Lê Văn Dũng', 'phone': '0912345678', 'tier': 'Diamond', 'points': 3200, 'spend': 32000000.0},
-    {'name': 'Phạm Minh Tuấn', 'phone': '0923456789', 'tier': 'Silver', 'points': 230, 'spend': 2300000.0},
-  ];
+  final List<_MemberRow> rows;
+  const _MemberReportTab({required this.rows});
 
   String _fmtCurrency(double v) {
     final s = v.toStringAsFixed(0);
@@ -291,11 +615,10 @@ class _MemberReportTab extends StatelessWidget {
         children: [
           Row(children: [
             _ReportCard('Tổng thành viên',
-                '${_mockMembers.length} người', AppColors.info),
+                '${rows.length} người', AppColors.info),
             const SizedBox(width: 12),
             _ReportCard('Tổng chi tiêu',
-                _fmtCurrency(
-                    _mockMembers.fold(0.0, (s, m) => s + (m['spend'] as double))),
+                _fmtCurrency(rows.fold(0.0, (s, m) => s + m.spend)),
                 AppColors.success),
           ]),
           const SizedBox(height: 20),
@@ -308,11 +631,11 @@ class _MemberReportTab extends StatelessWidget {
               ),
               child: ListView.separated(
                 padding: const EdgeInsets.all(12),
-                itemCount: _mockMembers.length,
+                itemCount: rows.length,
                 separatorBuilder: (_, __) => const Divider(height: 1),
                 itemBuilder: (_, i) {
-                  final m = _mockMembers[i];
-                  final tierColor = switch (m['tier'] as String) {
+                  final m = rows[i];
+                  final tierColor = switch (m.tier) {
                     'Diamond' => AppColors.transfer,
                     'Gold' => AppColors.accent,
                     _ => AppColors.textSecondary,
@@ -321,18 +644,17 @@ class _MemberReportTab extends StatelessWidget {
                     leading: CircleAvatar(
                       backgroundColor: AppColors.primarySurface,
                       child: Text(
-                          (m['name'] as String).trim().isNotEmpty
-                              ? (m['name'] as String).trim()[0].toUpperCase()
+                          m.name.trim().isNotEmpty
+                              ? m.name.trim()[0].toUpperCase()
                               : '?',
                           style: const TextStyle(
                               color: AppColors.primary,
                               fontWeight: FontWeight.w700)),
                     ),
-                    title: Text(m['name'] as String,
-                        style: AppTextStyles.titleMedium),
-                    subtitle: Text(m['phone'] as String,
-                        style: AppTextStyles.labelSmall),
-                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                    title: Text(m.name, style: AppTextStyles.titleMedium),
+                    subtitle: Text(m.phone, style: AppTextStyles.labelSmall),
+                    trailing:
+                        Row(mainAxisSize: MainAxisSize.min, children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 4),
@@ -340,7 +662,7 @@ class _MemberReportTab extends StatelessWidget {
                           color: tierColor.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: Text(m['tier'] as String,
+                        child: Text(m.tier,
                             style: TextStyle(
                                 fontFamily: 'Inter',
                                 fontSize: 12,
@@ -348,13 +670,15 @@ class _MemberReportTab extends StatelessWidget {
                                 color: tierColor)),
                       ),
                       const SizedBox(width: 16),
-                      Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                        Text('${m['points']} điểm',
-                            style: AppTextStyles.labelLarge),
-                        Text(_fmtCurrency(m['spend'] as double),
-                            style: AppTextStyles.bodySmall
-                                .copyWith(color: AppColors.primary)),
-                      ]),
+                      Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text('${m.points} điểm',
+                                style: AppTextStyles.labelLarge),
+                            Text(_fmtCurrency(m.spend),
+                                style: AppTextStyles.bodySmall
+                                    .copyWith(color: AppColors.primary)),
+                          ]),
                     ]),
                   );
                 },
@@ -370,13 +694,8 @@ class _MemberReportTab extends StatelessWidget {
 // ─── Tab 3: Product Report ────────────────────────────────────────────────────
 
 class _ProductReportTab extends StatelessWidget {
-  final _products = const [
-    {'name': 'Sting Dâu Đỏ', 'category': 'Đồ uống', 'sold': 148, 'stock': 52, 'revenue': 2220000.0},
-    {'name': 'Bia Tiger', 'category': 'Đồ uống', 'sold': 95, 'stock': 35, 'revenue': 2850000.0},
-    {'name': 'Mì Xào Bò', 'category': 'Đồ ăn', 'sold': 62, 'stock': 0, 'revenue': 2170000.0},
-    {'name': 'Red Bull', 'category': 'Đồ uống', 'sold': 58, 'stock': 24, 'revenue': 1450000.0},
-    {'name': 'Thuốc Lá Marlboro', 'category': 'Thuốc lá', 'sold': 41, 'stock': 12, 'revenue': 1148000.0},
-  ];
+  final List<_ProductRow> products;
+  const _ProductReportTab({required this.products});
 
   String _fmtCurrency(double v) {
     final s = v.toStringAsFixed(0);
@@ -404,7 +723,8 @@ class _ProductReportTab extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               color: AppColors.background,
               child: Row(children: [
                 _TH('Sản phẩm', flex: 3),
@@ -418,30 +738,30 @@ class _ProductReportTab extends StatelessWidget {
             Expanded(
               child: ListView.separated(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                itemCount: _products.length,
+                itemCount: products.length,
                 separatorBuilder: (_, __) => const Divider(height: 1),
                 itemBuilder: (_, i) {
-                  final p = _products[i];
-                  final isOutOfStock = (p['stock'] as int) == 0;
+                  final p = products[i];
+                  final isOutOfStock = p.stock == 0;
                   return Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 12),
                     child: Row(children: [
                       Expanded(
                           flex: 3,
-                          child: Text(p['name'] as String,
+                          child: Text(p.name,
                               style: AppTextStyles.bodyMedium)),
                       Expanded(
                           flex: 2,
-                          child: Text(p['category'] as String,
+                          child: Text(p.category,
                               style: AppTextStyles.bodySmall)),
                       Expanded(
                           flex: 1,
-                          child: Text('${p['sold']}',
+                          child: Text('${p.sold}',
                               style: AppTextStyles.bodySmall)),
                       Expanded(
                           flex: 1,
-                          child: Text('${p['stock']}',
+                          child: Text('${p.stock}',
                               style: AppTextStyles.bodySmall.copyWith(
                                   color: isOutOfStock
                                       ? AppColors.error
@@ -451,8 +771,7 @@ class _ProductReportTab extends StatelessWidget {
                                       : FontWeight.w400))),
                       Expanded(
                           flex: 2,
-                          child: Text(
-                              _fmtCurrency(p['revenue'] as double),
+                          child: Text(_fmtCurrency(p.revenue),
                               style: AppTextStyles.labelLarge.copyWith(
                                   color: AppColors.primary))),
                     ]),
@@ -465,6 +784,31 @@ class _ProductReportTab extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Offline Notice ───────────────────────────────────────────────────────────
+
+class _OfflineNotice extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.accent.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.accent.withOpacity(0.25)),
+        ),
+        child: Row(children: [
+          Icon(Icons.info_outline, size: 16, color: AppColors.accent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Đang hiển thị dữ liệu cục bộ (offline). Kết nối mạng để lấy dữ liệu mới nhất.',
+              style: AppTextStyles.bodySmall.copyWith(color: AppColors.accent),
+            ),
+          ),
+        ]),
+      );
 }
 
 // ─── Shared Report Widgets ────────────────────────────────────────────────────

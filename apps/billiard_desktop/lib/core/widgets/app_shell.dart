@@ -32,12 +32,6 @@ const _navItems = [
     label: 'Bàn',
   ),
   _NavItem(
-    route: AppRoutes.statistics,
-    icon: Icons.bar_chart_outlined,
-    activeIcon: Icons.bar_chart_rounded,
-    label: 'Thống kê',
-  ),
-  _NavItem(
     route: AppRoutes.reports,
     icon: Icons.summarize_outlined,
     activeIcon: Icons.summarize_rounded,

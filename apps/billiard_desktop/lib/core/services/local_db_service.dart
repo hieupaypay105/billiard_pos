@@ -257,6 +257,37 @@ class LocalDbService {
     return (result.first['count'] as int?) ?? 0;
   }
 
+  /// Lấy tất cả orders trong local DB (bao gồm cả đã sync) để dùng cho báo cáo offline.
+  Future<List<Map<String, dynamic>>> getAllLocalOrders() async {
+    final db = await database;
+    final rows = await db.query(
+      'pending_orders',
+      orderBy: 'created_at DESC',
+    );
+    return rows
+        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+        .toList();
+  }
+
+  /// Lấy orders trong khoảng ngày (dựa theo created_at) để tạo báo cáo offline.
+  Future<List<Map<String, dynamic>>> getOrdersInDateRange(
+    DateTime from,
+    DateTime to,
+  ) async {
+    final db = await database;
+    final fromStr = from.toIso8601String().substring(0, 10);
+    final toStr = to.add(const Duration(days: 1)).toIso8601String().substring(0, 10);
+    final rows = await db.query(
+      'pending_orders',
+      where: "date(created_at) >= ? AND date(created_at) < ?",
+      whereArgs: [fromStr, toStr],
+      orderBy: 'created_at ASC',
+    );
+    return rows
+        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+        .toList();
+  }
+
   // ─── Cache Tables ─────────────────────────────────────────────────────────────
 
   Future<void> cacheTable(String id, Map<String, dynamic> data) async {

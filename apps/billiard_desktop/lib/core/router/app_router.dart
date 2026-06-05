@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/tables/tables_screen.dart';
-import '../../features/statistics/statistics_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/sync/sync_screen.dart';
 import '../widgets/app_shell.dart';
@@ -13,7 +12,6 @@ class AppRoutes {
   static const login = '/login';
   static const tables = '/tables';
   static const billing = '/billing';
-  static const statistics = '/statistics';
   static const reports = '/reports';
   static const sync = '/sync';
 }
@@ -52,13 +50,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoutes.billing,
             redirect: (ctx, state) => AppRoutes.tables,
-          ),
-          GoRoute(
-            path: AppRoutes.statistics,
-            pageBuilder: (ctx, state) => NoTransitionPage(
-              child: const StatisticsScreen(),
-              key: state.pageKey,
-            ),
           ),
           GoRoute(
             path: AppRoutes.reports,
