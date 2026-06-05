@@ -5,7 +5,7 @@ class OrderModel extends Equatable {
   final String tableId;
   final String? memberId;
   final String shiftId;
-  final String status; // 'active', 'paid', 'cancelled'
+  final String status; // 'active', 'paid', 'cancelled', 'unpaid'
   final DateTime startTime;
   final DateTime? endTime;
   final int totalPlayTimeMinutes;
@@ -19,6 +19,7 @@ class OrderModel extends Equatable {
   final String? closedBy;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final String? note;
 
   const OrderModel({
     required this.id,
@@ -39,6 +40,7 @@ class OrderModel extends Equatable {
     this.closedBy,
     this.createdAt,
     this.updatedAt,
+    this.note,
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
@@ -61,6 +63,7 @@ class OrderModel extends Equatable {
       closedBy: json['closed_by'] as String?,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : null,
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at'] as String) : null,
+      note: json['note'] as String?,
     );
   }
 
@@ -84,6 +87,7 @@ class OrderModel extends Equatable {
       'closed_by': closedBy,
       'created_at': createdAt?.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
+      'note': note,
     };
   }
 
@@ -106,6 +110,7 @@ class OrderModel extends Equatable {
     String? closedBy,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? note,
   }) {
     return OrderModel(
       id: id ?? this.id,
@@ -126,6 +131,7 @@ class OrderModel extends Equatable {
       closedBy: closedBy ?? this.closedBy,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      note: note ?? this.note,
     );
   }
 
@@ -149,5 +155,6 @@ class OrderModel extends Equatable {
         closedBy,
         createdAt,
         updatedAt,
+        note,
       ];
 }

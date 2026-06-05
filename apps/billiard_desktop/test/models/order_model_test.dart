@@ -23,6 +23,7 @@ void main() {
         'closed_by': null,
         'created_at': '2026-05-22T08:30:00.000',
         'updated_at': null,
+        'note': 'Khách nợ',
       };
 
       final order = OrderModel.fromJson(json);
@@ -32,6 +33,7 @@ void main() {
       expect(order.status, 'active');
       expect(order.memberId, isNull);
       expect(order.totalAmount, 0.0);
+      expect(order.note, 'Khách nợ');
     });
 
     test('toJson produces correct map', () {
