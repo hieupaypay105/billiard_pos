@@ -110,7 +110,8 @@ final _reportDataProvider = FutureProvider.family<_ReportData, DateTimeRange>(
         final dateFrom = _fmtIso(range.start);
         final dateTo = _fmtIso(range.end);
 
-        final List<dynamic> orders = await api.getOrders(
+        // Dùng getAllOrders để lấy toàn bộ (hỗ trợ pagination)
+        final List<dynamic> orders = await api.getAllOrders(
           dateFrom: dateFrom,
           dateTo: dateTo,
         );
@@ -138,18 +139,20 @@ final _reportDataProvider = FutureProvider.family<_ReportData, DateTimeRange>(
 String _fmtIso(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-/// Xây dựng dữ liệu từ API orders
+/// Xây dựng dữ liệu từ API orders – nhóm theo ngày
 List<_ReportRow> _buildInvoiceRowsFromApi(List<dynamic> orders, DateTimeRange range) {
-  // Nhóm orders theo ngày
+  if (orders.isEmpty) return [];
+
+  // Nhóm orders theo ngày (dựa theo created_at)
   final Map<String, List<dynamic>> byDay = {};
   for (final o in orders) {
     final raw = o as Map<String, dynamic>;
-    final createdAt = raw['created_at'] as String? ??
-        raw['opened_at'] as String? ??
-        raw['date'] as String? ?? '';
+
+    // Dùng created_at để nhóm theo ngày (format: "2026-06-05 14:51:06")
+    final dateStr = (raw['created_at'] as String? ?? '').replaceAll(' ', 'T');
     DateTime? dt;
     try {
-      dt = DateTime.parse(createdAt);
+      if (dateStr.isNotEmpty) dt = DateTime.parse(dateStr);
     } catch (_) {}
     if (dt == null) continue;
 
@@ -162,12 +165,13 @@ List<_ReportRow> _buildInvoiceRowsFromApi(List<dynamic> orders, DateTimeRange ra
     final rows = e.value;
     double play = 0, service = 0, total = 0;
     for (final r in rows) {
-      play += _toDouble(r['play_amount'] ?? r['amount_play'] ?? r['table_fee'] ?? 0);
-      service += _toDouble(r['service_amount'] ?? r['amount_service'] ?? r['food_fee'] ?? 0);
-      total += _toDouble(r['total_amount'] ?? r['total'] ?? r['grand_total'] ?? 0);
+      // Tiền giờ chơi
+      play += _toDouble(r['total_play_time_amount']);
+      // Tiền sản phẩm / dịch vụ
+      service += _toDouble(r['total_product_amount']);
+      // Tổng thanh toán thực tế
+      total += _toDouble(r['total_amount']);
     }
-    // Nếu total = 0, tính lại từ play + service
-    if (total == 0) total = play + service;
     return _ReportRow(
       date: e.key,
       count: rows.length,
@@ -178,6 +182,8 @@ List<_ReportRow> _buildInvoiceRowsFromApi(List<dynamic> orders, DateTimeRange ra
   }).toList()
     ..sort((a, b) => b.date.compareTo(a.date));
 }
+
+
 
 Future<List<_MemberRow>> _buildMemberRowsFromApi(dynamic api) async {
   try {

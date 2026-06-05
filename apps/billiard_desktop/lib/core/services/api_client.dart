@@ -219,7 +219,68 @@ class ApiClient {
       if (dateFrom != null) 'date_from': dateFrom,
       if (dateTo != null) 'date_to': dateTo,
     });
-    return (res.data['data'] ?? res.data) as List<dynamic>;
+
+    // Hỗ trợ các cấu trúc response: List, {data: [...]}, {data: {items: [...]}}
+    final body = res.data;
+    if (body is List) return body;
+    if (body is Map<String, dynamic>) {
+      final inner = body['data'] ?? body['items'] ?? body['orders'] ?? body['result'];
+      if (inner is List) return inner;
+      if (inner is Map<String, dynamic>) {
+        final nested = inner['items'] ?? inner['data'] ?? inner['orders'];
+        if (nested is List) return nested;
+      }
+    }
+    return [];
+  }
+
+  /// Fetch tất cả orders qua tất cả các trang (pagination).
+  Future<List<dynamic>> getAllOrders({
+    String? dateFrom,
+    String? dateTo,
+    int perPage = 100,
+  }) async {
+    final allItems = <dynamic>[];
+    int currentPage = 1;
+    int lastPage = 1;
+
+    do {
+      final res = await _dio.get(EnvConfig.orderHistory, queryParameters: {
+        if (dateFrom != null) 'date_from': dateFrom,
+        if (dateTo != null) 'date_to': dateTo,
+        'per_page': perPage,
+        'page': currentPage,
+      });
+
+      final body = res.data;
+      List<dynamic> items = [];
+      Map<String, dynamic>? pagination;
+
+      if (body is Map<String, dynamic>) {
+        final inner = body['data'];
+        if (inner is List) {
+          items = inner;
+        } else if (inner is Map<String, dynamic>) {
+          items = (inner['items'] as List<dynamic>?) ?? [];
+          pagination = inner['pagination'] as Map<String, dynamic>?;
+        }
+      } else if (body is List) {
+        items = body;
+      }
+
+      allItems.addAll(items);
+
+      // Đọc pagination info
+      if (pagination != null) {
+        lastPage = (pagination['last_page'] as num?)?.toInt() ?? 1;
+      } else {
+        break; // Không có pagination → chỉ 1 trang
+      }
+
+      currentPage++;
+    } while (currentPage <= lastPage);
+
+    return allItems;
   }
 
   // ─── Order Details ────────────────────────────────────────────────────────────
