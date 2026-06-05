@@ -714,6 +714,14 @@ class TablesNotifier extends StateNotifier<TablesState> {
       _controllers.remove(tableId);
     }
 
+    if (_apiClient != null) {
+      try {
+        await _apiClient!.updateTableStatus(tableId, 'idle');
+      } catch (e) {
+        print('Lỗi cập nhật trạng thái bàn về idle trên backend khi checkout: $e');
+      }
+    }
+
     final tableIndex = state.tables.indexWhere((t) => t.id == tableId);
     if (tableIndex < 0) return false;
 

@@ -369,10 +369,17 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                     onPressed: _isProcessing
                         ? null
                         : () async {
+                            final navigator = Navigator.of(context);
                             setState(() => _isProcessing = true);
-                            await widget.onConfirm(_selectedMethod);
-                            if (context.mounted) {
-                              Navigator.of(context).pop();
+                            try {
+                              await widget.onConfirm(_selectedMethod);
+                            } finally {
+                              if (mounted) {
+                                setState(() => _isProcessing = false);
+                              }
+                            }
+                            if (navigator.mounted) {
+                              navigator.pop();
                             }
                           },
                     icon: _isProcessing

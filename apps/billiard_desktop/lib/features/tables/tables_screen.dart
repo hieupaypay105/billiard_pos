@@ -949,21 +949,20 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                                       tooltip: 'Huỷ hóa đơn',
                                       color: AppColors.error,
                                       onTap: () async {
+                                        final messenger = ScaffoldMessenger.of(context);
                                         final reason = await showDialog<String>(
                                           context: context,
                                           builder: (ctx) => _CancelInvoiceDialog(tableName: inv.tableName),
                                         );
                                         if (reason != null && reason.trim().isNotEmpty) {
                                           ref.read(tablesProvider.notifier).cancelUnpaidInvoice(inv.id, reason.trim());
-                                          if (context.mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                              content: Text('Đã huỷ hóa đơn bàn "${inv.tableName}". Đang đồng bộ...'),
-                                              backgroundColor: AppColors.error,
-                                              behavior: SnackBarBehavior.floating,
-                                              width: 380,
-                                              duration: const Duration(seconds: 3),
-                                            ));
-                                          }
+                                          messenger.showSnackBar(SnackBar(
+                                            content: Text('Đã huỷ hóa đơn bàn "${inv.tableName}". Đang đồng bộ...'),
+                                            backgroundColor: AppColors.error,
+                                            behavior: SnackBarBehavior.floating,
+                                            width: 380,
+                                            duration: const Duration(seconds: 3),
+                                          ));
                                         }
                                       },
                                     ),
@@ -1509,6 +1508,7 @@ class _InvoicePanel extends ConsumerWidget {
                 children: [
                   ElevatedButton.icon(
                     onPressed: () async {
+                      final messenger = ScaffoldMessenger.of(context);
                       // Trigger stop/freeze table action
                       final notifier = ref.read(tablesProvider.notifier);
                       final forceDeactivate = await showDialog<bool>(
@@ -1533,7 +1533,7 @@ class _InvoicePanel extends ConsumerWidget {
                       if (forceDeactivate == true) {
                         final ok = await notifier.deactivateTableAndFreezeInvoice(table.id);
                         if (ok) {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          messenger.showSnackBar(const SnackBar(
                             content: Text('Đã tắt bàn thành công. Hóa đơn đã được đưa vào danh sách chờ thanh toán.'),
                             backgroundColor: AppColors.success,
                           ));
@@ -1718,25 +1718,12 @@ class _InvoicePanel extends ConsumerWidget {
 
           final localDb = ref.read(localDbServiceProvider);
           final syncService = ref.read(syncServiceProvider);
-          final apiClient = ref.read(apiClientProvider);
 
           try {
             await localDb.saveOrderLocally(orderId, payload);
             await syncService.syncNow();
           } catch (e) {
             print('Lỗi lưu local/đồng bộ hóa đơn trước checkout: $e');
-          }
-
-          if (serverOrderId != null && serverOrderId.isNotEmpty && !serverOrderId.startsWith('ord-')) {
-            try {
-              await apiClient.checkoutOrder(
-                orderId: serverOrderId,
-                paymentMethod: paymentMethod,
-                discountAmount: finalDiscountAmount,
-              );
-            } catch (e) {
-              print('Lỗi gọi checkout online sau sync: $e');
-            }
           }
 
           await ref.read(tablesProvider.notifier).deactivateTable(table.id);
@@ -2177,26 +2164,12 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
 
           final localDb = ref.read(localDbServiceProvider);
           final syncService = ref.read(syncServiceProvider);
-          final apiClient = ref.read(apiClientProvider);
 
           try {
             await localDb.saveOrderLocally(orderId, payload);
             await syncService.syncNow();
           } catch (e) {
             print('Lỗi lưu local/đồng bộ hóa đơn trước checkout: $e');
-          }
-
-          final serverOrderId = invoice.id;
-          if (serverOrderId.isNotEmpty && !serverOrderId.startsWith('ord-')) {
-            try {
-              await apiClient.checkoutOrder(
-                orderId: serverOrderId,
-                paymentMethod: paymentMethod,
-                discountAmount: finalDiscountAmount,
-              );
-            } catch (e) {
-              print('Lỗi gọi checkout online unpaid invoice sau sync: $e');
-            }
           }
 
           ref.read(tablesProvider.notifier).completeUnpaidInvoicePayment(invoice.id);

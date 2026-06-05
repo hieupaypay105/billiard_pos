@@ -78,6 +78,8 @@ class TableMergeDialog extends ConsumerWidget {
                           style: AppTextStyles.labelSmall),
                       trailing: ElevatedButton(
                         onPressed: () async {
+                          final navigator = Navigator.of(context);
+                          final messenger = ScaffoldMessenger.of(context);
                           final success = sourceInvoiceId != null
                               ? await ref
                                   .read(tablesProvider.notifier)
@@ -86,23 +88,21 @@ class TableMergeDialog extends ConsumerWidget {
                                   .read(tablesProvider.notifier)
                                   .mergeTable(sourceTableId!, t.id);
                           if (success) {
-                            if (context.mounted) {
-                              Navigator.of(context).pop();
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: Text(
-                                    'Đã gộp $sourceName → ${t.tableName}'),
-                                backgroundColor: AppColors.success,
-                                behavior: SnackBarBehavior.floating,
-                              ));
+                            if (navigator.mounted) {
+                              navigator.pop();
                             }
+                            messenger.showSnackBar(SnackBar(
+                              content: Text(
+                                  'Đã gộp $sourceName → ${t.tableName}'),
+                              backgroundColor: AppColors.success,
+                              behavior: SnackBarBehavior.floating,
+                            ));
                           } else {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                                content: Text('Gộp bàn thất bại!'),
-                                backgroundColor: AppColors.error,
-                                behavior: SnackBarBehavior.floating,
-                              ));
-                            }
+                            messenger.showSnackBar(const SnackBar(
+                              content: Text('Gộp bàn thất bại!'),
+                              backgroundColor: AppColors.error,
+                              behavior: SnackBarBehavior.floating,
+                            ));
                           }
                         },
                         style: ElevatedButton.styleFrom(
@@ -202,22 +202,24 @@ class TableTransferDialog extends ConsumerWidget {
                           .copyWith(color: AppColors.success)),
                       trailing: ElevatedButton(
                         onPressed: () async {
+                          final navigator = Navigator.of(context);
+                          final messenger = ScaffoldMessenger.of(context);
                           final notifier = ref.read(tablesProvider.notifier);
                           final success = sourceInvoiceId != null
                               ? await notifier.transferUnpaidInvoiceToTable(sourceInvoiceId!, t.id)
                               : await notifier.transferTable(sourceTableId!, t.id);
                           if (success) {
-                            if (context.mounted) {
-                              Navigator.of(context).pop();
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: Text(
-                                    'Đã chuyển $sourceName → ${t.tableName}'),
-                                backgroundColor: AppColors.info,
-                                behavior: SnackBarBehavior.floating,
-                              ));
+                            if (navigator.mounted) {
+                              navigator.pop();
                             }
+                            messenger.showSnackBar(SnackBar(
+                              content: Text(
+                                  'Đã chuyển $sourceName → ${t.tableName}'),
+                              backgroundColor: AppColors.info,
+                              behavior: SnackBarBehavior.floating,
+                            ));
                           } else {
-                            if (context.mounted) {
+                            if (navigator.mounted) {
                               if (sourceInvoiceId != null) {
                                 final force = await showDialog<bool>(
                                   context: context,
@@ -246,11 +248,11 @@ class TableTransferDialog extends ConsumerWidget {
                                     ],
                                   ),
                                 );
-                                if (force == true && context.mounted) {
+                                if (force == true && navigator.mounted) {
                                   final forceOk = await notifier.transferUnpaidInvoiceToTable(sourceInvoiceId!, t.id, ignoreIotError: true);
-                                  if (forceOk && context.mounted) {
-                                    Navigator.of(context).pop();
-                                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                  if (forceOk && navigator.mounted) {
+                                    navigator.pop();
+                                    messenger.showSnackBar(SnackBar(
                                       content: Text('Đã chuyển $sourceName → ${t.tableName} thủ công'),
                                       backgroundColor: AppColors.success,
                                       behavior: SnackBarBehavior.floating,
@@ -259,7 +261,7 @@ class TableTransferDialog extends ConsumerWidget {
                                   }
                                 }
                               }
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                              messenger.showSnackBar(const SnackBar(
                                 content: Text('Chuyển bàn thất bại!'),
                                 backgroundColor: AppColors.error,
                                 behavior: SnackBarBehavior.floating,
