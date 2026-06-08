@@ -204,9 +204,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 2, vsync: this);
+    final now = DateTime.now();
     _dateRange = DateTimeRange(
-      start: DateTime.now().subtract(const Duration(days: 7)),
-      end: DateTime.now(),
+      start: DateTime(now.year, now.month, now.day),
+      end: now,
     );
   }
 

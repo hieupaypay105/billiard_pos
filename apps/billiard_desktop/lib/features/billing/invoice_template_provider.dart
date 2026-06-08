@@ -18,6 +18,7 @@ class InvoiceTemplate {
   final bool showLogo;
   final String logoPosition;
   final int logoHeight;
+  final int logoWidth;
   final bool showTableName;
   final bool showCashier;
   final bool showCustomer;
@@ -50,6 +51,7 @@ class InvoiceTemplate {
     required this.showLogo,
     required this.logoPosition,
     required this.logoHeight,
+    required this.logoWidth,
     required this.showTableName,
     required this.showCashier,
     required this.showCustomer,
@@ -97,6 +99,7 @@ class InvoiceTemplate {
       showLogo: parseBool(m['show_logo']),
       logoPosition: m['logo_position']?.toString() ?? 'center',
       logoHeight: parseInt(m['logo_height'], 80),
+      logoWidth: parseInt(m['logo_width'], 120),
       showTableName: parseBool(m['show_table_name']),
       showCashier: parseBool(m['show_cashier']),
       showCustomer: parseBool(m['show_customer']),
@@ -132,6 +135,7 @@ class InvoiceTemplate {
     showLogo: false,
     logoPosition: 'center',
     logoHeight: 80,
+    logoWidth: 120,
     showTableName: true,
     showCashier: true,
     showCustomer: true,

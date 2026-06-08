@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show md5;
 import 'package:dio/dio.dart';
@@ -20,13 +19,13 @@ import 'invoice_template_provider.dart';
 
 class _CachedNetworkImage extends StatefulWidget {
   final String url;
-  final double height;
+  final double? height;
   final BoxFit fit;
   final Widget Function()? errorWidget;
 
   const _CachedNetworkImage({
     required this.url,
-    required this.height,
+    this.height,
     this.fit = BoxFit.contain,
     this.errorWidget,
   });
@@ -62,9 +61,32 @@ class _CachedNetworkImageState extends State<_CachedNetworkImage> {
       if (!url.startsWith('http')) {
         final apiUri = Uri.parse(EnvConfig.apiBaseUrl);
         final host = '${apiUri.scheme}://${apiUri.host}${apiUri.hasPort ? ":${apiUri.port}" : ""}';
+        
+        // Extract base path (e.g., /billiard_pos_crm) if present in apiBaseUrl
+        String basePath = '';
+        final apiPath = apiUri.path;
+        if (apiPath.endsWith('/api')) {
+          basePath = apiPath.substring(0, apiPath.length - 4);
+        } else if (apiPath.contains('/api/')) {
+          final idx = apiPath.indexOf('/api/');
+          basePath = apiPath.substring(0, idx);
+        } else {
+          final segments = apiUri.pathSegments;
+          if (segments.isNotEmpty) {
+            basePath = '/${segments.sublist(0, segments.length - 1).join('/')}';
+          }
+        }
+        if (basePath == '/') basePath = '';
+
         // Ensure url has a leading slash
         final normalizedPath = url.startsWith('/') ? url : '/$url';
-        resolvedUrl = '$host$normalizedPath';
+        
+        // Avoid prepending basePath twice if it's already there
+        if (basePath.isNotEmpty && normalizedPath.startsWith(basePath)) {
+          resolvedUrl = '$host$normalizedPath';
+        } else {
+          resolvedUrl = '$host$basePath$normalizedPath';
+        }
         debugPrint('[_CachedNetworkImage] resolved relative URL: $url -> $resolvedUrl');
       }
 
@@ -74,7 +96,7 @@ class _CachedNetworkImageState extends State<_CachedNetworkImage> {
       if (await file.exists()) return file;
 
       debugPrint('[_CachedNetworkImage] downloading: $resolvedUrl');
-      final res = await Dio().get<Uint8List>(
+      final res = await Dio().get<List<int>>(
         resolvedUrl,
         options: Options(
           responseType: ResponseType.bytes,
@@ -684,12 +706,13 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
       );
     }
 
-    // ── Cached logo image ─────────────────────────────────────────────────────
-    Widget logoWidget() => _CachedNetworkImage(
-          url: t.logoUrl!,
+    // ── Asset logo image ─────────────────────────────────────────────────────
+    Widget logoWidget() => Image.asset(
+          'assets/images/logo.png',
           height: t.logoHeight.toDouble().clamp(30.0, 120.0),
+          width: t.logoWidth.toDouble().clamp(30.0, 300.0),
           fit: BoxFit.contain,
-          errorWidget: () => const SizedBox.shrink(),
+          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
         );
 
     // ── Cached QR static image ────────────────────────────────────────────────
@@ -748,7 +771,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // ── LOGO ─────────────────────────────────────────────────────────
-          if (t.showLogo && t.logoUrl != null && t.logoUrl!.isNotEmpty) ...[
+          if (t.showLogo) ...[
             Align(
               alignment: t.logoPosition == 'left'
                   ? Alignment.centerLeft
