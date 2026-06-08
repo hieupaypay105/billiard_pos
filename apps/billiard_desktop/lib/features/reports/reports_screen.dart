@@ -4,6 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/providers/providers.dart';
 import '../../features/sync/sync_provider.dart';
+import '../billing/invoice_print_preview_dialog.dart';
 
 // ─── Data Models ──────────────────────────────────────────────────────────────
 
@@ -27,10 +28,7 @@ class _ReportData {
   final List<dynamic> orders;
   final bool isOffline;
 
-  const _ReportData({
-    this.orders = const [],
-    this.isOffline = false,
-  });
+  const _ReportData({this.orders = const [], this.isOffline = false});
 }
 
 // ─── Mock fallback data ──────────────────────────────────────────────────────
@@ -88,39 +86,37 @@ final _mockOrders = [
     'closed_by': 'admin',
     'created_at': '2026-06-08 14:00:00',
     'note': 'Hủy do khách đổi ý',
-  }
+  },
 ];
 
 // ─── Providers & Helpers ───────────────────────────────────────────────────────
 
-final _reportDataProvider = FutureProvider.family<_ReportData, DateTimeRange>(
-  (ref, range) async {
-    final syncState = ref.watch(syncStateProvider);
-    final isOnline = syncState.isOnline;
+final _reportDataProvider = FutureProvider.family<_ReportData, DateTimeRange>((
+  ref,
+  range,
+) async {
+  final syncState = ref.watch(syncStateProvider);
+  final isOnline = syncState.isOnline;
 
-    if (isOnline) {
-      try {
-        final api = ref.read(apiClientProvider);
-        final dateFrom = _fmtIso(range.start);
-        final dateTo = _fmtIso(range.end);
+  if (isOnline) {
+    try {
+      final api = ref.read(apiClientProvider);
+      final dateFrom = _fmtIso(range.start);
+      final dateTo = _fmtIso(range.end);
 
-        final List<dynamic> orders = await api.getAllOrders(
-          dateFrom: dateFrom,
-          dateTo: dateTo,
-        );
+      final List<dynamic> orders = await api.getAllOrders(
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+      );
 
-        return _ReportData(
-          orders: orders,
-          isOffline: false,
-        );
-      } catch (e) {
-        return _buildOfflineData(ref, range);
-      }
-    } else {
+      return _ReportData(orders: orders, isOffline: false);
+    } catch (e) {
       return _buildOfflineData(ref, range);
     }
-  },
-);
+  } else {
+    return _buildOfflineData(ref, range);
+  }
+});
 
 final _cashiersProvider = FutureProvider<List<dynamic>>((ref) async {
   final syncState = ref.watch(syncStateProvider);
@@ -139,7 +135,10 @@ String _fmtIso(DateTime d) =>
 Future<_ReportData> _buildOfflineData(Ref ref, DateTimeRange range) async {
   try {
     final localDb = ref.read(localDbServiceProvider);
-    final localOrders = await localDb.getOrdersInDateRange(range.start, range.end);
+    final localOrders = await localDb.getOrdersInDateRange(
+      range.start,
+      range.end,
+    );
     if (localOrders.isEmpty) {
       return _ReportData(orders: _mockOrders, isOffline: true);
     }
@@ -152,7 +151,9 @@ Future<_ReportData> _buildOfflineData(Ref ref, DateTimeRange range) async {
 Map<String, dynamic> _normalizeOrder(dynamic o) {
   final map = o as Map<String, dynamic>;
   if (map.containsKey('order')) {
-    final orderMap = Map<String, dynamic>.from(map['order'] as Map<String, dynamic>);
+    final orderMap = Map<String, dynamic>.from(
+      map['order'] as Map<String, dynamic>,
+    );
     if (map.containsKey('details')) {
       orderMap['details'] = map['details'];
     }
@@ -195,7 +196,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
   late DateTimeRange _dateRange;
-  String _selectedStatus = 'all'; // 'all', 'paid', 'unpaid', 'cancelled', 'active'
+  String _selectedStatus =
+      'all'; // 'all', 'paid', 'unpaid', 'cancelled', 'active'
   String _selectedCashier = 'all'; // 'all' or userId
 
   @override
@@ -217,7 +219,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
-  void _printReport(BuildContext context, List<dynamic> orders, List<dynamic> users) {
+  void _printReport(
+    BuildContext context,
+    List<dynamic> orders,
+    List<dynamic> users,
+  ) {
     if (orders.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -229,11 +235,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     }
 
     final filtered = orders.map((o) => _normalizeOrder(o)).where((o) {
-      if (_selectedStatus != 'all' && o['status'] != _selectedStatus) return false;
+      if (_selectedStatus != 'all' && o['status'] != _selectedStatus)
+        return false;
       if (_selectedCashier != 'all') {
         final creator = o['created_by']?.toString() ?? '';
         final closer = o['closed_by']?.toString() ?? '';
-        if (creator != _selectedCashier && closer != _selectedCashier) return false;
+        if (creator != _selectedCashier && closer != _selectedCashier)
+          return false;
       }
       return true;
     }).toList();
@@ -248,18 +256,34 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
       return;
     }
 
-    final double totalPlay = filtered.fold(0.0, (sum, o) => sum + _toDouble(o['total_play_time_amount']));
-    final double totalService = filtered.fold(0.0, (sum, o) => sum + _toDouble(o['total_product_amount']));
-    final double totalDiscount = filtered.fold(0.0, (sum, o) => sum + _toDouble(o['discount_amount']));
-    final double totalAmount = filtered.fold(0.0, (sum, o) => sum + _toDouble(o['total_amount']));
+    final double totalPlay = filtered.fold(
+      0.0,
+      (sum, o) => sum + _toDouble(o['total_play_time_amount']),
+    );
+    final double totalService = filtered.fold(
+      0.0,
+      (sum, o) => sum + _toDouble(o['total_product_amount']),
+    );
+    final double totalDiscount = filtered.fold(
+      0.0,
+      (sum, o) => sum + _toDouble(o['discount_amount']),
+    );
+    final double totalAmount = filtered.fold(
+      0.0,
+      (sum, o) => sum + _toDouble(o['total_amount']),
+    );
 
     final textBuffer = StringBuffer();
     textBuffer.writeln('==========================================');
     textBuffer.writeln('            BÁO CÁO DOANH THU             ');
-    textBuffer.writeln('Từ ngày: ${_fmtDate(_dateRange.start)} - Đến ngày: ${_fmtDate(_dateRange.end)}');
+    textBuffer.writeln(
+      'Từ ngày: ${_fmtDate(_dateRange.start)} - Đến ngày: ${_fmtDate(_dateRange.end)}',
+    );
     textBuffer.writeln('------------------------------------------');
     textBuffer.writeln('Lọc trạng thái: ${_getStatusLabel(_selectedStatus)}');
-    textBuffer.writeln('Lọc nhân viên: ${_selectedCashier == 'all' ? 'Tất cả' : _getCashierName(_selectedCashier, users)}');
+    textBuffer.writeln(
+      'Lọc nhân viên: ${_selectedCashier == 'all' ? 'Tất cả' : _getCashierName(_selectedCashier, users)}',
+    );
     textBuffer.writeln('Tổng số hóa đơn: ${filtered.length}');
     textBuffer.writeln('Tổng tiền giờ: ${_fmtCurrency(totalPlay)}');
     textBuffer.writeln('Tổng dịch vụ: ${_fmtCurrency(totalService)}');
@@ -271,7 +295,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Đang in báo cáo doanh thu từ ${_fmtDate(_dateRange.start)} đến ${_fmtDate(_dateRange.end)}...'),
+        content: Text(
+          'Đang in báo cáo doanh thu từ ${_fmtDate(_dateRange.start)} đến ${_fmtDate(_dateRange.end)}...',
+        ),
         behavior: SnackBarBehavior.floating,
         action: SnackBarAction(
           label: 'Xem log',
@@ -283,7 +309,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                 content: SingleChildScrollView(
                   child: Text(
                     textBuffer.toString(),
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                    ),
                   ),
                 ),
                 actions: [
@@ -316,78 +345,104 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Báo cáo', style: AppTextStyles.headlineLarge),
-                  Text('Phân tích dữ liệu chi tiết theo khoảng thời gian.',
-                      style: AppTextStyles.bodySmall),
-                ]),
-                const Spacer(),
-                // Offline badge
-                if (!syncState.isOnline)
-                  Container(
-                    margin: const EdgeInsets.only(right: 10),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.error.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.error.withOpacity(0.3)),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.cloud_off_outlined, size: 14, color: AppColors.error),
-                      const SizedBox(width: 6),
-                      Text('Offline – dữ liệu cục bộ',
-                          style: AppTextStyles.labelSmall
-                              .copyWith(color: AppColors.error)),
-                    ]),
-                  ),
-                // Date range picker
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    final result = await showDateRangePicker(
-                      context: context,
-                      firstDate: DateTime(2024),
-                      lastDate: DateTime.now(),
-                      initialDateRange: _dateRange,
-                      builder: (ctx, child) => Theme(
-                        data: Theme.of(ctx).copyWith(
-                          colorScheme: const ColorScheme.light(
-                              primary: AppColors.primary)),
-                        child: child!,
+              Row(
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Báo cáo', style: AppTextStyles.headlineLarge),
+                      Text(
+                        'Phân tích dữ liệu chi tiết theo khoảng thời gian.',
+                        style: AppTextStyles.bodySmall,
                       ),
-                    );
-                    if (result != null) {
-                      setState(() => _dateRange = result);
-                    }
-                  },
-                  icon: const Icon(Icons.date_range_outlined, size: 16),
-                  label: Text(
-                    '${_fmtDate(_dateRange.start)} – ${_fmtDate(_dateRange.end)}',
+                    ],
                   ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    side: const BorderSide(color: AppColors.primary),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
+                  const Spacer(),
+                  // Offline badge
+                  if (!syncState.isOnline)
+                    Container(
+                      margin: const EdgeInsets.only(right: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: AppColors.error.withOpacity(0.3),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.cloud_off_outlined,
+                            size: 14,
+                            color: AppColors.error,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Offline – dữ liệu cục bộ',
+                            style: AppTextStyles.labelSmall.copyWith(
+                              color: AppColors.error,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  // Date range picker
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final result = await showDateRangePicker(
+                        context: context,
+                        firstDate: DateTime(2024),
+                        lastDate: DateTime.now(),
+                        initialDateRange: _dateRange,
+                        builder: (ctx, child) => Theme(
+                          data: Theme.of(ctx).copyWith(
+                            colorScheme: const ColorScheme.light(
+                              primary: AppColors.primary,
+                            ),
+                          ),
+                          child: child!,
+                        ),
+                      );
+                      if (result != null) {
+                        setState(() => _dateRange = result);
+                      }
+                    },
+                    icon: const Icon(Icons.date_range_outlined, size: 16),
+                    label: Text(
+                      '${_fmtDate(_dateRange.start)} – ${_fmtDate(_dateRange.end)}',
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                // Refresh button
-                OutlinedButton.icon(
-                  onPressed: () {
-                    ref.invalidate(_reportDataProvider(_dateRange));
-                    ref.invalidate(_cashiersProvider);
-                  },
-                  icon: const Icon(Icons.refresh_outlined, size: 16),
-                  label: const Text('Làm mới'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    side: const BorderSide(color: AppColors.primary),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
+                  const SizedBox(width: 10),
+                  // Refresh button
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      ref.invalidate(_reportDataProvider(_dateRange));
+                      ref.invalidate(_cashiersProvider);
+                    },
+                    icon: const Icon(Icons.refresh_outlined, size: 16),
+                    label: const Text('Làm mới'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
                   ),
-                ),
-              ]),
+                ],
+              ),
               const SizedBox(height: 12),
               // Filters & Print Row
               Row(
@@ -413,11 +468,26 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                           }
                         },
                         items: const [
-                          DropdownMenuItem(value: 'all', child: Text('Tất cả trạng thái')),
-                          DropdownMenuItem(value: 'paid', child: Text('Đã thanh toán')),
-                          DropdownMenuItem(value: 'unpaid', child: Text('Chưa thanh toán')),
-                          DropdownMenuItem(value: 'active', child: Text('Đang phục vụ')),
-                          DropdownMenuItem(value: 'cancelled', child: Text('Đã hủy')),
+                          DropdownMenuItem(
+                            value: 'all',
+                            child: Text('Tất cả trạng thái'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'paid',
+                            child: Text('Đã thanh toán'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'unpaid',
+                            child: Text('Không thanh toán'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'active',
+                            child: Text('Đang phục vụ'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'cancelled',
+                            child: Text('Đã hủy'),
+                          ),
                         ],
                       ),
                     ),
@@ -444,11 +514,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                         ),
                         error: (_, __) => const Text('Lỗi tải nhân viên'),
                         data: (users) {
-                          final Map<String, String> cashierMap = {'all': 'Tất cả nhân viên'};
+                          final Map<String, String> cashierMap = {
+                            'all': 'Tất cả nhân viên',
+                          };
                           for (final u in users) {
                             final map = u as Map<String, dynamic>;
                             final id = map['id']?.toString() ?? '';
-                            final name = map['display_name'] as String? ?? map['username'] as String? ?? id;
+                            final name =
+                                map['display_name'] as String? ??
+                                map['username'] as String? ??
+                                id;
                             if (id.isNotEmpty) cashierMap[id] = name;
                           }
                           cashierMap.putIfAbsent('system', () => 'Hệ thống');
@@ -469,7 +544,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                             items: cashierMap.entries.map((e) {
                               return DropdownMenuItem(
                                 value: e.key,
-                                child: Text(e.value, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                child: Text(
+                                  e.value,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               );
                             }).toList(),
                           );
@@ -495,7 +574,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
                     ),
                   ),
                 ],
@@ -532,10 +614,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.error_outline,
-                      size: 48, color: AppColors.error),
+                  const Icon(
+                    Icons.error_outline,
+                    size: 48,
+                    color: AppColors.error,
+                  ),
                   const SizedBox(height: 12),
-                  Text('Không thể tải báo cáo', style: AppTextStyles.headlineSmall),
+                  Text(
+                    'Không thể tải báo cáo',
+                    style: AppTextStyles.headlineSmall,
+                  ),
                   const SizedBox(height: 8),
                   Text(e.toString(), style: AppTextStyles.bodySmall),
                   const SizedBox(height: 16),
@@ -550,7 +638,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                       elevation: 0,
                     ),
                   ),
@@ -559,19 +648,24 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
             ),
             data: (data) {
               // Apply filters to orders
-              final filteredOrders = data.orders.map((o) => _normalizeOrder(o)).where((o) {
-                if (_selectedStatus != 'all' && o['status'] != _selectedStatus) {
-                  return false;
-                }
-                if (_selectedCashier != 'all') {
-                  final creator = o['created_by']?.toString() ?? '';
-                  final closer = o['closed_by']?.toString() ?? '';
-                  if (creator != _selectedCashier && closer != _selectedCashier) {
-                    return false;
-                  }
-                }
-                return true;
-              }).toList();
+              final filteredOrders = data.orders
+                  .map((o) => _normalizeOrder(o))
+                  .where((o) {
+                    if (_selectedStatus != 'all' &&
+                        o['status'] != _selectedStatus) {
+                      return false;
+                    }
+                    if (_selectedCashier != 'all') {
+                      final creator = o['created_by']?.toString() ?? '';
+                      final closer = o['closed_by']?.toString() ?? '';
+                      if (creator != _selectedCashier &&
+                          closer != _selectedCashier) {
+                        return false;
+                      }
+                    }
+                    return true;
+                  })
+                  .toList();
 
               final users = cashiersAsync.value ?? [];
 
@@ -617,7 +711,11 @@ class _InvoiceDetailsListTab extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.receipt_long_outlined, size: 48, color: AppColors.textMuted),
+            Icon(
+              Icons.receipt_long_outlined,
+              size: 48,
+              color: AppColors.textMuted,
+            ),
             SizedBox(height: 12),
             Text('Không có hóa đơn phù hợp với bộ lọc'),
           ],
@@ -625,9 +723,18 @@ class _InvoiceDetailsListTab extends StatelessWidget {
       );
     }
 
-    final double totalDiscount = orders.fold(0.0, (sum, o) => sum + _toDouble(o['discount_amount']));
-    final double totalAmount = orders.fold(0.0, (sum, o) => sum + _toDouble(o['total_amount']));
-    final int totalMinutes = orders.fold(0, (sum, o) => sum + _toInt(o['total_play_time_minutes']));
+    final double totalDiscount = orders.fold(
+      0.0,
+      (sum, o) => sum + _toDouble(o['discount_amount']),
+    );
+    final double totalAmount = orders.fold(
+      0.0,
+      (sum, o) => sum + _toDouble(o['total_amount']),
+    );
+    final int totalMinutes = orders.fold(
+      0,
+      (sum, o) => sum + _toInt(o['total_play_time_minutes']),
+    );
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -640,11 +747,23 @@ class _InvoiceDetailsListTab extends StatelessWidget {
             children: [
               _ReportCard('Số hóa đơn', '${orders.length} HĐ', AppColors.info),
               const SizedBox(width: 12),
-              _ReportCard('Tổng giờ chơi', _fmtDuration(totalMinutes), AppColors.accent),
+              _ReportCard(
+                'Tổng giờ chơi',
+                _fmtDuration(totalMinutes),
+                AppColors.accent,
+              ),
               const SizedBox(width: 12),
-              _ReportCard('Tổng chiết khấu', _fmtCurrency(totalDiscount), AppColors.error),
+              _ReportCard(
+                'Tổng chiết khấu',
+                _fmtCurrency(totalDiscount),
+                AppColors.error,
+              ),
               const SizedBox(width: 12),
-              _ReportCard('Tổng doanh thu', _fmtCurrency(totalAmount), AppColors.success),
+              _ReportCard(
+                'Tổng doanh thu',
+                _fmtCurrency(totalAmount),
+                AppColors.success,
+              ),
             ],
           ),
           const SizedBox(height: 20),
@@ -660,17 +779,24 @@ class _InvoiceDetailsListTab extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
                     color: AppColors.background,
                     child: const Row(
                       children: [
-                        _TH('Mã HĐ', flex: 2),
-                        _TH('Bàn chơi', flex: 2),
-                        _TH('Thời lượng', flex: 2),
+                        _TH('Mã HD', flex: 2),
+                        _TH('Ngày', flex: 2),
                         _TH('Thu ngân', flex: 2),
-                        _TH('Thanh toán', flex: 2),
-                        _TH('Trạng thái', flex: 2),
+                        _TH('Bàn chơi', flex: 2),
+                        _TH('Giờ vào', flex: 1),
+                        _TH('Giờ ra', flex: 1),
+                        _TH('Tiền giờ', flex: 2),
+                        _TH('Dịch vụ', flex: 2),
+                        _TH('Khuyến mãi', flex: 2),
                         _TH('Tổng tiền', flex: 2),
+                        _TH('Trạng thái', flex: 2),
                       ],
                     ),
                   ),
@@ -683,16 +809,65 @@ class _InvoiceDetailsListTab extends StatelessWidget {
                       itemBuilder: (ctx, i) {
                         final order = orders[i];
                         final idStr = order['id']?.toString() ?? '';
-                        final shortId = idStr.length > 6 ? idStr.substring(idStr.length - 6) : idStr;
+                        final shortId = idStr.length > 6
+                            ? idStr.substring(idStr.length - 6)
+                            : idStr;
                         final status = order['status']?.toString() ?? '';
-                        final cashier = _getCashierName(order['closed_by']?.toString() ?? order['created_by']?.toString(), users);
-                        final payMethod = order['payment_method']?.toString() ?? '-';
-                        final methodLabel = switch (payMethod) {
-                          'cash' => 'Tiền mặt',
-                          'card' => 'Thẻ',
-                          'transfer' => 'Chuyển khoản',
-                          _ => '-'
-                        };
+                        final cashier = _getCashierName(
+                          order['closed_by']?.toString() ??
+                              order['created_by']?.toString(),
+                          users,
+                        );
+
+                        // Format ngày thanh toán (dựa trên end_time hoặc created_at)
+                        final payDateStr =
+                            (order['end_time'] ?? order['created_at'] ?? '')
+                                .toString();
+                        String formattedPayDate = 'N/A';
+                        if (payDateStr.isNotEmpty) {
+                          try {
+                            final dt = DateTime.parse(
+                              payDateStr.replaceAll(' ', 'T'),
+                            );
+                            formattedPayDate =
+                                '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+                          } catch (_) {}
+                        }
+
+                        // Giờ vào / giờ ra
+                        final startStr = order['start_time']?.toString() ?? '';
+                        final endStr = order['end_time']?.toString() ?? '';
+                        String startTimeText = '--:--';
+                        String endTimeText = '--:--';
+                        if (startStr.isNotEmpty) {
+                          try {
+                            final dt = DateTime.parse(
+                              startStr.replaceAll(' ', 'T'),
+                            );
+                            startTimeText =
+                                '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+                          } catch (_) {}
+                        }
+                        if (endStr.isNotEmpty) {
+                          try {
+                            final dt = DateTime.parse(
+                              endStr.replaceAll(' ', 'T'),
+                            );
+                            endTimeText =
+                                '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+                          } catch (_) {}
+                        }
+
+                        final playAmount = _toDouble(
+                          order['total_play_time_amount'],
+                        );
+                        final serviceAmount = _toDouble(
+                          order['total_product_amount'],
+                        );
+                        final discountAmount = _toDouble(
+                          order['discount_amount'],
+                        );
+                        final totalAmount = _toDouble(order['total_amount']);
 
                         return InkWell(
                           onTap: () {
@@ -705,22 +880,99 @@ class _InvoiceDetailsListTab extends StatelessWidget {
                             );
                           },
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 14,
+                            ),
                             child: Row(
                               children: [
-                                Expanded(flex: 2, child: Text('#$shortId', style: AppTextStyles.labelLarge)),
-                                Expanded(flex: 2, child: Text(order['table_name']?.toString() ?? 'N/A', style: AppTextStyles.bodyMedium)),
-                                Expanded(flex: 2, child: Text(_fmtDuration(_toInt(order['total_play_time_minutes'])), style: AppTextStyles.bodySmall)),
-                                Expanded(flex: 2, child: Text(cashier, style: AppTextStyles.bodySmall)),
-                                Expanded(flex: 2, child: Text(methodLabel, style: AppTextStyles.bodySmall)),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    '#$shortId',
+                                    style: AppTextStyles.labelLarge,
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    formattedPayDate,
+                                    style: AppTextStyles.bodyMedium,
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    cashier,
+                                    style: AppTextStyles.bodySmall,
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    order['table_name']?.toString() ?? 'N/A',
+                                    style: AppTextStyles.bodyMedium,
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: Text(
+                                    startTimeText,
+                                    style: AppTextStyles.bodySmall,
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: Text(
+                                    endTimeText,
+                                    style: AppTextStyles.bodySmall,
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    _fmtCurrency(playAmount),
+                                    style: AppTextStyles.bodySmall,
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    _fmtCurrency(serviceAmount),
+                                    style: AppTextStyles.bodySmall,
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    _fmtCurrency(discountAmount),
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.accent,
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    _fmtCurrency(totalAmount),
+                                    style: AppTextStyles.labelLarge.copyWith(
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
                                 Expanded(
                                   flex: 2,
                                   child: Align(
                                     alignment: Alignment.centerLeft,
                                     child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
                                       decoration: BoxDecoration(
-                                        color: _getStatusColor(status).withOpacity(0.1),
+                                        color: _getStatusColor(
+                                          status,
+                                        ).withOpacity(0.1),
                                         borderRadius: BorderRadius.circular(12),
                                       ),
                                       child: Text(
@@ -733,13 +985,6 @@ class _InvoiceDetailsListTab extends StatelessWidget {
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 2,
-                                  child: Text(
-                                    _fmtCurrency(_toDouble(order['total_amount'])),
-                                    style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary),
                                   ),
                                 ),
                               ],
@@ -765,10 +1010,7 @@ class _InvoiceSummaryTab extends StatelessWidget {
   final List<dynamic> orders;
   final bool isOffline;
 
-  const _InvoiceSummaryTab({
-    required this.orders,
-    required this.isOffline,
-  });
+  const _InvoiceSummaryTab({required this.orders, required this.isOffline});
 
   @override
   Widget build(BuildContext context) {
@@ -784,7 +1026,8 @@ class _InvoiceSummaryTab extends StatelessWidget {
       } catch (_) {}
       if (dt == null) continue;
 
-      final key = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+      final key =
+          '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
       byDay.putIfAbsent(key, () => []).add(raw);
     }
 
@@ -803,15 +1046,18 @@ class _InvoiceSummaryTab extends StatelessWidget {
         service: service,
         total: total,
       );
-    }).toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
+    }).toList()..sort((a, b) => b.date.compareTo(a.date));
 
     if (rows.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.receipt_long_outlined, size: 48, color: AppColors.textMuted),
+            Icon(
+              Icons.receipt_long_outlined,
+              size: 48,
+              color: AppColors.textMuted,
+            ),
             SizedBox(height: 12),
             Text('Không có dữ liệu tổng hợp cho khoảng thời gian này'),
           ],
@@ -833,7 +1079,11 @@ class _InvoiceSummaryTab extends StatelessWidget {
             children: [
               _ReportCard('Tổng hóa đơn', '$totalCount HĐ', AppColors.info),
               const SizedBox(width: 12),
-              _ReportCard('Tổng doanh thu', _fmtCurrency(grandTotal), AppColors.success),
+              _ReportCard(
+                'Tổng doanh thu',
+                _fmtCurrency(grandTotal),
+                AppColors.success,
+              ),
               const SizedBox(width: 12),
               _ReportCard(
                 'TB hàng ngày',
@@ -855,7 +1105,10 @@ class _InvoiceSummaryTab extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
                     color: AppColors.background,
                     child: const Row(
                       children: [
@@ -876,18 +1129,47 @@ class _InvoiceSummaryTab extends StatelessWidget {
                       itemBuilder: (_, i) {
                         final r = rows[i];
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 14,
+                          ),
                           child: Row(
                             children: [
-                              Expanded(flex: 2, child: Text(r.date, style: AppTextStyles.bodyMedium)),
-                              Expanded(flex: 1, child: Text('${r.count} HĐ', style: AppTextStyles.bodySmall)),
-                              Expanded(flex: 2, child: Text(_fmtCurrency(r.play), style: AppTextStyles.bodySmall)),
-                              Expanded(flex: 2, child: Text(_fmtCurrency(r.service), style: AppTextStyles.bodySmall)),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  r.date,
+                                  style: AppTextStyles.bodyMedium,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 1,
+                                child: Text(
+                                  '${r.count} HĐ',
+                                  style: AppTextStyles.bodySmall,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  _fmtCurrency(r.play),
+                                  style: AppTextStyles.bodySmall,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  _fmtCurrency(r.service),
+                                  style: AppTextStyles.bodySmall,
+                                ),
+                              ),
                               Expanded(
                                 flex: 2,
                                 child: Text(
                                   _fmtCurrency(r.total),
-                                  style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary),
+                                  style: AppTextStyles.labelLarge.copyWith(
+                                    color: AppColors.primary,
+                                  ),
                                 ),
                               ),
                             ],
@@ -912,13 +1194,11 @@ class _InvoiceDetailsDialog extends ConsumerStatefulWidget {
   final Map<String, dynamic> order;
   final List<dynamic> users;
 
-  const _InvoiceDetailsDialog({
-    required this.order,
-    required this.users,
-  });
+  const _InvoiceDetailsDialog({required this.order, required this.users});
 
   @override
-  ConsumerState<_InvoiceDetailsDialog> createState() => _InvoiceDetailsDialogState();
+  ConsumerState<_InvoiceDetailsDialog> createState() =>
+      _InvoiceDetailsDialogState();
 }
 
 class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
@@ -934,7 +1214,8 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
   }
 
   Future<void> _loadDetails() async {
-    if (widget.order.containsKey('details') && widget.order['details'] is List) {
+    if (widget.order.containsKey('details') &&
+        widget.order['details'] is List) {
       setState(() {
         _details = widget.order['details'] as List<dynamic>;
         _member = widget.order['member'] as Map<String, dynamic>?;
@@ -978,10 +1259,66 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
   }
 
   void _printInvoice(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Đang in hóa đơn K80...'),
-        behavior: SnackBarBehavior.floating,
+    final order = widget.order;
+    final status = order['status']?.toString() ?? 'paid';
+    final cashier = _getCashierName(
+      order['closed_by']?.toString() ?? order['created_by']?.toString(),
+      widget.users,
+    );
+
+    DateTime _parseDate(String? s) {
+      if (s == null || s.isEmpty) return DateTime.now();
+      try {
+        return DateTime.parse(s.replaceAll(' ', 'T'));
+      } catch (_) {
+        return DateTime.now();
+      }
+    }
+
+    final startTime = _parseDate(order['start_time']?.toString());
+    final endTime = _parseDate(order['end_time']?.toString());
+    final playMinutes = _toInt(order['total_play_time_minutes']);
+    final playAmount = _toDouble(order['total_play_time_amount']);
+    final hourlyRate = _toDouble(order['hourly_rate'] ?? order['price_per_hour']);
+    final totalAmount = _toDouble(order['total_play_time_amount']) +
+        _toDouble(order['total_product_amount']);
+    final discountAmount = _toDouble(order['discount_amount']);
+    final discountPercent = _toDouble(order['discount_percent']);
+    final netTotal = _toDouble(order['total_amount']);
+
+    // Build products list from _details
+    final products = _details.map((d) {
+      return <String, dynamic>{
+        'name': d['product_name']?.toString() ?? 'Sản phẩm',
+        'qty': _toInt(d['quantity']),
+        'price': _toDouble(d['total_price']) /
+            (_toInt(d['quantity']) == 0 ? 1 : _toInt(d['quantity'])),
+      };
+    }).toList();
+
+    final container = ProviderScope.containerOf(context);
+    showDialog(
+      context: context,
+      builder: (_) => UncontrolledProviderScope(
+        container: container,
+        child: InvoicePrintPreviewDialog(
+          tableName: order['table_name']?.toString() ?? 'Bàn',
+          startTime: startTime,
+          endTime: endTime,
+          playMinutes: playMinutes,
+          playAmount: playAmount,
+          hourlyRate: hourlyRate,
+          products: products,
+          totalAmount: totalAmount,
+          discountPercent: discountPercent,
+          discountAmount: discountAmount,
+          netTotal: netTotal,
+          member: _member,
+          cashierName: cashier,
+          shiftLabel: null,
+          status: status == 'unpaid' ? 'unpaid' : 'paid',
+          note: order['note']?.toString(),
+        ),
       ),
     );
   }
@@ -990,9 +1327,14 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
   Widget build(BuildContext context) {
     final order = widget.order;
     final shortId = order['id']?.toString() ?? '';
-    final shortIdDisplay = shortId.length > 6 ? shortId.substring(shortId.length - 6) : shortId;
+    final shortIdDisplay = shortId.length > 6
+        ? shortId.substring(shortId.length - 6)
+        : shortId;
     final status = order['status']?.toString() ?? '';
-    final cashier = _getCashierName(order['closed_by']?.toString() ?? order['created_by']?.toString(), widget.users);
+    final cashier = _getCashierName(
+      order['closed_by']?.toString() ?? order['created_by']?.toString(),
+      widget.users,
+    );
     final note = order['note']?.toString();
 
     final playAmount = _toDouble(order['total_play_time_amount']);
@@ -1082,24 +1424,47 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
                             const SizedBox(height: 12),
                           ],
                           // Time & Status Info
-                          _InfoRow('Giờ vào', _fmtTime(order['start_time']?.toString()), Icons.login),
-                          _InfoRow('Giờ ra', _fmtTime(order['end_time']?.toString()), Icons.logout),
-                          _InfoRow('Thời lượng', _fmtDuration(_toInt(order['total_play_time_minutes'])), Icons.timer_outlined),
+                          _InfoRow(
+                            'Giờ vào',
+                            _fmtTime(order['start_time']?.toString()),
+                            Icons.login,
+                          ),
+                          _InfoRow(
+                            'Giờ ra',
+                            _fmtTime(order['end_time']?.toString()),
+                            Icons.logout,
+                          ),
+                          _InfoRow(
+                            'Thời lượng',
+                            _fmtDuration(
+                              _toInt(order['total_play_time_minutes']),
+                            ),
+                            Icons.timer_outlined,
+                          ),
                           _InfoRow('Thu ngân', cashier, Icons.person_outline),
                           const SizedBox(height: 12),
 
                           // Member section
                           if (_member != null) ...[
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppColors.success.withOpacity(0.08),
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: AppColors.success.withOpacity(0.2)),
+                                border: Border.all(
+                                  color: AppColors.success.withOpacity(0.2),
+                                ),
                               ),
                               child: Row(
                                 children: [
-                                  Icon(Icons.stars, color: AppColors.success, size: 16),
+                                  Icon(
+                                    Icons.stars,
+                                    color: AppColors.success,
+                                    size: 16,
+                                  ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
@@ -1120,19 +1485,30 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
 
                           // Status Badge Box
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
                             decoration: BoxDecoration(
                               color: _getStatusColor(status).withOpacity(0.08),
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: _getStatusColor(status).withOpacity(0.2)),
+                              border: Border.all(
+                                color: _getStatusColor(status).withOpacity(0.2),
+                              ),
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.info_outline, color: _getStatusColor(status), size: 16),
+                                Icon(
+                                  Icons.info_outline,
+                                  color: _getStatusColor(status),
+                                  size: 16,
+                                ),
                                 const SizedBox(width: 8),
                                 Text(
                                   'Trạng thái: ',
-                                  style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w500),
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
                                 Text(
                                   _getStatusLabel(status),
@@ -1150,17 +1526,23 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
 
                           // Products and Services
                           if (_details.isNotEmpty) ...[
-                            Text('Dịch vụ / Sản phẩm:', style: AppTextStyles.titleMedium),
+                            Text(
+                              'Dịch vụ / Sản phẩm:',
+                              style: AppTextStyles.titleMedium,
+                            ),
                             const SizedBox(height: 6),
                             ..._details.map((d) {
-                              final name = d['product_name']?.toString() ?? 'Sản phẩm';
+                              final name =
+                                  d['product_name']?.toString() ?? 'Sản phẩm';
                               final qty = _toInt(d['quantity']);
                               final unit = d['unit']?.toString() ?? '';
                               final unitStr = unit.isNotEmpty ? ' $unit' : '';
                               final total = _toDouble(d['total_price']);
 
                               return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 4,
+                                ),
                                 child: Row(
                                   children: [
                                     Expanded(
@@ -1183,18 +1565,30 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
                           // Prices Summary
                           Row(
                             children: [
-                              const Text('Tiền giờ chơi', style: AppTextStyles.bodySmall),
+                              const Text(
+                                'Tiền giờ chơi',
+                                style: AppTextStyles.bodySmall,
+                              ),
                               const Spacer(),
-                              Text(_fmtCurrency(playAmount), style: AppTextStyles.bodyMedium),
+                              Text(
+                                _fmtCurrency(playAmount),
+                                style: AppTextStyles.bodyMedium,
+                              ),
                             ],
                           ),
                           if (serviceAmount > 0) ...[
                             const SizedBox(height: 6),
                             Row(
                               children: [
-                                const Text('Tiền dịch vụ', style: AppTextStyles.bodySmall),
+                                const Text(
+                                  'Tiền dịch vụ',
+                                  style: AppTextStyles.bodySmall,
+                                ),
                                 const Spacer(),
-                                Text(_fmtCurrency(serviceAmount), style: AppTextStyles.bodyMedium),
+                                Text(
+                                  _fmtCurrency(serviceAmount),
+                                  style: AppTextStyles.bodyMedium,
+                                ),
                               ],
                             ),
                           ],
@@ -1202,17 +1596,23 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
                             const SizedBox(height: 6),
                             Row(
                               children: [
-                                const Text('Chiết khấu / Giảm giá', style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontSize: 13,
-                                  color: AppColors.accent,
-                                )),
+                                const Text(
+                                  'Chiết khấu / Giảm giá',
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontSize: 13,
+                                    color: AppColors.accent,
+                                  ),
+                                ),
                                 const Spacer(),
-                                Text('-${_fmtCurrency(totalDiscount)}', style: const TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontSize: 13,
-                                  color: AppColors.accent,
-                                )),
+                                Text(
+                                  '-${_fmtCurrency(totalDiscount)}',
+                                  style: const TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontSize: 13,
+                                    color: AppColors.accent,
+                                  ),
+                                ),
                               ],
                             ),
                           ],
@@ -1220,9 +1620,15 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
                             const SizedBox(height: 6),
                             Row(
                               children: [
-                                const Text('Thuế', style: AppTextStyles.bodySmall),
+                                const Text(
+                                  'Thuế',
+                                  style: AppTextStyles.bodySmall,
+                                ),
                                 const Spacer(),
-                                Text(_fmtCurrency(taxAmount), style: AppTextStyles.bodyMedium),
+                                Text(
+                                  _fmtCurrency(taxAmount),
+                                  style: AppTextStyles.bodyMedium,
+                                ),
                               ],
                             ),
                           ],
@@ -1231,22 +1637,53 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
                             children: [
                               const Text(
                                 'TỔNG CỘNG',
-                                style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700, fontSize: 14),
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                ),
                               ),
                               const Spacer(),
-                              Text(_fmtCurrency(finalAmount), style: AppTextStyles.currency),
+                              Text(
+                                _fmtCurrency(finalAmount),
+                                style: AppTextStyles.currency,
+                              ),
                             ],
                           ),
 
                           // Note / Reason
-                          if (note != null && note.isNotEmpty) ...[
+                          if (status == 'cancelled' || status == 'unpaid') ...[
                             const Divider(height: 24),
                             Text(
-                              status == 'cancelled' ? 'Lý do hủy bàn:' : 'Ghi chú / Lý do không thanh toán:',
+                              status == 'cancelled'
+                                  ? 'Lý do hủy bàn:'
+                                  : 'Lý do không thanh toán:',
                               style: AppTextStyles.titleMedium,
                             ),
                             const SizedBox(height: 6),
                             Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: AppColors.background,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                (note != null && note.trim().isNotEmpty)
+                                    ? note
+                                    : 'Không có lý do được ghi nhận',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          ] else if (note != null &&
+                              note.trim().isNotEmpty) ...[
+                            const Divider(height: 24),
+                            Text('Ghi chú:', style: AppTextStyles.titleMedium),
+                            const SizedBox(height: 6),
+                            Container(
+                              width: double.infinity,
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
                                 color: AppColors.background,
@@ -1254,7 +1691,9 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
                               ),
                               child: Text(
                                 note,
-                                style: AppTextStyles.bodySmall.copyWith(fontStyle: FontStyle.italic),
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  fontStyle: FontStyle.italic,
+                                ),
                               ),
                             ),
                           ],
@@ -1274,7 +1713,9 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
                       label: const Text('In hóa đơn'),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
                     ),
                   ),
@@ -1287,7 +1728,9 @@ class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
                         foregroundColor: Colors.white,
                         elevation: 0,
                         padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
                       child: const Text('Đóng'),
                     ),
@@ -1347,7 +1790,7 @@ String _getStatusLabel(String status) {
     case 'paid':
       return 'Đã thanh toán';
     case 'unpaid':
-      return 'Chưa thanh toán';
+      return 'Không thanh toán';
     case 'active':
       return 'Đang phục vụ';
     case 'cancelled':
@@ -1377,23 +1820,25 @@ Color _getStatusColor(String status) {
 class _OfflineNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.accent.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.accent.withOpacity(0.25)),
-        ),
-        child: Row(children: [
-          Icon(Icons.info_outline, size: 16, color: AppColors.accent),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Đang hiển thị dữ liệu cục bộ (offline). Kết nối mạng để lấy dữ liệu mới nhất.',
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.accent),
-            ),
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    decoration: BoxDecoration(
+      color: AppColors.accent.withOpacity(0.08),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: AppColors.accent.withOpacity(0.25)),
+    ),
+    child: Row(
+      children: [
+        Icon(Icons.info_outline, size: 16, color: AppColors.accent),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Đang hiển thị dữ liệu cục bộ (offline). Kết nối mạng để lấy dữ liệu mới nhất.',
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.accent),
           ),
-        ]),
-      );
+        ),
+      ],
+    ),
+  );
 }
 
 // ─── Shared Report Widgets ────────────────────────────────────────────────────
@@ -1406,26 +1851,28 @@ class _ReportCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Expanded(
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withOpacity(0.2)),
+    child: Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: AppTextStyles.labelSmall),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: AppTextStyles.headlineMedium.copyWith(color: color),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: AppTextStyles.labelSmall),
-              const SizedBox(height: 4),
-              Text(value,
-                  style: AppTextStyles.headlineMedium.copyWith(color: color),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
-            ],
-          ),
-        ),
-      );
+        ],
+      ),
+    ),
+  );
 }
 
 class _TH extends StatelessWidget {
@@ -1435,11 +1882,12 @@ class _TH extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Expanded(
-        flex: flex,
-        child: Text(text,
-            style: AppTextStyles.labelSmall
-                .copyWith(fontWeight: FontWeight.w700)),
-      );
+    flex: flex,
+    child: Text(
+      text,
+      style: AppTextStyles.labelSmall.copyWith(fontWeight: FontWeight.w700),
+    ),
+  );
 }
 
 class _InfoRow extends StatelessWidget {
@@ -1450,16 +1898,18 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(children: [
-          Icon(icon, size: 15, color: AppColors.textMuted),
-          const SizedBox(width: 8),
-          Text(label, style: AppTextStyles.bodySmall),
-          const Spacer(),
-          Text(value,
-              style: AppTextStyles.bodyMedium
-                  .copyWith(fontWeight: FontWeight.w500)),
-        ]),
-      );
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Row(
+      children: [
+        Icon(icon, size: 15, color: AppColors.textMuted),
+        const SizedBox(width: 8),
+        Text(label, style: AppTextStyles.bodySmall),
+        const Spacer(),
+        Text(
+          value,
+          style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w500),
+        ),
+      ],
+    ),
+  );
 }
-

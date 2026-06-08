@@ -149,4 +149,9 @@ class EnvConfig {
     'MEMBERSHIP_TIERS',
     defaultValue: '/member/tiers',
   );
+
+  static const String invoiceTemplate = String.fromEnvironment(
+    'INVOICE_TEMPLATE',
+    defaultValue: '/invoice/template',
+  );
 }

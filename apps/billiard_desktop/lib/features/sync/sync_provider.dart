@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/services/sync_service.dart';
 import '../../core/providers/providers.dart';
+import '../billing/invoice_template_provider.dart';
 
 class SyncState {
   final bool isOnline;
@@ -37,11 +38,13 @@ class SyncState {
 
 class SyncNotifier extends StateNotifier<SyncState> {
   final SyncService? _syncService;
+  final Ref _ref;
   StreamSubscription<ConnectivityStatus>? _statusSub;
   StreamSubscription<String>? _logSub;
 
-  SyncNotifier({SyncService? syncService})
+  SyncNotifier({SyncService? syncService, required Ref ref})
       : _syncService = syncService,
+        _ref = ref,
         super(const SyncState()) {
     _init();
   }
@@ -99,6 +102,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
       
       // Pull online data
       final pullResult = await _syncService.pullOnlineDataToOffline();
+      
+      // Invalidate template provider to reload updated template from SQLite
+      _ref.invalidate(invoiceTemplateProvider);
       
       final now = DateTime.now();
       final timeStr =
@@ -189,6 +195,6 @@ final syncNotifierServiceProvider = Provider<SyncService?>((ref) {
 final syncStateProvider =
     StateNotifierProvider<SyncNotifier, SyncState>((ref) {
   final syncService = ref.watch(syncNotifierServiceProvider);
-  return SyncNotifier(syncService: syncService);
+  return SyncNotifier(syncService: syncService, ref: ref);
 });
 

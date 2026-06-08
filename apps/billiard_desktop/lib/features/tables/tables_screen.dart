@@ -13,6 +13,9 @@ import '../billing/table_merge_dialog.dart';
 import '../sync/sync_provider.dart';
 import '../../core/providers/providers.dart';
 import '../auth/auth_provider.dart';
+import 'shift_provider.dart';
+import '../../core/services/local_db_service.dart';
+import '../../core/services/sync_service.dart';
 import 'package:flutter/services.dart';
 
 
@@ -1503,97 +1506,46 @@ class _InvoicePanel extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 16),
-              // Stop Timer and Payment buttons
+              // Payment buttons (Stop Timer button removed from here)
               Row(
                 children: [
-                  ElevatedButton.icon(
-                    onPressed: () async {
-                      final messenger = ScaffoldMessenger.of(context);
-                      // Trigger stop/freeze table action
-                      final notifier = ref.read(tablesProvider.notifier);
-                      final forceDeactivate = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Tắt bàn chơi'),
-                          content: Text('Bạn có chắc chắn muốn tắt bàn ${table.tableName} và chuyển hóa đơn sang danh sách chờ thanh toán không?'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(false),
-                              child: const Text('Hủy', style: TextStyle(color: AppColors.textSecondary)),
-                            ),
-                            ElevatedButton(
-                              onPressed: () => Navigator.of(context).pop(true),
-                              style: ElevatedButton.styleFrom(backgroundColor: AppColors.error, foregroundColor: Colors.white),
-                              child: const Text('Xác nhận tắt bàn'),
-                            ),
-                          ],
-                        ),
-                      );
-
-                      if (forceDeactivate == true) {
-                        final ok = await notifier.deactivateTableAndFreezeInvoice(table.id);
-                        if (ok) {
-                          messenger.showSnackBar(const SnackBar(
-                            content: Text('Đã tắt bàn thành công. Hóa đơn đã được đưa vào danh sách chờ thanh toán.'),
-                            backgroundColor: AppColors.success,
-                          ));
-                        }
-                      }
-                    },
-                    icon: const Icon(Icons.stop_circle_outlined, size: 14),
-                    label: const Text('Tắt bàn', style: TextStyle(fontSize: 12)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.error,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      elevation: 0,
+                  _PayButton(
+                    label: 'Thanh toán',
+                    icon: Icons.payment_rounded,
+                    color: AppColors.primary,
+                    onTap: () => _handleCheckoutTap(
+                      context,
+                      ref,
+                      'paid',
+                      playAmount,
+                      productTotal,
+                      discountPercent,
+                      discountAmount,
+                      netTotal,
+                      startTime,
+                      products,
+                      rate,
+                      member,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        _PayButton(
-                          label: 'Thanh toán',
-                          icon: Icons.payment_rounded,
-                          color: AppColors.primary,
-                          onTap: () => _checkout(
-                            context,
-                            ref,
-                            'paid',
-                            playAmount,
-                            productTotal,
-                            discountPercent,
-                            discountAmount,
-                            netTotal,
-                            startTime,
-                            products,
-                            rate,
-                            member,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        _PayButton(
-                          label: 'Không thanh toán',
-                          icon: Icons.money_off_rounded,
-                          color: AppColors.error,
-                          onTap: () => _checkout(
-                            context,
-                            ref,
-                            'unpaid',
-                            playAmount,
-                            productTotal,
-                            discountPercent,
-                            discountAmount,
-                            netTotal,
-                            startTime,
-                            products,
-                            rate,
-                            member,
-                          ),
-                        ),
-                      ],
+                  _PayButton(
+                    label: 'Không thanh toán',
+                    icon: Icons.money_off_rounded,
+                    color: AppColors.error,
+                    onTap: () => _handleCheckoutTap(
+                      context,
+                      ref,
+                      'unpaid',
+                      playAmount,
+                      productTotal,
+                      discountPercent,
+                      discountAmount,
+                      netTotal,
+                      startTime,
+                      products,
+                      rate,
+                      member,
                     ),
                   ),
                 ],
@@ -1603,6 +1555,138 @@ class _InvoicePanel extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _handleCheckoutTap(
+    BuildContext context,
+    WidgetRef ref,
+    String initialStatus,
+    double playAmount,
+    double productTotal,
+    double discountPercent,
+    double discountAmount,
+    double netTotal,
+    DateTime startTime,
+    List<Map<String, dynamic>> products,
+    double rate,
+    Map<String, dynamic>? member,
+  ) async {
+    // Resolve all dependencies and states from ref BEFORE deactivating (since deactivation disposes the widget!)
+    final tablesState = ref.read(tablesProvider);
+    final initialNote = tablesState.tableNotes[table.id];
+    final currentUser = ref.read(currentUserProvider);
+    final currentUserId = currentUser?.id ?? 'system';
+    final currentShiftId = ref.read(currentShiftIdProvider) ?? 'shift-default';
+    final localDb = ref.read(localDbServiceProvider);
+    final syncService = ref.read(syncServiceProvider);
+    final tablesNotifier = ref.read(tablesProvider.notifier);
+
+    final action = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => AlertDialog(
+        title: const Text('Bàn chơi chưa tắt'),
+        content: Text('Bàn "${table.tableName}" đang hoạt động. Bạn có chắc chắn muốn tắt bàn trước khi thanh toán không?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop('cancel'),
+            child: const Text('Hủy', style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop('bypass'),
+            child: const Text('Bỏ qua'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop('deactivate'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Tắt bàn'),
+          ),
+        ],
+      ),
+    );
+
+    if (action == 'deactivate') {
+      // Pre-calculate values exactly like deactivateTableAndFreezeInvoice does to construct the local invoice
+      final endTime = DateTime.now();
+      final baseMinutes = endTime.difference(startTime).inMinutes + 1;
+      final playMinutes = baseMinutes + (tablesState.tableExtraPlayMinutes[table.id] ?? 0);
+      final calcPlayAmount = (baseMinutes / 60.0) * rate + (tablesState.tableExtraPlayAmounts[table.id] ?? 0.0);
+      
+      final invProductTotal = products.fold(0.0,
+          (sum, p) => sum + (p['price'] as double) * (p['qty'] as int));
+
+      final invMemberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
+      final invManualDiscountPercent = tablesState.tableDiscounts[table.id] ?? 0.0;
+      final invDiscountPercent = (invMemberDiscountPercent + invManualDiscountPercent).clamp(0.0, 100.0);
+      
+      final invDiscountAmount = (calcPlayAmount + invProductTotal) * (invDiscountPercent / 100.0);
+      final invNetTotal = (calcPlayAmount + invProductTotal) - invDiscountAmount;
+      final orderId = table.currentOrderId ?? 'ord-${DateTime.now().millisecondsSinceEpoch}';
+
+      final ok = await tablesNotifier.deactivateTableAndFreezeInvoice(table.id);
+      if (ok) {
+        // Construct UnpaidInvoice using pre-calculated/frozen values (avoiding ref.read)
+        final newInvoice = UnpaidInvoice(
+          id: orderId,
+          tableId: table.id,
+          tableName: table.tableName,
+          startTime: startTime,
+          endTime: endTime,
+          playMinutes: playMinutes,
+          playAmount: calcPlayAmount,
+          hourlyRate: rate,
+          products: List<Map<String, dynamic>>.from(products),
+          manualDiscountPercent: invManualDiscountPercent,
+          member: member,
+          note: initialNote,
+        );
+
+        tablesNotifier.selectUnpaidInvoice(newInvoice.id);
+
+        if (context.mounted) {
+          await _checkoutUnpaidInvoice(
+            context: context,
+            currentUserId: currentUserId,
+            currentShiftId: currentShiftId,
+            localDb: localDb,
+            syncService: syncService,
+            tablesNotifier: tablesNotifier,
+            invoice: newInvoice,
+            initialStatus: initialStatus,
+            playAmount: calcPlayAmount,
+            productTotal: invProductTotal,
+            discountPercent: invDiscountPercent,
+            discountAmount: invDiscountAmount,
+            netTotal: invNetTotal,
+            startTime: newInvoice.startTime,
+            endTime: newInvoice.endTime,
+            products: products,
+            rate: newInvoice.hourlyRate,
+            member: member,
+          );
+        }
+      }
+    } else if (action == 'bypass') {
+      if (context.mounted) {
+        await _checkout(
+          context,
+          ref,
+          initialStatus,
+          playAmount,
+          productTotal,
+          discountPercent,
+          discountAmount,
+          netTotal,
+          startTime,
+          products,
+          rate,
+          member,
+        );
+      }
+    }
   }
 
   Future<void> _checkout(
@@ -1628,6 +1712,16 @@ class _InvoicePanel extends ConsumerWidget {
     final finalDiscountAmount = (finalPlayAmount + finalProductTotal) * (discountPercent / 100.0);
     final finalNetTotal = (finalPlayAmount + finalProductTotal) - finalDiscountAmount;
 
+    // Resolve Riverpod values and dependencies before await/dialog to prevent disposal issues
+    final initialNote = ref.read(tablesProvider).tableNotes[table.id];
+    final serverOrderId = ref.read(tablesProvider).tableServerOrderIds[table.id];
+    final currentUser = ref.read(currentUserProvider);
+    final currentUserId = currentUser?.id ?? 'system';
+    final currentShiftId = ref.read(currentShiftIdProvider) ?? 'shift-default';
+    final localDb = ref.read(localDbServiceProvider);
+    final syncService = ref.read(syncServiceProvider);
+    final tablesNotifier = ref.read(tablesProvider.notifier);
+
     await showDialog(
       context: context,
       barrierDismissible: false,
@@ -1645,6 +1739,7 @@ class _InvoicePanel extends ConsumerWidget {
         totalAmount: finalPlayAmount + finalProductTotal,
         initialStatus: initialStatus,
         member: member,
+        note: initialNote,
         onConfirm: ({
           required status,
           required paymentMethod,
@@ -1652,16 +1747,13 @@ class _InvoicePanel extends ConsumerWidget {
           required netTotal,
           required note,
         }) async {
-          final serverOrderId = ref.read(tablesProvider).tableServerOrderIds[table.id];
           final orderId = table.currentOrderId ?? 'ord-${DateTime.now().millisecondsSinceEpoch}';
-          final currentUser = ref.read(currentUserProvider);
-          final currentUserId = currentUser?.id ?? 'system';
 
           final orderModel = OrderModel(
             id: orderId,
             tableId: table.id,
             memberId: member?['id']?.toString(),
-            shiftId: 'shift-default',
+            shiftId: currentShiftId,
             status: status,
             startTime: startTime,
             endTime: endTime,
@@ -1703,9 +1795,6 @@ class _InvoicePanel extends ConsumerWidget {
             if (member != null) 'member': member,
           };
 
-          final localDb = ref.read(localDbServiceProvider);
-          final syncService = ref.read(syncServiceProvider);
-
           try {
             await localDb.saveOrderLocally(orderId, payload);
             final syncResult = await syncService.syncNow();
@@ -1729,7 +1818,7 @@ class _InvoicePanel extends ConsumerWidget {
             rethrow;
           }
 
-          await ref.read(tablesProvider.notifier).deactivateTable(table.id);
+          await tablesNotifier.deactivateTable(table.id);
         },
       ),
     );
@@ -2070,118 +2159,163 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
     List<Map<String, dynamic>> products,
     double rate,
     Map<String, dynamic>? member,
-  ) async {
-    final playMinutes = invoice.playMinutes;
-    final finalPlayAmount = playAmount;
-    final finalProductTotal = productTotal;
-    final finalDiscountAmount = discountAmount;
-    final finalNetTotal = netTotal;
+  ) {
+    final currentUser = ref.read(currentUserProvider);
+    final currentUserId = currentUser?.id ?? 'system';
+    final currentShiftId = ref.read(currentShiftIdProvider) ?? 'shift-default';
+    final localDb = ref.read(localDbServiceProvider);
+    final syncService = ref.read(syncServiceProvider);
+    final tablesNotifier = ref.read(tablesProvider.notifier);
 
-    await showDialog(
+    return _checkoutUnpaidInvoice(
       context: context,
-      barrierDismissible: false,
-      builder: (_) => InvoiceDialog(
-        tableName: invoice.tableName,
-        startTime: startTime,
-        endTime: endTime,
-        playMinutes: playMinutes,
-        playAmount: finalPlayAmount,
-        hourlyRate: rate,
-        products: products,
-        discountPercent: discountPercent,
-        discountAmount: finalDiscountAmount,
-        netTotal: finalNetTotal,
-        totalAmount: finalPlayAmount + finalProductTotal,
-        initialStatus: initialStatus,
-        member: member,
-        onConfirm: ({
-          required status,
-          required paymentMethod,
-          required discountAmount,
-          required netTotal,
-          required note,
-        }) async {
-          final orderId = invoice.id;
-          final currentUser = ref.read(currentUserProvider);
-          final currentUserId = currentUser?.id ?? 'system';
-
-          final orderModel = OrderModel(
-            id: orderId,
-            tableId: invoice.tableId,
-            memberId: member?['id']?.toString(),
-            shiftId: 'shift-default',
-            status: status,
-            startTime: startTime,
-            endTime: endTime,
-            totalPlayTimeMinutes: playMinutes,
-            totalPlayTimeAmount: finalPlayAmount,
-            totalProductAmount: finalProductTotal,
-            discountAmount: discountAmount,
-            taxAmount: 0.0,
-            totalAmount: netTotal,
-            paymentMethod: paymentMethod,
-            createdBy: currentUserId,
-            closedBy: currentUserId,
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-            note: note,
-          );
-
-          final details = <OrderDetailModel>[];
-          for (int i = 0; i < products.length; i++) {
-            final p = products[i];
-            final pid = p['product_id']?.toString() ?? '';
-            final qty = int.tryParse(p['qty']?.toString() ?? '') ?? 1;
-            final price = double.tryParse(p['price']?.toString() ?? '') ?? 0.0;
-            details.add(OrderDetailModel(
-              id: 'det-${DateTime.now().millisecondsSinceEpoch}-$pid-$i',
-              orderId: orderId,
-              productId: pid,
-              quantity: qty,
-              unitPrice: price,
-              totalPrice: price * qty,
-              addedBy: currentUserId,
-              createdAt: DateTime.now(),
-            ));
-          }
-
-          final payload = {
-            'order': orderModel.toJson(),
-            'details': details.map((d) => d.toJson()).toList(),
-            if (member != null) 'member': member,
-          };
-
-          final localDb = ref.read(localDbServiceProvider);
-          final syncService = ref.read(syncServiceProvider);
-
-          try {
-            await localDb.saveOrderLocally(orderId, payload);
-            final syncResult = await syncService.syncNow();
-            if (!syncResult.success && syncResult.message.isNotEmpty && context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(syncResult.message),
-                backgroundColor: Colors.orange,
-                behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 4),
-              ));
-            }
-          } catch (e) {
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(_extractApiError(e)),
-                backgroundColor: AppColors.error,
-                behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 4),
-              ));
-            }
-            rethrow;
-          }
-
-          ref.read(tablesProvider.notifier).completeUnpaidInvoicePayment(invoice.id);
-        },
-      ),
+      currentUserId: currentUserId,
+      currentShiftId: currentShiftId,
+      localDb: localDb,
+      syncService: syncService,
+      tablesNotifier: tablesNotifier,
+      invoice: invoice,
+      initialStatus: initialStatus,
+      playAmount: playAmount,
+      productTotal: productTotal,
+      discountPercent: discountPercent,
+      discountAmount: discountAmount,
+      netTotal: netTotal,
+      startTime: startTime,
+      endTime: endTime,
+      products: products,
+      rate: rate,
+      member: member,
     );
   }
+}
+
+Future<void> _checkoutUnpaidInvoice({
+  required BuildContext context,
+  required String currentUserId,
+  required String currentShiftId,
+  required LocalDbService localDb,
+  required SyncService syncService,
+  required TablesNotifier tablesNotifier,
+  required UnpaidInvoice invoice,
+  required String initialStatus,
+  required double playAmount,
+  required double productTotal,
+  required double discountPercent,
+  required double discountAmount,
+  required double netTotal,
+  required DateTime startTime,
+  required DateTime endTime,
+  required List<Map<String, dynamic>> products,
+  required double rate,
+  required Map<String, dynamic>? member,
+}) async {
+  final playMinutes = invoice.playMinutes;
+  final finalPlayAmount = playAmount;
+  final finalProductTotal = productTotal;
+  final finalDiscountAmount = discountAmount;
+  final finalNetTotal = netTotal;
+
+  await showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => InvoiceDialog(
+      tableName: invoice.tableName,
+      startTime: startTime,
+      endTime: endTime,
+      playMinutes: playMinutes,
+      playAmount: finalPlayAmount,
+      hourlyRate: rate,
+      products: products,
+      discountPercent: discountPercent,
+      discountAmount: finalDiscountAmount,
+      netTotal: finalNetTotal,
+      totalAmount: finalPlayAmount + finalProductTotal,
+      initialStatus: initialStatus,
+      member: member,
+      note: invoice.note,
+      onConfirm: ({
+        required status,
+        required paymentMethod,
+        required discountAmount,
+        required netTotal,
+        required note,
+      }) async {
+        final orderId = invoice.id;
+
+        final orderModel = OrderModel(
+          id: orderId,
+          tableId: invoice.tableId,
+          memberId: member?['id']?.toString(),
+          shiftId: currentShiftId,
+          status: status,
+          startTime: startTime,
+          endTime: endTime,
+          totalPlayTimeMinutes: playMinutes,
+          totalPlayTimeAmount: finalPlayAmount,
+          totalProductAmount: finalProductTotal,
+          discountAmount: discountAmount,
+          taxAmount: 0.0,
+          totalAmount: netTotal,
+          paymentMethod: paymentMethod,
+          createdBy: currentUserId,
+          closedBy: currentUserId,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+          note: note,
+        );
+
+        final details = <OrderDetailModel>[];
+        for (int i = 0; i < products.length; i++) {
+          final p = products[i];
+          final pid = p['product_id']?.toString() ?? '';
+          final qty = int.tryParse(p['qty']?.toString() ?? '') ?? 1;
+          final price = double.tryParse(p['price']?.toString() ?? '') ?? 0.0;
+          details.add(OrderDetailModel(
+            id: 'det-${DateTime.now().millisecondsSinceEpoch}-$pid-$i',
+            orderId: orderId,
+            productId: pid,
+            quantity: qty,
+            unitPrice: price,
+            totalPrice: price * qty,
+            addedBy: currentUserId,
+            createdAt: DateTime.now(),
+          ));
+        }
+
+        final payload = {
+          'order': orderModel.toJson(),
+          'details': details.map((d) => d.toJson()).toList(),
+          if (member != null) 'member': member,
+        };
+
+        try {
+          await localDb.saveOrderLocally(orderId, payload);
+          final syncResult = await syncService.syncNow();
+          if (!syncResult.success && syncResult.message.isNotEmpty && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(syncResult.message),
+              backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
+            ));
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(_extractApiError(e)),
+              backgroundColor: AppColors.error,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
+            ));
+          }
+          rethrow;
+        }
+
+        tablesNotifier.completeUnpaidInvoicePayment(invoice.id);
+      },
+    ),
+  );
 }
 
   String _fmtDuration(Duration d) =>

@@ -284,7 +284,7 @@ void main() {
       expect(state.tables.firstWhere((t) => t.id == 't-2').status, 'active');
       
       final targetOrders = state.tableOrders['t-2']!;
-      expect(targetOrders.length, 3);
+      expect(targetOrders.length, 2);
       
       final stingDau = targetOrders.firstWhere((item) => item['product_id'] == 'p-1');
       expect(stingDau['qty'], 3);
@@ -292,9 +292,8 @@ void main() {
       final banhMi = targetOrders.firstWhere((item) => item['product_id'] == 'p-2');
       expect(banhMi['qty'], 1);
       
-      final mergedPlaytime = targetOrders.firstWhere((item) => item['product_id'].toString().startsWith('merged-playtime-'));
-      expect(mergedPlaytime['name'], 'Tiền giờ gộp từ Bàn 01 (Pool)');
-      expect(mergedPlaytime['price'], greaterThan(0.0));
+      expect(state.tableExtraPlayAmounts['t-2'], greaterThan(0.0));
+      expect(state.tableNotes['t-2'], contains('Gộp từ Bàn 01 (Pool)'));
     });
 
     test('deactivateTableAndFreezeInvoice freezes table session into unpaidInvoices', () async {
@@ -397,8 +396,8 @@ void main() {
       final stingDau = targetOrders.firstWhere((item) => item['product_id'] == 'p-1');
       expect(stingDau['qty'], 3); // 2 from unpaid + 1 from active t-2
       
-      final mergedPlaytime = targetOrders.firstWhere((item) => item['product_id'].toString().startsWith('merged-unpaid-playtime-'));
-      expect(mergedPlaytime['price'], greaterThan(0.0));
+      expect(stateAfter.tableExtraPlayAmounts['t-2'], greaterThan(0.0));
+      expect(stateAfter.tableNotes['t-2'], contains('Gộp từ Bàn 01 (Pool)'));
     });
   });
 }

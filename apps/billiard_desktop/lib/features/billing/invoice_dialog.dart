@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../auth/auth_provider.dart';
+import '../tables/shift_provider.dart';
+import 'invoice_print_preview_dialog.dart';
 
 class InvoiceDialog extends ConsumerStatefulWidget {
   final String tableName;
@@ -17,6 +20,7 @@ class InvoiceDialog extends ConsumerStatefulWidget {
   final double netTotal;
   final Map<String, dynamic>? member;
   final String initialStatus;
+  final String? note;
   final Future<void> Function({
     required String status,
     required String? paymentMethod,
@@ -40,6 +44,7 @@ class InvoiceDialog extends ConsumerStatefulWidget {
     required this.netTotal,
     this.member,
     required this.initialStatus,
+    this.note,
     required this.onConfirm,
   });
 
@@ -80,8 +85,16 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
   String _fmtTime(DateTime dt) =>
       '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
 
+  String _fmtDateTime(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+
   @override
   Widget build(BuildContext context) {
+    final currentUser = ref.watch(currentUserProvider);
+    final cashierName = currentUser?.displayName ?? currentUser?.username ?? 'Hệ thống';
+    final shiftState = ref.watch(shiftProvider);
+    final activeShift = shiftState.activeShift;
+
     final isUnpaid = _selectedStatus == 'unpaid';
     final currentDiscountPercent = isUnpaid ? 100.0 : widget.discountPercent;
     final currentDiscountAmount = isUnpaid ? widget.totalAmount : widget.discountAmount;
@@ -164,6 +177,16 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                         'Đơn giá',
                         '${_fmtCurrency(widget.hourlyRate)}/giờ',
                         Icons.attach_money),
+                    _InfoRow(
+                        'Ngày tạo HĐ',
+                        _fmtDateTime(widget.startTime),
+                        Icons.calendar_today_outlined),
+                    _InfoRow(
+                        'Ca thu ngân',
+                        activeShift != null
+                            ? '$cashierName (Ca ${activeShift.id.replaceAll('shift-', '')})'
+                            : '$cashierName (Mặc định)',
+                        Icons.person_outline),
                     if (widget.member != null) ...[
                       const SizedBox(height: 12),
                       Container(
@@ -404,16 +427,42 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () {
-                      // TODO: integrate esc_pos_utils printing
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Đang in hóa đơn K80...'),
-                              behavior: SnackBarBehavior.floating));
+                      final container = ProviderScope.containerOf(context);
+                      showDialog(
+                        context: context,
+                        builder: (_) => UncontrolledProviderScope(
+                          container: container,
+                          child: InvoicePrintPreviewDialog(
+                            tableName: widget.tableName,
+                            startTime: widget.startTime,
+                            endTime: widget.endTime,
+                            playMinutes: widget.playMinutes,
+                            playAmount: widget.playAmount,
+                            hourlyRate: widget.hourlyRate,
+                            products: widget.products,
+                            totalAmount: widget.totalAmount,
+                            discountPercent: currentDiscountPercent,
+                            discountAmount: currentDiscountAmount,
+                            netTotal: currentNetTotal,
+                            member: widget.member,
+                            cashierName: cashierName,
+                            shiftLabel: activeShift != null
+                                ? 'Ca ${activeShift.id.replaceAll('shift-', '')}'
+                                : null,
+                            status: _selectedStatus,
+                            note: _selectedStatus == 'unpaid' &&
+                                    _reasonController.text.trim().isNotEmpty
+                                ? _reasonController.text.trim()
+                                : widget.note,
+                          ),
+                        ),
+                      );
                     },
                     icon: const Icon(Icons.print_outlined, size: 16),
                     label: const Text('In hóa đơn'),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),
@@ -440,7 +489,11 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                                 paymentMethod: _selectedStatus == 'unpaid' ? null : 'cash',
                                 discountAmount: currentDiscountAmount,
                                 netTotal: currentNetTotal,
-                                note: _selectedStatus == 'unpaid' ? _reasonController.text.trim() : null,
+                                note: _selectedStatus == 'unpaid'
+                                    ? (widget.note != null && widget.note!.isNotEmpty
+                                        ? '${widget.note}\nLý do: ${_reasonController.text.trim()}'
+                                        : 'Lý do: ${_reasonController.text.trim()}')
+                                    : widget.note,
                               );
                               // Chỉ đóng dialog khi onConfirm thành công
                               if (navigator.mounted) {

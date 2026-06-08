@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 /// Lưu trữ orders chờ sync, cache dữ liệu sản phẩm, bàn, etc.
 class LocalDbService {
   static const _dbName = 'billiard_pos_local.db';
-  static const _dbVersion = 4;
+  static const _dbVersion = 5;
 
   Database? _db;
 
@@ -148,6 +148,15 @@ class LocalDbService {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_members_phone ON cached_members(phone_number)',
     );
+
+    // Cache invoice template (mẫu hóa đơn K80)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_invoice_template (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )
+    ''');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -208,6 +217,15 @@ class LocalDbService {
           user_id TEXT NOT NULL,
           opened_at TEXT NOT NULL,
           data TEXT NOT NULL
+        )
+      ''');
+    }
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS cached_invoice_template (
+          id TEXT PRIMARY KEY,
+          data TEXT NOT NULL,
+          updated_at TEXT DEFAULT (datetime('now'))
         )
       ''');
     }
@@ -601,6 +619,40 @@ class LocalDbService {
   Future<void> clearCachedMembershipTiers() async {
     final db = await database;
     await db.delete('cached_membership_tiers');
+  }
+
+  // ─── Invoice Template Cache ────────────────────────────────────────────────────
+
+  /// Lưu cấu hình mẫu hóa đơn xuống local DB.
+  Future<void> saveInvoiceTemplate(Map<String, dynamic> data) async {
+    final db = await database;
+    await db.insert(
+      'cached_invoice_template',
+      {
+        'id': 'default',
+        'data': jsonEncode(data),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Đọc cấu hình mẫu hóa đơn từ local DB.
+  Future<Map<String, dynamic>?> getInvoiceTemplate() async {
+    final db = await database;
+    final rows = await db.query(
+      'cached_invoice_template',
+      where: 'id = ?',
+      whereArgs: ['default'],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+  }
+
+  /// Xóa cache mẫu hóa đơn.
+  Future<void> clearInvoiceTemplate() async {
+    final db = await database;
+    await db.delete('cached_invoice_template');
   }
 
 

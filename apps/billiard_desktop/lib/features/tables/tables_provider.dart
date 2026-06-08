@@ -24,6 +24,7 @@ class UnpaidInvoice {
   final List<Map<String, dynamic>> products;
   final double manualDiscountPercent;
   final Map<String, dynamic>? member;
+  final String? note;
 
   const UnpaidInvoice({
     required this.id,
@@ -37,6 +38,7 @@ class UnpaidInvoice {
     required this.products,
     this.manualDiscountPercent = 0.0,
     this.member,
+    this.note,
   });
 
   UnpaidInvoice copyWith({
@@ -52,6 +54,7 @@ class UnpaidInvoice {
     double? manualDiscountPercent,
     Map<String, dynamic>? member,
     bool clearMember = false,
+    String? note,
   }) {
     return UnpaidInvoice(
       id: id ?? this.id,
@@ -66,6 +69,7 @@ class UnpaidInvoice {
       manualDiscountPercent:
           manualDiscountPercent ?? this.manualDiscountPercent,
       member: clearMember ? null : (member ?? this.member),
+      note: note ?? this.note,
     );
   }
 
@@ -82,6 +86,7 @@ class UnpaidInvoice {
       'products': products,
       'manualDiscountPercent': manualDiscountPercent,
       'member': member,
+      'note': note,
     };
   }
 
@@ -99,6 +104,7 @@ class UnpaidInvoice {
       manualDiscountPercent:
           (json['manualDiscountPercent'] as num?)?.toDouble() ?? 0.0,
       member: json['member'] as Map<String, dynamic>?,
+      note: json['note'] as String?,
     );
   }
 }
@@ -120,8 +126,13 @@ class TablesState {
   final List<UnpaidInvoice> unpaidInvoices;
   final String? selectedUnpaidInvoiceId;
   final List<TablePriceModel> tablePrices;
+
   /// Map tableId → server order ID (lấy từ backend khi gọi POST /order/open).
   final Map<String, String> tableServerOrderIds;
+
+  final Map<String, double> tableExtraPlayAmounts;
+  final Map<String, int> tableExtraPlayMinutes;
+  final Map<String, String> tableNotes;
 
   const TablesState({
     this.tables = const [],
@@ -147,6 +158,9 @@ class TablesState {
     this.selectedUnpaidInvoiceId,
     this.tablePrices = const [],
     this.tableServerOrderIds = const {},
+    this.tableExtraPlayAmounts = const {},
+    this.tableExtraPlayMinutes = const {},
+    this.tableNotes = const {},
   });
 
   // Sử dụng Object? sentinel để phân biệt "không truyền" và "truyền null"
@@ -170,6 +184,9 @@ class TablesState {
     Object? selectedUnpaidInvoiceId = _absent,
     List<TablePriceModel>? tablePrices,
     Map<String, String>? tableServerOrderIds,
+    Map<String, double>? tableExtraPlayAmounts,
+    Map<String, int>? tableExtraPlayMinutes,
+    Map<String, String>? tableNotes,
   }) {
     return TablesState(
       tables: tables ?? this.tables,
@@ -193,6 +210,11 @@ class TablesState {
           : selectedUnpaidInvoiceId as String?,
       tablePrices: tablePrices ?? this.tablePrices,
       tableServerOrderIds: tableServerOrderIds ?? this.tableServerOrderIds,
+      tableExtraPlayAmounts:
+          tableExtraPlayAmounts ?? this.tableExtraPlayAmounts,
+      tableExtraPlayMinutes:
+          tableExtraPlayMinutes ?? this.tableExtraPlayMinutes,
+      tableNotes: tableNotes ?? this.tableNotes,
     );
   }
 
@@ -279,7 +301,8 @@ class TablesState {
       orElse: () => tables.first,
     );
     final rate = getTableHourlyRate(table);
-    return (playDuration(tableId).inSeconds / 3600.0) * rate;
+    final baseCost = (playDuration(tableId).inSeconds / 3600.0) * rate;
+    return baseCost + (tableExtraPlayAmounts[tableId] ?? 0.0);
   }
 }
 
@@ -423,6 +446,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
         'unpaidInvoices': state.unpaidInvoices
             .map((inv) => inv.toJson())
             .toList(),
+        'tableExtraPlayAmounts': state.tableExtraPlayAmounts,
+        'tableExtraPlayMinutes': state.tableExtraPlayMinutes,
+        'tableNotes': state.tableNotes,
       };
       await _localDb!.setSetting('billiard_active_session', jsonEncode(data));
     } catch (e) {
@@ -499,6 +525,36 @@ class TablesNotifier extends StateNotifier<TablesState> {
           }
         }
 
+        // Restore table extra play amounts
+        final restoredExtraAmounts = <String, double>{};
+        if (data['tableExtraPlayAmounts'] != null) {
+          (data['tableExtraPlayAmounts'] as Map<String, dynamic>).forEach((
+            k,
+            v,
+          ) {
+            restoredExtraAmounts[k] = double.tryParse(v.toString()) ?? 0.0;
+          });
+        }
+
+        // Restore table extra play minutes
+        final restoredExtraMinutes = <String, int>{};
+        if (data['tableExtraPlayMinutes'] != null) {
+          (data['tableExtraPlayMinutes'] as Map<String, dynamic>).forEach((
+            k,
+            v,
+          ) {
+            restoredExtraMinutes[k] = int.tryParse(v.toString()) ?? 0;
+          });
+        }
+
+        // Restore table notes
+        final restoredNotes = <String, String>{};
+        if (data['tableNotes'] != null) {
+          (data['tableNotes'] as Map<String, dynamic>).forEach((k, v) {
+            restoredNotes[k] = v.toString();
+          });
+        }
+
         state = state.copyWith(
           tables: restoredTables,
           tableStartTimes: restoredStartTimes,
@@ -506,6 +562,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
           tableDiscounts: restoredDiscounts,
           tableMembers: restoredMembers,
           unpaidInvoices: restoredUnpaid,
+          tableExtraPlayAmounts: restoredExtraAmounts,
+          tableExtraPlayMinutes: restoredExtraMinutes,
+          tableNotes: restoredNotes,
         );
       }
     } catch (e) {
@@ -632,9 +691,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
     if (tableIndex < 0) return false;
 
     final iotConfig = state.iotConfigs[tableId];
-    if (iotConfig == null) {
-      if (!ignoreIotError) return false;
-    } else {
+    if (iotConfig != null) {
       final controller = state.useSimulator
           ? SimulatedBilliardIoTController() as BilliardIoTController
           : RealBilliardIoTController();
@@ -693,7 +750,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
     updatedOrders[tableId] = [];
 
     // 3. Lưu server orderId vào state
-    final updatedServerOrderIds = Map<String, String>.from(state.tableServerOrderIds);
+    final updatedServerOrderIds = Map<String, String>.from(
+      state.tableServerOrderIds,
+    );
     updatedServerOrderIds[tableId] = serverOrderId;
 
     state = state.copyWith(
@@ -709,8 +768,12 @@ class TablesNotifier extends StateNotifier<TablesState> {
   Future<bool> deactivateTable(String tableId) async {
     final controller = _controllers[tableId];
     if (controller != null) {
-      await controller.turnOff();
-      await controller.disconnect();
+      try {
+        await controller.turnOff();
+        await controller.disconnect();
+      } catch (e) {
+        print('Lỗi tắt IoT controller khi tắt bàn: $e');
+      }
       _controllers.remove(tableId);
     }
 
@@ -718,7 +781,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
       try {
         await _apiClient!.updateTableStatus(tableId, 'idle');
       } catch (e) {
-        print('Lỗi cập nhật trạng thái bàn về idle trên backend khi checkout: $e');
+        print(
+          'Lỗi cập nhật trạng thái bàn về idle trên backend khi checkout: $e',
+        );
       }
     }
 
@@ -747,12 +812,24 @@ class TablesNotifier extends StateNotifier<TablesState> {
     );
     updatedMembers.remove(tableId);
 
+    final updatedExtraAmounts = Map<String, double>.from(
+      state.tableExtraPlayAmounts,
+    )..remove(tableId);
+    final updatedExtraMinutes = Map<String, int>.from(
+      state.tableExtraPlayMinutes,
+    )..remove(tableId);
+    final updatedNotes = Map<String, String>.from(state.tableNotes)
+      ..remove(tableId);
+
     state = state.copyWith(
       tables: updatedTables,
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
       tableDiscounts: updatedDiscounts,
       tableMembers: updatedMembers,
+      tableExtraPlayAmounts: updatedExtraAmounts,
+      tableExtraPlayMinutes: updatedExtraMinutes,
+      tableNotes: updatedNotes,
     );
     await _saveSessionState();
     return true;
@@ -761,8 +838,12 @@ class TablesNotifier extends StateNotifier<TablesState> {
   Future<bool> deactivateTableAndFreezeInvoice(String tableId) async {
     final controller = _controllers[tableId];
     if (controller != null) {
-      await controller.turnOff();
-      await controller.disconnect();
+      try {
+        await controller.turnOff();
+        await controller.disconnect();
+      } catch (e) {
+        print('Lỗi tắt IoT controller khi tắt bàn và treo hóa đơn: $e');
+      }
       _controllers.remove(tableId);
     }
 
@@ -773,12 +854,18 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final startTime = state.tableStartTimes[tableId] ?? DateTime.now();
     final endTime = DateTime.now();
     final rate = state.getTableHourlyRate(table, startTime);
-    final playMinutes = endTime.difference(startTime).inMinutes + 1;
-    final playAmount = (playMinutes / 60.0) * rate;
+
+    final baseMinutes = endTime.difference(startTime).inMinutes + 1;
+    final playMinutes =
+        baseMinutes + (state.tableExtraPlayMinutes[tableId] ?? 0);
+    final playAmount =
+        (baseMinutes / 60.0) * rate +
+        (state.tableExtraPlayAmounts[tableId] ?? 0.0);
 
     final products = state.tableOrders[tableId] ?? [];
     final discount = state.tableDiscounts[tableId] ?? 0.0;
     final member = state.tableMembers[tableId];
+    final note = state.tableNotes[tableId];
     final orderId =
         table.currentOrderId ?? 'ord-${DateTime.now().millisecondsSinceEpoch}';
 
@@ -803,6 +890,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       products: List<Map<String, dynamic>>.from(products),
       manualDiscountPercent: discount,
       member: member,
+      note: note,
     );
 
     final updatedTables = List<TableModel>.from(state.tables);
@@ -824,6 +912,15 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final updatedUnpaidInvoices = List<UnpaidInvoice>.from(state.unpaidInvoices)
       ..add(unpaidInvoice);
 
+    final updatedExtraAmounts = Map<String, double>.from(
+      state.tableExtraPlayAmounts,
+    )..remove(tableId);
+    final updatedExtraMinutes = Map<String, int>.from(
+      state.tableExtraPlayMinutes,
+    )..remove(tableId);
+    final updatedNotes = Map<String, String>.from(state.tableNotes)
+      ..remove(tableId);
+
     state = state.copyWith(
       tables: updatedTables,
       tableStartTimes: updatedStartTimes,
@@ -833,11 +930,20 @@ class TablesNotifier extends StateNotifier<TablesState> {
       unpaidInvoices: updatedUnpaidInvoices,
       selectedUnpaidInvoiceId: unpaidInvoice.id,
       selectedTableId: null,
+      tableExtraPlayAmounts: updatedExtraAmounts,
+      tableExtraPlayMinutes: updatedExtraMinutes,
+      tableNotes: updatedNotes,
     );
 
     if (_localDb != null) {
       try {
-        final productTotal = products.fold(0.0, (sum, p) => sum + (double.tryParse(p['price']?.toString() ?? '') ?? 0.0) * (int.tryParse(p['qty']?.toString() ?? '') ?? 1));
+        final productTotal = products.fold(
+          0.0,
+          (sum, p) =>
+              sum +
+              (double.tryParse(p['price']?.toString() ?? '') ?? 0.0) *
+                  (int.tryParse(p['qty']?.toString() ?? '') ?? 1),
+        );
         final orderModel = OrderModel(
           id: orderId,
           tableId: tableId,
@@ -857,6 +963,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
           closedBy: null,
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
+          note: note,
         );
 
         final details = <OrderDetailModel>[];
@@ -865,16 +972,18 @@ class TablesNotifier extends StateNotifier<TablesState> {
           final pid = p['product_id']?.toString() ?? '';
           final qty = int.tryParse(p['qty']?.toString() ?? '') ?? 1;
           final price = double.tryParse(p['price']?.toString() ?? '') ?? 0.0;
-          details.add(OrderDetailModel(
-            id: 'det-${DateTime.now().millisecondsSinceEpoch}-$pid-$i',
-            orderId: orderId,
-            productId: pid,
-            quantity: qty,
-            unitPrice: price,
-            totalPrice: price * qty,
-            addedBy: 'system',
-            createdAt: DateTime.now(),
-          ));
+          details.add(
+            OrderDetailModel(
+              id: 'det-${DateTime.now().millisecondsSinceEpoch}-$pid-$i',
+              orderId: orderId,
+              productId: pid,
+              quantity: qty,
+              unitPrice: price,
+              totalPrice: price * qty,
+              addedBy: 'system',
+              createdAt: DateTime.now(),
+            ),
+          );
         }
 
         final payload = {
@@ -969,7 +1078,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
     _saveSessionState();
   }
 
-  Future<bool> transferTable(String sourceTableId, String targetTableId) async {
+  Future<bool> transferTable(
+    String sourceTableId,
+    String targetTableId, {
+    bool ignoreIotError = false,
+  }) async {
     final sourceIndex = state.tables.indexWhere((t) => t.id == sourceTableId);
     final targetIndex = state.tables.indexWhere((t) => t.id == targetTableId);
     if (sourceIndex < 0 || targetIndex < 0) return false;
@@ -980,27 +1093,33 @@ class TablesNotifier extends StateNotifier<TablesState> {
       return false;
 
     final iotConfig = state.iotConfigs[targetTableId];
-    if (iotConfig == null) return false;
+    if (iotConfig != null) {
+      final controller = state.useSimulator
+          ? SimulatedBilliardIoTController() as BilliardIoTController
+          : RealBilliardIoTController();
 
-    final controller = state.useSimulator
-        ? SimulatedBilliardIoTController() as BilliardIoTController
-        : RealBilliardIoTController();
+      try {
+        final connected = await controller.connect(iotConfig);
+        if (!connected && !ignoreIotError) return false;
 
-    final connected = await controller.connect(iotConfig);
-    if (!connected) return false;
-
-    final turnedOn = await controller.turnOn();
-    if (!turnedOn) {
-      await controller.disconnect();
-      return false;
+        if (connected) {
+          final turnedOn = await controller.turnOn();
+          if (!turnedOn && !ignoreIotError) return false;
+          _controllers[targetTableId] = controller;
+        }
+      } catch (e) {
+        if (!ignoreIotError) return false;
+      }
     }
-
-    _controllers[targetTableId] = controller;
 
     final sourceController = _controllers[sourceTableId];
     if (sourceController != null) {
-      await sourceController.turnOff();
-      await sourceController.disconnect();
+      try {
+        await sourceController.turnOff();
+        await sourceController.disconnect();
+      } catch (e) {
+        print('Lỗi tắt IoT controller nguồn khi chuyển bàn: $e');
+      }
       _controllers.remove(sourceTableId);
     }
 
@@ -1044,18 +1163,46 @@ class TablesNotifier extends StateNotifier<TablesState> {
       updatedMembers[targetTableId] = member;
     }
 
+    final updatedExtraAmounts = Map<String, double>.from(
+      state.tableExtraPlayAmounts,
+    );
+    final extraAmount = updatedExtraAmounts.remove(sourceTableId);
+    if (extraAmount != null) {
+      updatedExtraAmounts[targetTableId] = extraAmount;
+    }
+
+    final updatedExtraMinutes = Map<String, int>.from(
+      state.tableExtraPlayMinutes,
+    );
+    final extraMinutes = updatedExtraMinutes.remove(sourceTableId);
+    if (extraMinutes != null) {
+      updatedExtraMinutes[targetTableId] = extraMinutes;
+    }
+
+    final updatedNotes = Map<String, String>.from(state.tableNotes);
+    final note = updatedNotes.remove(sourceTableId);
+    if (note != null) {
+      updatedNotes[targetTableId] = note;
+    }
+
     state = state.copyWith(
       tables: updatedTables,
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
       tableDiscounts: updatedDiscounts,
       tableMembers: updatedMembers,
+      tableExtraPlayAmounts: updatedExtraAmounts,
+      tableExtraPlayMinutes: updatedExtraMinutes,
+      tableNotes: updatedNotes,
     );
 
     final orderId = sourceTable.currentOrderId;
     if (_apiClient != null && orderId != null && !orderId.startsWith('ord-')) {
       try {
-        await _apiClient!.updateOrder(orderId, {'table_id': targetTableId});
+        await _apiClient!.updateOrder(orderId, {
+          'table_id': targetTableId,
+          if (note != null) 'note': note,
+        });
         await _apiClient!.updateTableStatus(sourceTableId, 'idle');
         await _apiClient!.updateTableStatus(targetTableId, 'active');
       } catch (e) {
@@ -1078,11 +1225,16 @@ class TablesNotifier extends StateNotifier<TablesState> {
       return false;
 
     final sourcePlayCost = state.playCost(sourceTableId);
+    final sourcePlayMinutes = state.playDuration(sourceTableId).inMinutes + 1;
 
     final sourceController = _controllers[sourceTableId];
     if (sourceController != null) {
-      await sourceController.turnOff();
-      await sourceController.disconnect();
+      try {
+        await sourceController.turnOff();
+        await sourceController.disconnect();
+      } catch (e) {
+        print('Lỗi tắt IoT controller nguồn khi gộp bàn: $e');
+      }
       _controllers.remove(sourceTableId);
     }
 
@@ -1102,15 +1254,6 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final targetItems = List<Map<String, dynamic>>.from(
       updatedOrders[targetTableId] ?? [],
     );
-
-    if (sourcePlayCost > 0) {
-      targetItems.add({
-        'product_id': 'merged-playtime-$sourceTableId',
-        'name': 'Tiền giờ gộp từ ${sourceTable.tableName}',
-        'price': sourcePlayCost,
-        'qty': 1,
-      });
-    }
 
     for (final item in sourceItems) {
       final existingIndex = targetItems.indexWhere(
@@ -1136,21 +1279,71 @@ class TablesNotifier extends StateNotifier<TablesState> {
     );
     updatedMembers.remove(sourceTableId);
 
+    // Update play cost, minutes and notes
+    final updatedExtraAmounts = Map<String, double>.from(
+      state.tableExtraPlayAmounts,
+    );
+    final existingExtraAmount = updatedExtraAmounts[targetTableId] ?? 0.0;
+    updatedExtraAmounts[targetTableId] = existingExtraAmount + sourcePlayCost;
+    updatedExtraAmounts.remove(sourceTableId);
+
+    final updatedExtraMinutes = Map<String, int>.from(
+      state.tableExtraPlayMinutes,
+    );
+    final existingExtraMinutes = updatedExtraMinutes[targetTableId] ?? 0;
+    updatedExtraMinutes[targetTableId] =
+        existingExtraMinutes + sourcePlayMinutes;
+    updatedExtraMinutes.remove(sourceTableId);
+
+    final updatedNotes = Map<String, String>.from(state.tableNotes);
+    final sourceNote = updatedNotes[sourceTableId];
+    final targetNote = updatedNotes[targetTableId];
+    String mergeNote =
+        'Gộp từ ${sourceTable.tableName} (Tiền giờ: ${sourcePlayCost.toStringAsFixed(0)}đ)';
+    if (sourceNote != null && sourceNote.isNotEmpty) {
+      mergeNote += ' [Ghi chú cũ: $sourceNote]';
+    }
+    updatedNotes[targetTableId] = (targetNote != null && targetNote.isNotEmpty)
+        ? '$targetNote\n$mergeNote'
+        : mergeNote;
+    updatedNotes.remove(sourceTableId);
+
     state = state.copyWith(
       tables: updatedTables,
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
       tableDiscounts: updatedDiscounts,
       tableMembers: updatedMembers,
+      tableExtraPlayAmounts: updatedExtraAmounts,
+      tableExtraPlayMinutes: updatedExtraMinutes,
+      tableNotes: updatedNotes,
     );
 
     final sourceOrderId = sourceTable.currentOrderId;
-    if (_apiClient != null && sourceOrderId != null && !sourceOrderId.startsWith('ord-')) {
+    if (_apiClient != null &&
+        sourceOrderId != null &&
+        !sourceOrderId.startsWith('ord-')) {
       try {
-        await _apiClient!.voidOrder(sourceOrderId, 'Gộp bàn vào ${targetTable.tableName}');
+        await _apiClient!.voidOrder(
+          sourceOrderId,
+          'Gộp bàn vào ${targetTable.tableName}',
+        );
         await _apiClient!.updateTableStatus(sourceTableId, 'idle');
       } catch (e) {
         print('Lỗi đồng bộ gộp bàn lên backend: $e');
+      }
+    }
+
+    final targetOrderId = targetTable.currentOrderId;
+    if (_apiClient != null &&
+        targetOrderId != null &&
+        !targetOrderId.startsWith('ord-')) {
+      try {
+        await _apiClient!.updateOrder(targetOrderId, {
+          'note': updatedNotes[targetTableId],
+        });
+      } catch (e) {
+        print('Lỗi cập nhật ghi chú bàn đích: $e');
       }
     }
 
@@ -1174,9 +1367,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
     if (targetTable.status != 'idle') return false;
 
     final iotConfig = state.iotConfigs[targetTableId];
-    if (iotConfig == null) {
-      if (!ignoreIotError) return false;
-    } else {
+    if (iotConfig != null) {
       final controller = state.useSimulator
           ? SimulatedBilliardIoTController() as BilliardIoTController
           : RealBilliardIoTController();
@@ -1229,6 +1420,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final updatedUnpaid = List<UnpaidInvoice>.from(state.unpaidInvoices)
       ..removeAt(invoiceIndex);
 
+    final updatedNotes = Map<String, String>.from(state.tableNotes);
+    if (invoice.note != null && invoice.note!.isNotEmpty) {
+      updatedNotes[targetTableId] = invoice.note!;
+    }
+
     state = state.copyWith(
       tables: updatedTables,
       tableStartTimes: updatedStartTimes,
@@ -1238,11 +1434,16 @@ class TablesNotifier extends StateNotifier<TablesState> {
       unpaidInvoices: updatedUnpaid,
       selectedUnpaidInvoiceId: null,
       selectedTableId: targetTableId,
+      tableNotes: updatedNotes,
     );
 
     if (_apiClient != null && !invoiceId.startsWith('ord-')) {
       try {
-        await _apiClient!.updateOrder(invoiceId, {'table_id': targetTableId, 'status': 'active'});
+        await _apiClient!.updateOrder(invoiceId, {
+          'table_id': targetTableId,
+          'status': 'active',
+          if (invoice.note != null) 'note': invoice.note,
+        });
         await _apiClient!.updateTableStatus(targetTableId, 'active');
       } catch (e) {
         print('Lỗi đồng bộ chuyển hóa đơn chờ lên backend: $e');
@@ -1274,15 +1475,6 @@ class TablesNotifier extends StateNotifier<TablesState> {
       updatedOrders[targetTableId] ?? [],
     );
 
-    if (invoice.playAmount > 0) {
-      targetItems.add({
-        'product_id': 'merged-unpaid-playtime-$invoiceId',
-        'name': 'Tiền giờ gộp từ ${invoice.tableName} (Chờ)',
-        'price': invoice.playAmount,
-        'qty': 1,
-      });
-    }
-
     for (final item in invoice.products) {
       final existingIndex = targetItems.indexWhere(
         (p) => p['product_id'] == item['product_id'],
@@ -1299,6 +1491,33 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
     updatedOrders[targetTableId] = targetItems;
 
+    // Update play cost, minutes and notes
+    final updatedExtraAmounts = Map<String, double>.from(
+      state.tableExtraPlayAmounts,
+    );
+    final existingExtraAmount = updatedExtraAmounts[targetTableId] ?? 0.0;
+    updatedExtraAmounts[targetTableId] =
+        existingExtraAmount + invoice.playAmount;
+
+    final updatedExtraMinutes = Map<String, int>.from(
+      state.tableExtraPlayMinutes,
+    );
+    final existingExtraMinutes = updatedExtraMinutes[targetTableId] ?? 0;
+    updatedExtraMinutes[targetTableId] =
+        existingExtraMinutes + invoice.playMinutes;
+
+    final updatedNotes = Map<String, String>.from(state.tableNotes);
+    final invoiceNote = invoice.note;
+    final targetNote = updatedNotes[targetTableId];
+    String mergeNote =
+        'Gộp từ ${invoice.tableName} (Tiền giờ: ${invoice.playAmount.toStringAsFixed(0)}đ)';
+    if (invoiceNote != null && invoiceNote.isNotEmpty) {
+      mergeNote += ' [Ghi chú cũ: $invoiceNote]';
+    }
+    updatedNotes[targetTableId] = (targetNote != null && targetNote.isNotEmpty)
+        ? '$targetNote\n$mergeNote'
+        : mergeNote;
+
     // Remove from unpaid invoices
     final updatedUnpaid = List<UnpaidInvoice>.from(state.unpaidInvoices)
       ..removeAt(invoiceIndex);
@@ -1308,13 +1527,32 @@ class TablesNotifier extends StateNotifier<TablesState> {
       unpaidInvoices: updatedUnpaid,
       selectedUnpaidInvoiceId: null,
       selectedTableId: targetTableId,
+      tableExtraPlayAmounts: updatedExtraAmounts,
+      tableExtraPlayMinutes: updatedExtraMinutes,
+      tableNotes: updatedNotes,
     );
 
     if (_apiClient != null && !invoiceId.startsWith('ord-')) {
       try {
-        await _apiClient!.voidOrder(invoiceId, 'Gộp hóa đơn chờ vào ${targetTable.tableName}');
+        await _apiClient!.voidOrder(
+          invoiceId,
+          'Gộp hóa đơn chờ vào ${targetTable.tableName}',
+        );
       } catch (e) {
         print('Lỗi đồng bộ gộp hóa đơn chờ lên backend: $e');
+      }
+    }
+
+    final targetOrderId = targetTable.currentOrderId;
+    if (_apiClient != null &&
+        targetOrderId != null &&
+        !targetOrderId.startsWith('ord-')) {
+      try {
+        await _apiClient!.updateOrder(targetOrderId, {
+          'note': updatedNotes[targetTableId],
+        });
+      } catch (e) {
+        print('Lỗi cập nhật ghi chú bàn đích: $e');
       }
     }
 
@@ -1323,7 +1561,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   void cancelUnpaidInvoice(String invoiceId, String reason) {
-    final invoiceIndex = state.unpaidInvoices.indexWhere((inv) => inv.id == invoiceId);
+    final invoiceIndex = state.unpaidInvoices.indexWhere(
+      (inv) => inv.id == invoiceId,
+    );
     if (invoiceIndex < 0) return;
 
     final invoice = state.unpaidInvoices[invoiceIndex];
@@ -1344,7 +1584,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
     _persistCancelledInvoice(invoice, reason);
   }
 
-  Future<void> _persistCancelledInvoice(UnpaidInvoice invoice, String reason) async {
+  Future<void> _persistCancelledInvoice(
+    UnpaidInvoice invoice,
+    String reason,
+  ) async {
     if (_localDb == null) return;
 
     final cancelData = {
@@ -1446,7 +1689,6 @@ class TablesNotifier extends StateNotifier<TablesState> {
     state = state.copyWith(tableOrders: updatedOrders);
     _saveSessionState();
   }
-
 
   void removeProductFromTable(String targetId, String productId) {
     final invoiceIndex = state.unpaidInvoices.indexWhere(

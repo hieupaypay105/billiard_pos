@@ -255,6 +255,19 @@ class SyncService {
       _log('LỖI tải hạng thành viên: $e');
     }
 
+    // 9. Đồng bộ mẫu hóa đơn K80
+    try {
+      _log('Đang tải cấu hình mẫu hóa đơn từ server...');
+      final template = await _apiClient.getInvoiceTemplate();
+      if (template != null) {
+        await _localDb.saveInvoiceTemplate(template);
+        totalPulled += 1;
+        _log('Đã lưu mẫu hóa đơn xuống local.');
+      }
+    } catch (e) {
+      _log('LỖI tải mẫu hóa đơn: $e');
+    }
+
     _log('Đồng bộ tải dữ liệu online -> offline hoàn tất. Tổng cộng $totalPulled bản ghi.');
     return SyncResult(
       success: true,

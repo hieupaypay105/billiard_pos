@@ -503,6 +503,21 @@ class ApiClient {
     // Không gọi _checkStatus ở đây vì sync_service tự xử lý status
     return res.data as Map<String, dynamic>;
   }
+
+  // ─── Invoice Template ────────────────────────────────────────────────────────
+
+  /// Lấy cấu hình mẫu hóa đơn K80 từ backend.
+  Future<Map<String, dynamic>?> getInvoiceTemplate() async {
+    try {
+      final res = await _dio.get(EnvConfig.invoiceTemplate);
+      final body = res.data as Map<String, dynamic>;
+      final inner = body['data'];
+      if (inner is Map<String, dynamic>) return inner;
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 // ignore: avoid_print
