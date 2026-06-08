@@ -23,80 +23,75 @@ class _ReportRow {
   });
 }
 
-class _MemberRow {
-  final String name;
-  final String phone;
-  final String tier;
-  final int points;
-  final double spend;
-
-  const _MemberRow({
-    required this.name,
-    required this.phone,
-    required this.tier,
-    required this.points,
-    required this.spend,
-  });
-}
-
-class _ProductRow {
-  final String name;
-  final String category;
-  final int sold;
-  final int stock;
-  final double revenue;
-
-  const _ProductRow({
-    required this.name,
-    required this.category,
-    required this.sold,
-    required this.stock,
-    required this.revenue,
-  });
-}
-
-// ─── State ────────────────────────────────────────────────────────────────────
-
 class _ReportData {
-  final List<_ReportRow> invoiceRows;
-  final List<_MemberRow> memberRows;
-  final List<_ProductRow> productRows;
+  final List<dynamic> orders;
   final bool isOffline;
 
   const _ReportData({
-    this.invoiceRows = const [],
-    this.memberRows = const [],
-    this.productRows = const [],
+    this.orders = const [],
     this.isOffline = false,
   });
 }
 
-// ─── Mock fallback data (khi offline & local DB rỗng) ────────────────────────
+// ─── Mock fallback data ──────────────────────────────────────────────────────
 
-const _mockInvoiceRows = [
-  _ReportRow(date: '22/05/2026', count: 12, play: 1200000, service: 450000, total: 1650000),
-  _ReportRow(date: '21/05/2026', count: 9, play: 850000, service: 320000, total: 1170000),
-  _ReportRow(date: '20/05/2026', count: 15, play: 1500000, service: 600000, total: 2100000),
-  _ReportRow(date: '19/05/2026', count: 7, play: 620000, service: 210000, total: 830000),
-  _ReportRow(date: '18/05/2026', count: 11, play: 980000, service: 390000, total: 1370000),
+final _mockOrders = [
+  {
+    'id': 'mock-ord-1',
+    'table_id': 'table-1',
+    'table_name': 'Bàn 1',
+    'status': 'paid',
+    'start_time': '2026-06-08 10:00:00',
+    'end_time': '2026-06-08 11:30:00',
+    'total_play_time_minutes': 90,
+    'total_play_time_amount': 90000.0,
+    'total_product_amount': 45000.0,
+    'discount_amount': 10000.0,
+    'total_amount': 125000.0,
+    'payment_method': 'cash',
+    'created_by': 'admin',
+    'closed_by': 'admin',
+    'created_at': '2026-06-08 10:00:00',
+  },
+  {
+    'id': 'mock-ord-2',
+    'table_id': 'table-2',
+    'table_name': 'Bàn 2',
+    'status': 'unpaid',
+    'start_time': '2026-06-08 12:00:00',
+    'end_time': '2026-06-08 13:00:00',
+    'total_play_time_minutes': 60,
+    'total_play_time_amount': 60000.0,
+    'total_product_amount': 20000.0,
+    'discount_amount': 80000.0,
+    'total_amount': 0.0,
+    'payment_method': null,
+    'created_by': 'cashier1',
+    'closed_by': 'cashier1',
+    'created_at': '2026-06-08 12:00:00',
+    'note': 'Khách quen chiết khấu 100%',
+  },
+  {
+    'id': 'mock-ord-3',
+    'table_id': 'table-3',
+    'table_name': 'Bàn 3',
+    'status': 'cancelled',
+    'start_time': '2026-06-08 14:00:00',
+    'end_time': '2026-06-08 14:15:00',
+    'total_play_time_minutes': 15,
+    'total_play_time_amount': 15000.0,
+    'total_product_amount': 0.0,
+    'discount_amount': 0.0,
+    'total_amount': 0.0,
+    'payment_method': null,
+    'created_by': 'admin',
+    'closed_by': 'admin',
+    'created_at': '2026-06-08 14:00:00',
+    'note': 'Hủy do khách đổi ý',
+  }
 ];
 
-const _mockMemberRows = [
-  _MemberRow(name: 'Nguyễn Văn Hùng', phone: '0901234567', tier: 'Gold', points: 1250, spend: 12500000),
-  _MemberRow(name: 'Trần Thị Mai', phone: '0987654321', tier: 'Silver', points: 480, spend: 4800000),
-  _MemberRow(name: 'Lê Văn Dũng', phone: '0912345678', tier: 'Diamond', points: 3200, spend: 32000000),
-  _MemberRow(name: 'Phạm Minh Tuấn', phone: '0923456789', tier: 'Silver', points: 230, spend: 2300000),
-];
-
-const _mockProductRows = [
-  _ProductRow(name: 'Sting Dâu Đỏ', category: 'Đồ uống', sold: 148, stock: 52, revenue: 2220000),
-  _ProductRow(name: 'Bia Tiger', category: 'Đồ uống', sold: 95, stock: 35, revenue: 2850000),
-  _ProductRow(name: 'Mì Xào Bò', category: 'Đồ ăn', sold: 62, stock: 0, revenue: 2170000),
-  _ProductRow(name: 'Red Bull', category: 'Đồ uống', sold: 58, stock: 24, revenue: 1450000),
-  _ProductRow(name: 'Thuốc Lá Marlboro', category: 'Thuốc lá', sold: 41, stock: 12, revenue: 1148000),
-];
-
-// ─── Provider ─────────────────────────────────────────────────────────────────
+// ─── Providers & Helpers ───────────────────────────────────────────────────────
 
 final _reportDataProvider = FutureProvider.family<_ReportData, DateTimeRange>(
   (ref, range) async {
@@ -104,30 +99,21 @@ final _reportDataProvider = FutureProvider.family<_ReportData, DateTimeRange>(
     final isOnline = syncState.isOnline;
 
     if (isOnline) {
-      // Fetch từ API
       try {
         final api = ref.read(apiClientProvider);
         final dateFrom = _fmtIso(range.start);
         final dateTo = _fmtIso(range.end);
 
-        // Dùng getAllOrders để lấy toàn bộ (hỗ trợ pagination)
         final List<dynamic> orders = await api.getAllOrders(
           dateFrom: dateFrom,
           dateTo: dateTo,
         );
 
-        final invoiceRows = _buildInvoiceRowsFromApi(orders, range);
-        final memberRows = await _buildMemberRowsFromApi(api);
-        final productRows = await _buildProductRowsFromApi(api, dateFrom, dateTo);
-
         return _ReportData(
-          invoiceRows: invoiceRows,
-          memberRows: memberRows,
-          productRows: productRows,
+          orders: orders,
           isOffline: false,
         );
       } catch (e) {
-        // API lỗi → fallback sang local
         return _buildOfflineData(ref, range);
       }
     } else {
@@ -136,128 +122,46 @@ final _reportDataProvider = FutureProvider.family<_ReportData, DateTimeRange>(
   },
 );
 
+final _cashiersProvider = FutureProvider<List<dynamic>>((ref) async {
+  final syncState = ref.watch(syncStateProvider);
+  if (!syncState.isOnline) return [];
+  try {
+    final api = ref.read(apiClientProvider);
+    return await api.getUsers();
+  } catch (_) {
+    return [];
+  }
+});
+
 String _fmtIso(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-/// Xây dựng dữ liệu từ API orders – nhóm theo ngày
-List<_ReportRow> _buildInvoiceRowsFromApi(List<dynamic> orders, DateTimeRange range) {
-  if (orders.isEmpty) return [];
-
-  // Nhóm orders theo ngày (dựa theo created_at)
-  final Map<String, List<dynamic>> byDay = {};
-  for (final o in orders) {
-    final raw = o as Map<String, dynamic>;
-
-    // Dùng created_at để nhóm theo ngày (format: "2026-06-05 14:51:06")
-    final dateStr = (raw['created_at'] as String? ?? '').replaceAll(' ', 'T');
-    DateTime? dt;
-    try {
-      if (dateStr.isNotEmpty) dt = DateTime.parse(dateStr);
-    } catch (_) {}
-    if (dt == null) continue;
-
-    final key =
-        '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
-    byDay.putIfAbsent(key, () => []).add(raw);
-  }
-
-  return byDay.entries.map((e) {
-    final rows = e.value;
-    double play = 0, service = 0, total = 0;
-    for (final r in rows) {
-      // Tiền giờ chơi
-      play += _toDouble(r['total_play_time_amount']);
-      // Tiền sản phẩm / dịch vụ
-      service += _toDouble(r['total_product_amount']);
-      // Tổng thanh toán thực tế
-      total += _toDouble(r['total_amount']);
-    }
-    return _ReportRow(
-      date: e.key,
-      count: rows.length,
-      play: play,
-      service: service,
-      total: total,
-    );
-  }).toList()
-    ..sort((a, b) => b.date.compareTo(a.date));
-}
-
-
-
-Future<List<_MemberRow>> _buildMemberRowsFromApi(dynamic api) async {
-  try {
-    final members = await api.getMembers();
-    return (members as List<dynamic>).map((m) {
-      final r = m as Map<String, dynamic>;
-      return _MemberRow(
-        name: r['name'] as String? ?? r['full_name'] as String? ?? 'N/A',
-        phone: r['phone_number'] as String? ?? r['phone'] as String? ?? '',
-        tier: r['tier'] as String? ?? r['membership_tier'] as String? ?? 'Standard',
-        points: _toInt(r['points'] ?? r['loyalty_points'] ?? 0),
-        spend: _toDouble(r['total_spend'] ?? r['total_amount'] ?? r['spend'] ?? 0),
-      );
-    }).toList();
-  } catch (_) {
-    return _mockMemberRows;
-  }
-}
-
-Future<List<_ProductRow>> _buildProductRowsFromApi(
-    dynamic api, String dateFrom, String dateTo) async {
-  try {
-    final products = await api.getTopProducts(
-      dateFrom: dateFrom,
-      dateTo: dateTo,
-      limit: 20,
-    );
-    return (products as List<dynamic>).map((p) {
-      final r = p as Map<String, dynamic>;
-      return _ProductRow(
-        name: r['name'] as String? ?? r['product_name'] as String? ?? 'N/A',
-        category: r['category'] as String? ?? r['category_name'] as String? ?? '',
-        sold: _toInt(r['sold'] ?? r['quantity_sold'] ?? r['total_quantity'] ?? 0),
-        stock: _toInt(r['stock'] ?? r['quantity_stock'] ?? r['stock_quantity'] ?? 0),
-        revenue: _toDouble(r['revenue'] ?? r['total_revenue'] ?? r['total_amount'] ?? 0),
-      );
-    }).toList();
-  } catch (_) {
-    return _mockProductRows;
-  }
-}
-
-/// Lấy dữ liệu từ local DB khi offline
 Future<_ReportData> _buildOfflineData(Ref ref, DateTimeRange range) async {
   try {
     final localDb = ref.read(localDbServiceProvider);
     final localOrders = await localDb.getOrdersInDateRange(range.start, range.end);
-
     if (localOrders.isEmpty) {
-      // Không có dữ liệu local → dùng mock data
-      return const _ReportData(
-        invoiceRows: _mockInvoiceRows,
-        memberRows: _mockMemberRows,
-        productRows: _mockProductRows,
-        isOffline: true,
-      );
+      return _ReportData(orders: _mockOrders, isOffline: true);
     }
-
-    final invoiceRows = _buildInvoiceRowsFromApi(localOrders, range);
-    // Members & products không có local cache → dùng mock
-    return _ReportData(
-      invoiceRows: invoiceRows.isEmpty ? _mockInvoiceRows : invoiceRows,
-      memberRows: _mockMemberRows,
-      productRows: _mockProductRows,
-      isOffline: true,
-    );
+    return _ReportData(orders: localOrders, isOffline: true);
   } catch (_) {
-    return const _ReportData(
-      invoiceRows: _mockInvoiceRows,
-      memberRows: _mockMemberRows,
-      productRows: _mockProductRows,
-      isOffline: true,
-    );
+    return _ReportData(orders: _mockOrders, isOffline: true);
   }
+}
+
+Map<String, dynamic> _normalizeOrder(dynamic o) {
+  final map = o as Map<String, dynamic>;
+  if (map.containsKey('order')) {
+    final orderMap = Map<String, dynamic>.from(map['order'] as Map<String, dynamic>);
+    if (map.containsKey('details')) {
+      orderMap['details'] = map['details'];
+    }
+    if (map.containsKey('member')) {
+      orderMap['member'] = map['member'];
+    }
+    return orderMap;
+  }
+  return map;
 }
 
 double _toDouble(dynamic v) {
@@ -278,6 +182,8 @@ int _toInt(dynamic v) {
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
 
@@ -289,11 +195,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
   late DateTimeRange _dateRange;
+  String _selectedStatus = 'all'; // 'all', 'paid', 'unpaid', 'cancelled', 'active'
+  String _selectedCashier = 'all'; // 'all' or userId
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 3, vsync: this);
+    _tabCtrl = TabController(length: 2, vsync: this);
     _dateRange = DateTimeRange(
       start: DateTime.now().subtract(const Duration(days: 7)),
       end: DateTime.now(),
@@ -309,10 +217,94 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   String _fmtDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
+  void _printReport(BuildContext context, List<dynamic> orders, List<dynamic> users) {
+    if (orders.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không có dữ liệu báo cáo để in'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final filtered = orders.map((o) => _normalizeOrder(o)).where((o) {
+      if (_selectedStatus != 'all' && o['status'] != _selectedStatus) return false;
+      if (_selectedCashier != 'all') {
+        final creator = o['created_by']?.toString() ?? '';
+        final closer = o['closed_by']?.toString() ?? '';
+        if (creator != _selectedCashier && closer != _selectedCashier) return false;
+      }
+      return true;
+    }).toList();
+
+    if (filtered.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không có dữ liệu phù hợp với bộ lọc để in'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final double totalPlay = filtered.fold(0.0, (sum, o) => sum + _toDouble(o['total_play_time_amount']));
+    final double totalService = filtered.fold(0.0, (sum, o) => sum + _toDouble(o['total_product_amount']));
+    final double totalDiscount = filtered.fold(0.0, (sum, o) => sum + _toDouble(o['discount_amount']));
+    final double totalAmount = filtered.fold(0.0, (sum, o) => sum + _toDouble(o['total_amount']));
+
+    final textBuffer = StringBuffer();
+    textBuffer.writeln('==========================================');
+    textBuffer.writeln('            BÁO CÁO DOANH THU             ');
+    textBuffer.writeln('Từ ngày: ${_fmtDate(_dateRange.start)} - Đến ngày: ${_fmtDate(_dateRange.end)}');
+    textBuffer.writeln('------------------------------------------');
+    textBuffer.writeln('Lọc trạng thái: ${_getStatusLabel(_selectedStatus)}');
+    textBuffer.writeln('Lọc nhân viên: ${_selectedCashier == 'all' ? 'Tất cả' : _getCashierName(_selectedCashier, users)}');
+    textBuffer.writeln('Tổng số hóa đơn: ${filtered.length}');
+    textBuffer.writeln('Tổng tiền giờ: ${_fmtCurrency(totalPlay)}');
+    textBuffer.writeln('Tổng dịch vụ: ${_fmtCurrency(totalService)}');
+    textBuffer.writeln('Tổng chiết khấu: -${_fmtCurrency(totalDiscount)}');
+    textBuffer.writeln('TỔNG DOANH THU: ${_fmtCurrency(totalAmount)}');
+    textBuffer.writeln('==========================================');
+
+    debugPrint(textBuffer.toString());
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Đang in báo cáo doanh thu từ ${_fmtDate(_dateRange.start)} đến ${_fmtDate(_dateRange.end)}...'),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: 'Xem log',
+          onPressed: () {
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Bản xem trước in báo cáo'),
+                content: SingleChildScrollView(
+                  child: Text(
+                    textBuffer.toString(),
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Đóng'),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final syncState = ref.watch(syncStateProvider);
     final reportAsync = ref.watch(_reportDataProvider(_dateRange));
+    final cashiersAsync = ref.watch(_cashiersProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -384,6 +376,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                 OutlinedButton.icon(
                   onPressed: () {
                     ref.invalidate(_reportDataProvider(_dateRange));
+                    ref.invalidate(_cashiersProvider);
                   },
                   icon: const Icon(Icons.refresh_outlined, size: 16),
                   label: const Text('Làm mới'),
@@ -395,6 +388,118 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                   ),
                 ),
               ]),
+              const SizedBox(height: 12),
+              // Filters & Print Row
+              Row(
+                children: [
+                  // Status filter dropdown
+                  Container(
+                    width: 180,
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.border),
+                      color: Colors.white,
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _selectedStatus,
+                        icon: const Icon(Icons.arrow_drop_down, size: 20),
+                        style: AppTextStyles.bodyMedium,
+                        onChanged: (String? val) {
+                          if (val != null) {
+                            setState(() => _selectedStatus = val);
+                          }
+                        },
+                        items: const [
+                          DropdownMenuItem(value: 'all', child: Text('Tất cả trạng thái')),
+                          DropdownMenuItem(value: 'paid', child: Text('Đã thanh toán')),
+                          DropdownMenuItem(value: 'unpaid', child: Text('Chưa thanh toán')),
+                          DropdownMenuItem(value: 'active', child: Text('Đang phục vụ')),
+                          DropdownMenuItem(value: 'cancelled', child: Text('Đã hủy')),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Cashier filter dropdown
+                  Container(
+                    width: 200,
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.border),
+                      color: Colors.white,
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: cashiersAsync.when(
+                        loading: () => const Center(
+                          child: SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                        error: (_, __) => const Text('Lỗi tải nhân viên'),
+                        data: (users) {
+                          final Map<String, String> cashierMap = {'all': 'Tất cả nhân viên'};
+                          for (final u in users) {
+                            final map = u as Map<String, dynamic>;
+                            final id = map['id']?.toString() ?? '';
+                            final name = map['display_name'] as String? ?? map['username'] as String? ?? id;
+                            if (id.isNotEmpty) cashierMap[id] = name;
+                          }
+                          cashierMap.putIfAbsent('system', () => 'Hệ thống');
+
+                          if (!cashierMap.containsKey(_selectedCashier)) {
+                            _selectedCashier = 'all';
+                          }
+
+                          return DropdownButton<String>(
+                            value: _selectedCashier,
+                            icon: const Icon(Icons.arrow_drop_down, size: 20),
+                            style: AppTextStyles.bodyMedium,
+                            onChanged: (String? val) {
+                              if (val != null) {
+                                setState(() => _selectedCashier = val);
+                              }
+                            },
+                            items: cashierMap.entries.map((e) {
+                              return DropdownMenuItem(
+                                value: e.key,
+                                child: Text(e.value, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              );
+                            }).toList(),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  // Print report button
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      _printReport(
+                        context,
+                        reportAsync.value?.orders ?? [],
+                        cashiersAsync.value ?? [],
+                      );
+                    },
+                    icon: const Icon(Icons.print_outlined, size: 16),
+                    label: const Text('In báo cáo'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 16),
               TabBar(
                 controller: _tabCtrl,
@@ -403,9 +508,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                 indicatorColor: AppColors.primary,
                 labelStyle: AppTextStyles.titleMedium,
                 tabs: const [
-                  Tab(text: 'Hóa đơn'),
-                  Tab(text: 'Thành viên'),
-                  Tab(text: 'Sản phẩm/DV'),
+                  Tab(text: 'Chi tiết hóa đơn'),
+                  Tab(text: 'Tổng hợp hóa đơn'),
                 ],
               ),
             ],
@@ -436,8 +540,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                   Text(e.toString(), style: AppTextStyles.bodySmall),
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
-                    onPressed: () =>
-                        ref.invalidate(_reportDataProvider(_dateRange)),
+                    onPressed: () {
+                      ref.invalidate(_reportDataProvider(_dateRange));
+                      ref.invalidate(_cashiersProvider);
+                    },
                     icon: const Icon(Icons.refresh),
                     label: const Text('Thử lại'),
                     style: ElevatedButton.styleFrom(
@@ -451,14 +557,39 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                 ],
               ),
             ),
-            data: (data) => TabBarView(
-              controller: _tabCtrl,
-              children: [
-                _InvoiceReportTab(rows: data.invoiceRows, isOffline: data.isOffline),
-                _MemberReportTab(rows: data.memberRows),
-                _ProductReportTab(products: data.productRows),
-              ],
-            ),
+            data: (data) {
+              // Apply filters to orders
+              final filteredOrders = data.orders.map((o) => _normalizeOrder(o)).where((o) {
+                if (_selectedStatus != 'all' && o['status'] != _selectedStatus) {
+                  return false;
+                }
+                if (_selectedCashier != 'all') {
+                  final creator = o['created_by']?.toString() ?? '';
+                  final closer = o['closed_by']?.toString() ?? '';
+                  if (creator != _selectedCashier && closer != _selectedCashier) {
+                    return false;
+                  }
+                }
+                return true;
+              }).toList();
+
+              final users = cashiersAsync.value ?? [];
+
+              return TabBarView(
+                controller: _tabCtrl,
+                children: [
+                  _InvoiceDetailsListTab(
+                    orders: filteredOrders,
+                    users: users,
+                    isOffline: data.isOffline,
+                  ),
+                  _InvoiceSummaryTab(
+                    orders: filteredOrders,
+                    isOffline: data.isOffline,
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ],
@@ -466,61 +597,56 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   }
 }
 
-// ─── Tab 1: Invoice Report ────────────────────────────────────────────────────
+// ─── Tab 1: Detailed Invoice List ──────────────────────────────────────────────
 
-class _InvoiceReportTab extends StatelessWidget {
-  final List<_ReportRow> rows;
+class _InvoiceDetailsListTab extends StatelessWidget {
+  final List<dynamic> orders;
+  final List<dynamic> users;
   final bool isOffline;
-  const _InvoiceReportTab({required this.rows, required this.isOffline});
 
-  String _fmtCurrency(double v) {
-    final s = v.toStringAsFixed(0);
-    final buf = StringBuffer();
-    int count = 0;
-    for (int i = s.length - 1; i >= 0; i--) {
-      if (count > 0 && count % 3 == 0) buf.write('.');
-      buf.write(s[i]);
-      count++;
-    }
-    return '${buf.toString().split('').reversed.join()} đ';
-  }
+  const _InvoiceDetailsListTab({
+    required this.orders,
+    required this.users,
+    required this.isOffline,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (rows.isEmpty) {
+    if (orders.isEmpty) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.receipt_long_outlined, size: 48, color: AppColors.textMuted),
             SizedBox(height: 12),
-            Text('Không có hóa đơn trong khoảng thời gian này'),
+            Text('Không có hóa đơn phù hợp với bộ lọc'),
           ],
         ),
       );
     }
 
-    final grandTotal = rows.fold(0.0, (s, r) => s + r.total);
-    final totalCount = rows.fold(0, (s, r) => s + r.count);
+    final double totalDiscount = orders.fold(0.0, (sum, o) => sum + _toDouble(o['discount_amount']));
+    final double totalAmount = orders.fold(0.0, (sum, o) => sum + _toDouble(o['total_amount']));
+    final int totalMinutes = orders.fold(0, (sum, o) => sum + _toInt(o['total_play_time_minutes']));
 
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
-          // Offline notice
           if (isOffline) _OfflineNotice(),
           if (isOffline) const SizedBox(height: 12),
-          // Summary
-          Row(children: [
-            _ReportCard('Tổng hóa đơn', '$totalCount HĐ', AppColors.info),
-            const SizedBox(width: 12),
-            _ReportCard('Tổng doanh thu', _fmtCurrency(grandTotal), AppColors.success),
-            const SizedBox(width: 12),
-            _ReportCard(
-                'TB hàng ngày',
-                _fmtCurrency(rows.isNotEmpty ? grandTotal / rows.length : 0),
-                AppColors.accent),
-          ]),
+          // Metric Cards
+          Row(
+            children: [
+              _ReportCard('Số hóa đơn', '${orders.length} HĐ', AppColors.info),
+              const SizedBox(width: 12),
+              _ReportCard('Tổng giờ chơi', _fmtDuration(totalMinutes), AppColors.accent),
+              const SizedBox(width: 12),
+              _ReportCard('Tổng chiết khấu', _fmtCurrency(totalDiscount), AppColors.error),
+              const SizedBox(width: 12),
+              _ReportCard('Tổng doanh thu', _fmtCurrency(totalAmount), AppColors.success),
+            ],
+          ),
           const SizedBox(height: 20),
           // Table
           Expanded(
@@ -533,54 +659,92 @@ class _InvoiceReportTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Header
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     color: AppColors.background,
-                    child: Row(children: [
-                      _TH('Ngày', flex: 2),
-                      _TH('Số HĐ', flex: 1),
-                      _TH('Tiền giờ', flex: 2),
-                      _TH('Dịch vụ', flex: 2),
-                      _TH('Tổng', flex: 2),
-                    ]),
+                    child: const Row(
+                      children: [
+                        _TH('Mã HĐ', flex: 2),
+                        _TH('Bàn chơi', flex: 2),
+                        _TH('Thời lượng', flex: 2),
+                        _TH('Thu ngân', flex: 2),
+                        _TH('Thanh toán', flex: 2),
+                        _TH('Trạng thái', flex: 2),
+                        _TH('Tổng tiền', flex: 2),
+                      ],
+                    ),
                   ),
                   const Divider(height: 1),
                   Expanded(
                     child: ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      itemCount: rows.length,
+                      itemCount: orders.length,
                       separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, i) {
-                        final r = rows[i];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 12),
-                          child: Row(children: [
-                            Expanded(
-                                flex: 2,
-                                child: Text(r.date,
-                                    style: AppTextStyles.bodyMedium)),
-                            Expanded(
-                                flex: 1,
-                                child: Text('${r.count} HĐ',
-                                    style: AppTextStyles.bodySmall)),
-                            Expanded(
-                                flex: 2,
-                                child: Text(_fmtCurrency(r.play),
-                                    style: AppTextStyles.bodySmall)),
-                            Expanded(
-                                flex: 2,
-                                child: Text(_fmtCurrency(r.service),
-                                    style: AppTextStyles.bodySmall)),
-                            Expanded(
-                                flex: 2,
-                                child: Text(
-                                    _fmtCurrency(r.total),
-                                    style: AppTextStyles.labelLarge.copyWith(
-                                        color: AppColors.primary))),
-                          ]),
+                      itemBuilder: (ctx, i) {
+                        final order = orders[i];
+                        final idStr = order['id']?.toString() ?? '';
+                        final shortId = idStr.length > 6 ? idStr.substring(idStr.length - 6) : idStr;
+                        final status = order['status']?.toString() ?? '';
+                        final cashier = _getCashierName(order['closed_by']?.toString() ?? order['created_by']?.toString(), users);
+                        final payMethod = order['payment_method']?.toString() ?? '-';
+                        final methodLabel = switch (payMethod) {
+                          'cash' => 'Tiền mặt',
+                          'card' => 'Thẻ',
+                          'transfer' => 'Chuyển khoản',
+                          _ => '-'
+                        };
+
+                        return InkWell(
+                          onTap: () {
+                            showDialog(
+                              context: ctx,
+                              builder: (_) => _InvoiceDetailsDialog(
+                                order: order,
+                                users: users,
+                              ),
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                            child: Row(
+                              children: [
+                                Expanded(flex: 2, child: Text('#$shortId', style: AppTextStyles.labelLarge)),
+                                Expanded(flex: 2, child: Text(order['table_name']?.toString() ?? 'N/A', style: AppTextStyles.bodyMedium)),
+                                Expanded(flex: 2, child: Text(_fmtDuration(_toInt(order['total_play_time_minutes'])), style: AppTextStyles.bodySmall)),
+                                Expanded(flex: 2, child: Text(cashier, style: AppTextStyles.bodySmall)),
+                                Expanded(flex: 2, child: Text(methodLabel, style: AppTextStyles.bodySmall)),
+                                Expanded(
+                                  flex: 2,
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: _getStatusColor(status).withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Text(
+                                        _getStatusLabel(status),
+                                        style: TextStyle(
+                                          fontFamily: 'Inter',
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: _getStatusColor(status),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    _fmtCurrency(_toDouble(order['total_amount'])),
+                                    style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         );
                       },
                     ),
@@ -595,39 +759,91 @@ class _InvoiceReportTab extends StatelessWidget {
   }
 }
 
-// ─── Tab 2: Member Report ─────────────────────────────────────────────────────
+// ─── Tab 2: Grouped Daily Invoice Summary ──────────────────────────────────────
 
-class _MemberReportTab extends StatelessWidget {
-  final List<_MemberRow> rows;
-  const _MemberReportTab({required this.rows});
+class _InvoiceSummaryTab extends StatelessWidget {
+  final List<dynamic> orders;
+  final bool isOffline;
 
-  String _fmtCurrency(double v) {
-    final s = v.toStringAsFixed(0);
-    final buf = StringBuffer();
-    int count = 0;
-    for (int i = s.length - 1; i >= 0; i--) {
-      if (count > 0 && count % 3 == 0) buf.write('.');
-      buf.write(s[i]);
-      count++;
-    }
-    return '${buf.toString().split('').reversed.join()} đ';
-  }
+  const _InvoiceSummaryTab({
+    required this.orders,
+    required this.isOffline,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Group orders by day
+    final Map<String, List<Map<String, dynamic>>> byDay = {};
+    for (final o in orders) {
+      final raw = o as Map<String, dynamic>;
+
+      final dateStr = (raw['created_at'] as String? ?? '').replaceAll(' ', 'T');
+      DateTime? dt;
+      try {
+        if (dateStr.isNotEmpty) dt = DateTime.parse(dateStr);
+      } catch (_) {}
+      if (dt == null) continue;
+
+      final key = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+      byDay.putIfAbsent(key, () => []).add(raw);
+    }
+
+    final rows = byDay.entries.map((e) {
+      final list = e.value;
+      double play = 0, service = 0, total = 0;
+      for (final r in list) {
+        play += _toDouble(r['total_play_time_amount']);
+        service += _toDouble(r['total_product_amount']);
+        total += _toDouble(r['total_amount']);
+      }
+      return _ReportRow(
+        date: e.key,
+        count: list.length,
+        play: play,
+        service: service,
+        total: total,
+      );
+    }).toList()
+      ..sort((a, b) => b.date.compareTo(a.date));
+
+    if (rows.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.receipt_long_outlined, size: 48, color: AppColors.textMuted),
+            SizedBox(height: 12),
+            Text('Không có dữ liệu tổng hợp cho khoảng thời gian này'),
+          ],
+        ),
+      );
+    }
+
+    final grandTotal = rows.fold(0.0, (s, r) => s + r.total);
+    final totalCount = rows.fold(0, (s, r) => s + r.count);
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
-          Row(children: [
-            _ReportCard('Tổng thành viên',
-                '${rows.length} người', AppColors.info),
-            const SizedBox(width: 12),
-            _ReportCard('Tổng chi tiêu',
-                _fmtCurrency(rows.fold(0.0, (s, m) => s + m.spend)),
-                AppColors.success),
-          ]),
+          if (isOffline) _OfflineNotice(),
+          if (isOffline) const SizedBox(height: 12),
+          // Summary cards
+          Row(
+            children: [
+              _ReportCard('Tổng hóa đơn', '$totalCount HĐ', AppColors.info),
+              const SizedBox(width: 12),
+              _ReportCard('Tổng doanh thu', _fmtCurrency(grandTotal), AppColors.success),
+              const SizedBox(width: 12),
+              _ReportCard(
+                'TB hàng ngày',
+                _fmtCurrency(rows.isNotEmpty ? grandTotal / rows.length : 0),
+                AppColors.accent,
+              ),
+            ],
+          ),
           const SizedBox(height: 20),
+          // Table
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -635,59 +851,52 @@ class _MemberReportTab extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: AppColors.border),
               ),
-              child: ListView.separated(
-                padding: const EdgeInsets.all(12),
-                itemCount: rows.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (_, i) {
-                  final m = rows[i];
-                  final tierColor = switch (m.tier) {
-                    'Diamond' => AppColors.transfer,
-                    'Gold' => AppColors.accent,
-                    _ => AppColors.textSecondary,
-                  };
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: AppColors.primarySurface,
-                      child: Text(
-                          m.name.trim().isNotEmpty
-                              ? m.name.trim()[0].toUpperCase()
-                              : '?',
-                          style: const TextStyle(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w700)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    color: AppColors.background,
+                    child: const Row(
+                      children: [
+                        _TH('Ngày', flex: 2),
+                        _TH('Số HĐ', flex: 1),
+                        _TH('Tiền giờ', flex: 2),
+                        _TH('Dịch vụ', flex: 2),
+                        _TH('Tổng', flex: 2),
+                      ],
                     ),
-                    title: Text(m.name, style: AppTextStyles.titleMedium),
-                    subtitle: Text(m.phone, style: AppTextStyles.labelSmall),
-                    trailing:
-                        Row(mainAxisSize: MainAxisSize.min, children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: tierColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(m.tier,
-                            style: TextStyle(
-                                fontFamily: 'Inter',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: tierColor)),
-                      ),
-                      const SizedBox(width: 16),
-                      Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text('${m.points} điểm',
-                                style: AppTextStyles.labelLarge),
-                            Text(_fmtCurrency(m.spend),
-                                style: AppTextStyles.bodySmall
-                                    .copyWith(color: AppColors.primary)),
-                          ]),
-                    ]),
-                  );
-                },
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      itemCount: rows.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, i) {
+                        final r = rows[i];
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                          child: Row(
+                            children: [
+                              Expanded(flex: 2, child: Text(r.date, style: AppTextStyles.bodyMedium)),
+                              Expanded(flex: 1, child: Text('${r.count} HĐ', style: AppTextStyles.bodySmall)),
+                              Expanded(flex: 2, child: Text(_fmtCurrency(r.play), style: AppTextStyles.bodySmall)),
+                              Expanded(flex: 2, child: Text(_fmtCurrency(r.service), style: AppTextStyles.bodySmall)),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  _fmtCurrency(r.total),
+                                  style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -697,92 +906,393 @@ class _MemberReportTab extends StatelessWidget {
   }
 }
 
-// ─── Tab 3: Product Report ────────────────────────────────────────────────────
+// ─── Dialog: Invoice Detailed View ─────────────────────────────────────────────
 
-class _ProductReportTab extends StatelessWidget {
-  final List<_ProductRow> products;
-  const _ProductReportTab({required this.products});
+class _InvoiceDetailsDialog extends ConsumerStatefulWidget {
+  final Map<String, dynamic> order;
+  final List<dynamic> users;
 
-  String _fmtCurrency(double v) {
-    final s = v.toStringAsFixed(0);
-    final buf = StringBuffer();
-    int count = 0;
-    for (int i = s.length - 1; i >= 0; i--) {
-      if (count > 0 && count % 3 == 0) buf.write('.');
-      buf.write(s[i]);
-      count++;
+  const _InvoiceDetailsDialog({
+    required this.order,
+    required this.users,
+  });
+
+  @override
+  ConsumerState<_InvoiceDetailsDialog> createState() => _InvoiceDetailsDialogState();
+}
+
+class _InvoiceDetailsDialogState extends ConsumerState<_InvoiceDetailsDialog> {
+  bool _isLoading = false;
+  List<dynamic> _details = [];
+  Map<String, dynamic>? _member;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDetails();
+  }
+
+  Future<void> _loadDetails() async {
+    if (widget.order.containsKey('details') && widget.order['details'] is List) {
+      setState(() {
+        _details = widget.order['details'] as List<dynamic>;
+        _member = widget.order['member'] as Map<String, dynamic>?;
+      });
+      return;
     }
-    return '${buf.toString().split('').reversed.join()} đ';
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final api = ref.read(apiClientProvider);
+      final res = await api.getOrderDetails(widget.order['id']);
+      if (mounted) {
+        setState(() {
+          _details = res['data']?['details'] as List<dynamic>? ?? [];
+          _member = res['data']?['member'] as Map<String, dynamic>?;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Không thể tải chi tiết hóa đơn từ máy chủ: $e';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  String _fmtTime(String? dateStr) {
+    if (dateStr == null || dateStr.isEmpty) return '--:--';
+    try {
+      final dt = DateTime.parse(dateStr.replaceAll(' ', 'T'));
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return dateStr;
+    }
+  }
+
+  void _printInvoice(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Đang in hóa đơn K80...'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
+    final order = widget.order;
+    final shortId = order['id']?.toString() ?? '';
+    final shortIdDisplay = shortId.length > 6 ? shortId.substring(shortId.length - 6) : shortId;
+    final status = order['status']?.toString() ?? '';
+    final cashier = _getCashierName(order['closed_by']?.toString() ?? order['created_by']?.toString(), widget.users);
+    final note = order['note']?.toString();
+
+    final playAmount = _toDouble(order['total_play_time_amount']);
+    final serviceAmount = _toDouble(order['total_product_amount']);
+    final totalDiscount = _toDouble(order['discount_amount']);
+    final taxAmount = _toDouble(order['tax_amount']);
+    final finalAmount = _toDouble(order['total_amount']);
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: SizedBox(
+        width: 480,
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Header
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              color: AppColors.background,
-              child: Row(children: [
-                _TH('Sản phẩm', flex: 3),
-                _TH('Danh mục', flex: 2),
-                _TH('Đã bán', flex: 1),
-                _TH('Tồn kho', flex: 1),
-                _TH('Doanh thu', flex: 2),
-              ]),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.receipt_long, color: Colors.white, size: 24),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'CHI TIẾT HÓA ĐƠN #$shortIdDisplay',
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                          ),
+                        ),
+                        Text(
+                          order['table_name']?.toString() ?? 'N/A',
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            color: Colors.white.withOpacity(0.8),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
             ),
-            const Divider(height: 1),
-            Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                itemCount: products.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (_, i) {
-                  final p = products[i];
-                  final isOutOfStock = p.stock == 0;
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
-                    child: Row(children: [
-                      Expanded(
-                          flex: 3,
-                          child: Text(p.name,
-                              style: AppTextStyles.bodyMedium)),
-                      Expanded(
-                          flex: 2,
-                          child: Text(p.category,
-                              style: AppTextStyles.bodySmall)),
-                      Expanded(
-                          flex: 1,
-                          child: Text('${p.sold}',
-                              style: AppTextStyles.bodySmall)),
-                      Expanded(
-                          flex: 1,
-                          child: Text('${p.stock}',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                  color: isOutOfStock
-                                      ? AppColors.error
-                                      : AppColors.textSecondary,
-                                  fontWeight: isOutOfStock
-                                      ? FontWeight.w700
-                                      : FontWeight.w400))),
-                      Expanded(
-                          flex: 2,
-                          child: Text(_fmtCurrency(p.revenue),
-                              style: AppTextStyles.labelLarge.copyWith(
-                                  color: AppColors.primary))),
-                    ]),
-                  );
-                },
+            // Body
+            Flexible(
+              child: _isLoading
+                  ? const Padding(
+                      padding: EdgeInsets.all(40),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 12),
+                            Text('Đang tải chi tiết hóa đơn...'),
+                          ],
+                        ),
+                      ),
+                    )
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_error != null) ...[
+                            Text(
+                              _error!,
+                              style: const TextStyle(color: AppColors.error),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          // Time & Status Info
+                          _InfoRow('Giờ vào', _fmtTime(order['start_time']?.toString()), Icons.login),
+                          _InfoRow('Giờ ra', _fmtTime(order['end_time']?.toString()), Icons.logout),
+                          _InfoRow('Thời lượng', _fmtDuration(_toInt(order['total_play_time_minutes'])), Icons.timer_outlined),
+                          _InfoRow('Thu ngân', cashier, Icons.person_outline),
+                          const SizedBox(height: 12),
+
+                          // Member section
+                          if (_member != null) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: AppColors.success.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: AppColors.success.withOpacity(0.2)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.stars, color: AppColors.success, size: 16),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Thành viên: ${_member!['full_name'] ?? _member!['name'] ?? ''} (${_member!['tier'] ?? _member!['tier_name'] ?? ''})',
+                                      style: TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                        color: AppColors.success,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // Status Badge Box
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: _getStatusColor(status).withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: _getStatusColor(status).withOpacity(0.2)),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline, color: _getStatusColor(status), size: 16),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Trạng thái: ',
+                                  style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w500),
+                                ),
+                                Text(
+                                  _getStatusLabel(status),
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontWeight: FontWeight.w700,
+                                    color: _getStatusColor(status),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Divider(height: 24),
+
+                          // Products and Services
+                          if (_details.isNotEmpty) ...[
+                            Text('Dịch vụ / Sản phẩm:', style: AppTextStyles.titleMedium),
+                            const SizedBox(height: 6),
+                            ..._details.map((d) {
+                              final name = d['product_name']?.toString() ?? 'Sản phẩm';
+                              final qty = _toInt(d['quantity']);
+                              final unit = d['unit']?.toString() ?? '';
+                              final unitStr = unit.isNotEmpty ? ' $unit' : '';
+                              final total = _toDouble(d['total_price']);
+
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        '$name × $qty$unitStr',
+                                        style: AppTextStyles.bodySmall,
+                                      ),
+                                    ),
+                                    Text(
+                                      _fmtCurrency(total),
+                                      style: AppTextStyles.labelLarge,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                            const Divider(height: 24),
+                          ],
+
+                          // Prices Summary
+                          Row(
+                            children: [
+                              const Text('Tiền giờ chơi', style: AppTextStyles.bodySmall),
+                              const Spacer(),
+                              Text(_fmtCurrency(playAmount), style: AppTextStyles.bodyMedium),
+                            ],
+                          ),
+                          if (serviceAmount > 0) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const Text('Tiền dịch vụ', style: AppTextStyles.bodySmall),
+                                const Spacer(),
+                                Text(_fmtCurrency(serviceAmount), style: AppTextStyles.bodyMedium),
+                              ],
+                            ),
+                          ],
+                          if (totalDiscount > 0) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const Text('Chiết khấu / Giảm giá', style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 13,
+                                  color: AppColors.accent,
+                                )),
+                                const Spacer(),
+                                Text('-${_fmtCurrency(totalDiscount)}', style: const TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 13,
+                                  color: AppColors.accent,
+                                )),
+                              ],
+                            ),
+                          ],
+                          if (taxAmount > 0) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const Text('Thuế', style: AppTextStyles.bodySmall),
+                                const Spacer(),
+                                Text(_fmtCurrency(taxAmount), style: AppTextStyles.bodyMedium),
+                              ],
+                            ),
+                          ],
+                          const Divider(height: 20),
+                          Row(
+                            children: [
+                              const Text(
+                                'TỔNG CỘNG',
+                                style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700, fontSize: 14),
+                              ),
+                              const Spacer(),
+                              Text(_fmtCurrency(finalAmount), style: AppTextStyles.currency),
+                            ],
+                          ),
+
+                          // Note / Reason
+                          if (note != null && note.isNotEmpty) ...[
+                            const Divider(height: 24),
+                            Text(
+                              status == 'cancelled' ? 'Lý do hủy bàn:' : 'Ghi chú / Lý do không thanh toán:',
+                              style: AppTextStyles.titleMedium,
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: AppColors.background,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                note,
+                                style: AppTextStyles.bodySmall.copyWith(fontStyle: FontStyle.italic),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+            ),
+            // Footer Action buttons
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _printInvoice(context),
+                      icon: const Icon(Icons.print_outlined, size: 16),
+                      label: const Text('In hóa đơn'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: const Text('Đóng'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -792,13 +1302,82 @@ class _ProductReportTab extends StatelessWidget {
   }
 }
 
+// ─── Helpers & Utilities ───────────────────────────────────────────────────────
+
+String _fmtCurrency(double v) {
+  final s = v.toStringAsFixed(0);
+  final buf = StringBuffer();
+  int count = 0;
+  for (int i = s.length - 1; i >= 0; i--) {
+    if (count > 0 && count % 3 == 0) buf.write('.');
+    buf.write(s[i]);
+    count++;
+  }
+  return '${buf.toString().split('').reversed.join()} đ';
+}
+
+String _fmtDuration(int minutes) {
+  if (minutes < 60) return '$minutes phút';
+  final h = minutes ~/ 60;
+  final m = minutes % 60;
+  if (m == 0) return '$h giờ';
+  return '$h giờ $m phút';
+}
+
+String _getCashierName(String? userId, List<dynamic> users) {
+  if (userId == null || userId.isEmpty) return 'N/A';
+  if (userId == 'system') return 'Hệ thống';
+  final user = users.firstWhere(
+    (u) => (u as Map<String, dynamic>)['id']?.toString() == userId,
+    orElse: () => null,
+  );
+  if (user != null) {
+    final displayName = user['display_name'] as String?;
+    final username = user['username'] as String?;
+    if (displayName != null && displayName.isNotEmpty) return displayName;
+    if (username != null && username.isNotEmpty) return username;
+  }
+  return userId;
+}
+
+String _getStatusLabel(String status) {
+  switch (status) {
+    case 'all':
+      return 'Tất cả';
+    case 'paid':
+      return 'Đã thanh toán';
+    case 'unpaid':
+      return 'Chưa thanh toán';
+    case 'active':
+      return 'Đang phục vụ';
+    case 'cancelled':
+      return 'Đã hủy';
+    default:
+      return status;
+  }
+}
+
+Color _getStatusColor(String status) {
+  switch (status) {
+    case 'paid':
+      return AppColors.success;
+    case 'unpaid':
+      return AppColors.error;
+    case 'active':
+      return AppColors.primary;
+    case 'cancelled':
+      return AppColors.textMuted;
+    default:
+      return AppColors.textSecondary;
+  }
+}
+
 // ─── Offline Notice ───────────────────────────────────────────────────────────
 
 class _OfflineNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: AppColors.accent.withOpacity(0.08),
           borderRadius: BorderRadius.circular(10),
@@ -862,3 +1441,25 @@ class _TH extends StatelessWidget {
                 .copyWith(fontWeight: FontWeight.w700)),
       );
 }
+
+class _InfoRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  const _InfoRow(this.label, this.value, this.icon);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(children: [
+          Icon(icon, size: 15, color: AppColors.textMuted),
+          const SizedBox(width: 8),
+          Text(label, style: AppTextStyles.bodySmall),
+          const Spacer(),
+          Text(value,
+              style: AppTextStyles.bodyMedium
+                  .copyWith(fontWeight: FontWeight.w500)),
+        ]),
+      );
+}
+

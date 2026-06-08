@@ -442,13 +442,16 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                                 netTotal: currentNetTotal,
                                 note: _selectedStatus == 'unpaid' ? _reasonController.text.trim() : null,
                               );
+                              // Chỉ đóng dialog khi onConfirm thành công
+                              if (navigator.mounted) {
+                                navigator.pop();
+                              }
+                            } catch (e) {
+                              // onConfirm đã hiện SnackBar lỗi — giữ dialog mở để user thử lại
                             } finally {
                               if (mounted) {
                                 setState(() => _isProcessing = false);
                               }
-                            }
-                            if (navigator.mounted) {
-                              navigator.pop();
                             }
                           },
                     icon: _isProcessing

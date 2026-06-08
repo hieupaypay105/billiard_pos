@@ -1708,9 +1708,25 @@ class _InvoicePanel extends ConsumerWidget {
 
           try {
             await localDb.saveOrderLocally(orderId, payload);
-            await syncService.syncNow();
+            final syncResult = await syncService.syncNow();
+            if (!syncResult.success && syncResult.message.isNotEmpty && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(syncResult.message),
+                backgroundColor: Colors.orange,
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 4),
+              ));
+            }
           } catch (e) {
-            print('Lỗi lưu local/đồng bộ hóa đơn trước checkout: $e');
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(_extractApiError(e)),
+                backgroundColor: AppColors.error,
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 4),
+              ));
+            }
+            rethrow;
           }
 
           await ref.read(tablesProvider.notifier).deactivateTable(table.id);
@@ -2140,9 +2156,25 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
 
           try {
             await localDb.saveOrderLocally(orderId, payload);
-            await syncService.syncNow();
+            final syncResult = await syncService.syncNow();
+            if (!syncResult.success && syncResult.message.isNotEmpty && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(syncResult.message),
+                backgroundColor: Colors.orange,
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 4),
+              ));
+            }
           } catch (e) {
-            print('Lỗi lưu local/đồng bộ hóa đơn trước checkout: $e');
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(_extractApiError(e)),
+                backgroundColor: AppColors.error,
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 4),
+              ));
+            }
+            rethrow;
           }
 
           ref.read(tablesProvider.notifier).completeUnpaidInvoicePayment(invoice.id);
@@ -2171,6 +2203,14 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
     }
     return '${buf.toString().split('').reversed.join()} đ';
   }
+
+/// Trích xuất message lỗi từ Exception do ApiClient ném ra.
+/// Exception('Sai thông tin') → 'Sai thông tin'
+String _extractApiError(Object e) {
+  final raw = e.toString();
+  final match = RegExp(r'^Exception:\s*(.+)$').firstMatch(raw);
+  return match?.group(1) ?? raw;
+}
 
 class _NoActiveTablePlaceholder extends StatelessWidget {
   final String message;

@@ -14,6 +14,9 @@ class ApiClient {
   late final Dio _dio;
   bool _isRefreshing = false;
 
+  /// Callback được gọi khi refresh token thất bại (401) → cần logout về màn hình đăng nhập.
+  void Function()? onUnauthorized;
+
   ApiClient() {
     _dio = Dio(BaseOptions(
       baseUrl: _baseUrl,
@@ -55,6 +58,9 @@ class ApiClient {
               handler.resolve(retryResponse);
               return;
             } catch (_) {}
+          } else {
+            // Refresh thất bại (refresh token hết hạn/không hợp lệ) → force logout
+            onUnauthorized?.call();
           }
         }
         handler.next(error);
@@ -70,6 +76,21 @@ class ApiClient {
     );
   }
 
+  // ─── Helper ───────────────────────────────────────────────────────────────────
+
+  /// Kiểm tra `status` trong response body.
+  /// Nếu status != 1 thì throw Exception với message từ server.
+  void _checkStatus(Map<String, dynamic> data, {String fallback = 'Thao tác thất bại'}) {
+    final status = data['status'];
+    if (status != null && status != 1 && status != true) {
+      final msg = data['message'] as String? ??
+          data['msg'] as String? ??
+          data['error'] as String? ??
+          fallback;
+      throw Exception(msg);
+    }
+  }
+
   // ─── Auth ────────────────────────────────────────────────────────────────────
 
   /// Đăng nhập, trả về user data + lưu token vào SharedPreferences.
@@ -82,6 +103,16 @@ class ApiClient {
       'password': password,
     });
     final data = response.data as Map<String, dynamic>;
+
+    // Kiểm tra status trong response body (HTTP 200 nhưng business logic lỗi)
+    final status = data['status'];
+    if (status != null && status != 1 && status != true) {
+      final message = data['message'] as String? ??
+          data['msg'] as String? ??
+          'Đăng nhập thất bại';
+      throw Exception(message);
+    }
+
     final innerData = (data['data'] ?? data) as Map<String, dynamic>;
     final token = innerData['token'] as String? ?? innerData['access_token'] as String? ?? '';
     final refreshToken = innerData['refresh_token'] as String? ?? '';
@@ -150,7 +181,9 @@ class ApiClient {
       if (shiftId != null && shiftId.isNotEmpty) 'shift_id': shiftId,
       if (memberId != null && memberId.isNotEmpty) 'member_id': memberId,
     });
-    return res.data as Map<String, dynamic>;
+    final data = res.data as Map<String, dynamic>;
+    _checkStatus(data, fallback: 'Không thể mở hóa đơn');
+    return data;
   }
 
   /// [Legacy] Tạo order với body tùy ý (dùng cho sync batch).
@@ -165,7 +198,6 @@ class ApiClient {
     return res.data as Map<String, dynamic>;
   }
 
-  /// Checkout hóa đơn trực tiếp (real-time). Trả về toàn bộ response.
   Future<Map<String, dynamic>> checkoutOrder({
     required String orderId,
     required String paymentMethod,
@@ -178,14 +210,18 @@ class ApiClient {
       'discount_amount': discountAmount,
       'tax_percentage': taxPercentage,
     });
-    return res.data as Map<String, dynamic>;
+    final data = res.data as Map<String, dynamic>;
+    _checkStatus(data, fallback: 'Thanh toán thất bại');
+    return data;
   }
 
   /// [Legacy] closeOrder dùng body tùy ý.
   Future<Map<String, dynamic>> closeOrder(
       String orderId, Map<String, dynamic> body) async {
     final res = await _dio.post(EnvConfig.orderCheckout, data: body);
-    return res.data as Map<String, dynamic>;
+    final data = res.data as Map<String, dynamic>;
+    _checkStatus(data, fallback: 'Thanh toán thất bại');
+    return data;
   }
 
   Future<Map<String, dynamic>> stopPlayOrder({
@@ -194,7 +230,9 @@ class ApiClient {
     final res = await _dio.post(EnvConfig.orderStopPlay, data: {
       'order_id': orderId,
     });
-    return res.data as Map<String, dynamic>;
+    final data = res.data as Map<String, dynamic>;
+    _checkStatus(data, fallback: 'Không thể dừng giờ chơi');
+    return data;
   }
 
   Future<Map<String, dynamic>> voidOrder(
@@ -204,7 +242,9 @@ class ApiClient {
       'reason': reason,
       'cancelled_at': DateTime.now().toIso8601String(),
     });
-    return res.data as Map<String, dynamic>;
+    final data = res.data as Map<String, dynamic>;
+    _checkStatus(data, fallback: 'Hủy hóa đơn thất bại');
+    return data;
   }
 
   Future<List<dynamic>> getOrders({
@@ -281,6 +321,13 @@ class ApiClient {
     } while (currentPage <= lastPage);
 
     return allItems;
+  }
+
+  Future<Map<String, dynamic>> getOrderDetails(String orderId) async {
+    final res = await _dio.get(EnvConfig.orderDetails, queryParameters: {
+      'order_id': orderId,
+    });
+    return res.data as Map<String, dynamic>;
   }
 
   // ─── Order Details ────────────────────────────────────────────────────────────
@@ -367,7 +414,9 @@ class ApiClient {
 
   Future<Map<String, dynamic>> openShift(Map<String, dynamic> body) async {
     final res = await _dio.post(EnvConfig.shiftOpen, data: body);
-    return res.data as Map<String, dynamic>;
+    final data = res.data as Map<String, dynamic>;
+    _checkStatus(data, fallback: 'Mở ca thất bại');
+    return data;
   }
 
   Future<Map<String, dynamic>> closeShift(
@@ -376,7 +425,9 @@ class ApiClient {
       ...body,
       'shift_id': shiftId,
     });
-    return res.data as Map<String, dynamic>;
+    final data = res.data as Map<String, dynamic>;
+    _checkStatus(data, fallback: 'Đóng ca thất bại');
+    return data;
   }
 
   Future<Map<String, dynamic>?> getActiveShift() async {
@@ -445,10 +496,11 @@ class ApiClient {
     return data as List<dynamic>;
   }
 
-  // ─── Sync ────────────────────────────────────────────────────────────────────
+  // ─── Sync ───────────────────────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> syncOrders(Map<String, dynamic> payload) async {
     final res = await _dio.post(EnvConfig.syncDesktop, data: payload);
+    // Không gọi _checkStatus ở đây vì sync_service tự xử lý status
     return res.data as Map<String, dynamic>;
   }
 }

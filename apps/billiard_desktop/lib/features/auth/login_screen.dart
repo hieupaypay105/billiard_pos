@@ -19,6 +19,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   final _passwordCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _obscurePassword = true;
+  String? _loginError; // Lưu lỗi đăng nhập để hiển thị inline
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
 
@@ -41,6 +42,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    setState(() => _loginError = null); // Xóa lỗi cũ khi submit lại
     final ok = await ref.read(authProvider.notifier).login(
           username: _usernameCtrl.text.trim(),
           password: _passwordCtrl.text,
@@ -49,11 +51,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       // Tự động đồng bộ dữ liệu ngay sau khi đăng nhập thành công
       ref.read(syncStateProvider.notifier).syncNow();
     } else if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(ref.read(authProvider).error ?? 'Đăng nhập thất bại'),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-      ));
+      final errorMsg = ref.read(authProvider).error ?? 'Đăng nhập thất bại';
+      setState(() => _loginError = errorMsg);
     }
   }
 
@@ -247,6 +246,40 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                   : null,
                             ),
                             const SizedBox(height: 32),
+                            // Error message inline
+                            if (_loginError != null) ...
+                              [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.error.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                        color: AppColors.error.withOpacity(0.4),
+                                        width: 1),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.error_outline,
+                                          color: AppColors.error, size: 18),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          _loginError!,
+                                          style: const TextStyle(
+                                            fontFamily: 'Inter',
+                                            fontSize: 13,
+                                            color: AppColors.error,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                              ],
                             // Login Button
                             AnimatedContainer(
                               duration: const Duration(milliseconds: 200),

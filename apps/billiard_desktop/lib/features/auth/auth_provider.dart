@@ -41,6 +41,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final ApiClient _apiClient;
 
   AuthNotifier(this._apiClient) : super(const AuthState()) {
+    // Khi refresh token thất bại (401), tự động logout về màn hình đăng nhập
+    _apiClient.onUnauthorized = () {
+      logout();
+    };
     _tryRestoreSession();
   }
 
@@ -76,7 +80,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String username,
     required String password,
   }) async {
-    state = state.copyWith(isLoading: true, error: null);
+    // Set isAuthenticated = false để router KHÔNG redirect sang /tables
+    // trong khi đang chờ API response (tránh flash màn hình)
+    state = AuthState(isLoading: true, isAuthenticated: false);
     try {
       final data = await _apiClient.login(
         username: username,
@@ -94,14 +100,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
       state = AuthState(user: user, isAuthenticated: true, isLoading: false);
       return true;
     } catch (e) {
-      String errorMsg = 'Đăng nhập thất bại. Vui lòng thử lại.';
-      if (e.toString().contains('401') || e.toString().contains('credentials')) {
-        errorMsg = 'Sai tên đăng nhập hoặc mật khẩu.';
-      } else if (e.toString().contains('network') ||
-          e.toString().contains('SocketException')) {
-        errorMsg = 'Không có kết nối mạng.';
+      String errorMsg;
+      final raw = e.toString();
+      if (raw.contains('SocketException') ||
+          raw.contains('network') ||
+          raw.contains('Connection refused') ||
+          raw.contains('Failed host lookup')) {
+        errorMsg = 'Không có kết nối mạng. Vui lòng thử lại.';
+      } else {
+        // Lấy message từ Exception('...') do ApiClient ném ra từ response body
+        final match = RegExp(r'^Exception:\s*(.+)$').firstMatch(raw);
+        errorMsg = match?.group(1) ?? 'Đăng nhập thất bại. Vui lòng thử lại.';
       }
-      state = state.copyWith(isLoading: false, error: errorMsg);
+      // isAuthenticated giữ false, giữ user ở lại màn hình login
+      state = AuthState(isLoading: false, isAuthenticated: false, error: errorMsg);
       return false;
     }
   }

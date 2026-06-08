@@ -115,7 +115,12 @@ class ShiftNotifier extends StateNotifier<ShiftState> {
             shiftId = backendId;
           }
         }
+      } on Exception {
+        // API đã throw (status != 1) → re-throw để UI hiện thông báo
+        state = state.copyWith(isLoading: false);
+        rethrow;
       } catch (e) {
+        // Lỗi network/timeout → offline mode, tiếp tục với local ID
         print('Lỗi mở ca trên backend (offline?): $e');
       }
     }
@@ -160,7 +165,12 @@ class ShiftNotifier extends StateNotifier<ShiftState> {
           'actual_cash': actualCash,
           if (note != null && note.isNotEmpty) 'note': note,
         });
+      } on Exception {
+        // API đã throw (status != 1) → re-throw để UI hiện thông báo
+        state = state.copyWith(isLoading: false);
+        rethrow;
       } catch (e) {
+        // Lỗi network/timeout → offline mode, vẫn xóa local
         print('Lỗi đóng ca trên backend (offline?): $e');
       }
     }

@@ -115,6 +115,11 @@ class EnvConfig {
     defaultValue: '/order/history',
   );
 
+  static const String orderDetails = String.fromEnvironment(
+    'ORDER_DETAILS',
+    defaultValue: '/order/getDetails',
+  );
+
   static const String orderStopPlay = String.fromEnvironment(
     'ORDER_STOP_PLAY',
     defaultValue: '/order/stopPlay',
