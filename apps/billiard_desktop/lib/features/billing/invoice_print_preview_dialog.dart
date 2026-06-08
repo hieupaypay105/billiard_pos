@@ -412,105 +412,163 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     );
   }
 
-  // ─── K80 Receipt Paper ────────────────────────────────────────────────────────
-
   // ─── VietQR / EMV QRCPS string builder ───────────────────────────────────────
   //
-  // Tạo chuỗi QR theo định dạng VietQR (EMV QRCPS).
-  // Các ứng dụng ngân hàng Việt Nam đọc được chuỗi này khi quét QR.
+  // Chuẩn EMV QRCPS / VietQR (NAPAS). Cấu trúc tag 38:
+  //   00 10 A000000727         ← GUID cố định của NAPAS (không đổi)
+  //   01 <len>                 ← Payment network specific
+  //       00 06 <BIN 6 số>     ← BIN code ngân hàng (VD: 970415)
+  //       01 <len> <account>   ← Số tài khoản
+  //   02 08 QRIBFTTA           ← Service code cố định
   //
-  //  Format:
-  //   000201          – Payload Format Indicator
-  //   010212          – Point of Initiation (12 = dynamic)
-  //   38<len><bank_guid>  – Bank GUID (napas)
-  //   5303704         – Transaction Currency (VND = 704)
-  //   54<len><amount> – Transaction Amount (nếu có)
-  //   5802VN          – Country code
-  //   62<len>...      – Additional Data (addInfo)
-  //   6304<crc>       – CRC-16 CCITT (checksum)
-  //
-  // NOTE: CRC-16 là tùy chọn cho preview — ở đây dùng placeholder '0000' vì
-  // hầu hết app ngân hàng VN chấp nhận mà không check strict CRC khi chuỗi
-  // content đúng format. Để scan thực tế chuẩn 100%, cần tính CRC-16/CCITT.
+  // CRC-16/CCITT-FALSE (poly=0x1021, init=0xFFFF) tính trên toàn payload kể
+  // cả prefix "6304" — kết quả append vào cuối dưới dạng HEX 4 ký tự.
   static String _buildVietQrData({
-    required String bankId,   // tên ngắn ngân hàng, VD: "VietinBank", "VCB"
+    required String bankId,
     required String accountNumber,
     String? accountName,
     int amountVnd = 0,
     String addInfo = '',
   }) {
-    // Map tên ngân hàng phổ biến → GUID chuẩn NAPAS để ứng dụng nhận dạng
-    const napasGuids = <String, String>{
-      'vcb': '9704036',
-      'vietcombank': '9704036',
-      'vietinbank': '9704021',
-      'vtin': '9704021',
-      'bidv': '9704018',
-      'mb': '9704153',
-      'mbbank': '9704153',
-      'acb': '9704281',
-      'techcombank': '9704054',
-      'tcb': '9704054',
-      'tpbank': '9704394',
-      'vpbank': '9704432',
-      'sacombank': '9704066',
-      'scb': '9704255',
-      'hdbank': '9704157',
-      'shb': '9704277',
-      'ocb': '9704229',
-      'seabank': '9704400',
-      'abbank': '9704325',
-      'vib': '9704066',
-      'agribank': '9704247',
-      'agri': '9704247',
-      'lpbank': '9704239',
-    };
+    // 1. Sanitize bankId and resolve BIN
+    final cleanBank = bankId.trim().toLowerCase();
+    String bin = '970415'; // Default fallback (VietinBank)
 
-    final key = bankId.toLowerCase().replaceAll(' ', '');
-    final guid = napasGuids[key] ?? '970415'; // fallback: VietinBank
+    if (RegExp(r'^\d{6}$').hasMatch(cleanBank)) {
+      bin = cleanBank;
+    } else {
+      final norm = cleanBank
+          .replaceAll(RegExp(r'[^\w\s\u00C0-\u1EF9]'), '')
+          .replaceAll(RegExp(r'\s+'), '');
 
-    // Helper: TLV field — ID(2 digit) + Length(2 digit) + Value
-    String tlv(String id, String value) {
-      final len = value.length.toString().padLeft(2, '0');
-      return '$id$len$value';
+      if (norm.contains('vietcombank') || norm.contains('vcb') || norm.contains('vietcom')) {
+        bin = '970436';
+      } else if (norm.contains('vietinbank') || norm.contains('vietin') || norm.contains('icb') || norm.contains('ctg')) {
+        bin = '970415';
+      } else if (norm.contains('techcombank') || norm.contains('tcb') || norm.contains('techcom')) {
+        bin = '970407';
+      } else if (norm.contains('agribank') || norm.contains('agri') || norm.contains('vba')) {
+        bin = '970405';
+      } else if (norm.contains('mbbank') || norm.contains('mb')) {
+        bin = '970422';
+      } else if (norm.contains('bidv')) {
+        bin = '970418';
+      } else if (norm.contains('acb')) {
+        bin = '970416';
+      } else if (norm.contains('vpbank') || norm.contains('vpb')) {
+        bin = '970432';
+      } else if (norm.contains('tpbank') || norm.contains('tpb')) {
+        bin = '970423';
+      } else if (norm.contains('sacombank') || norm.contains('stb') || norm.contains('sacom')) {
+        bin = '970403';
+      } else if (norm.contains('hdbank') || norm.contains('hdb')) {
+        bin = '970437';
+      } else if (norm.contains('shb')) {
+        bin = '970443';
+      } else if (norm.contains('ocb')) {
+        bin = '970448';
+      } else if (norm.contains('seabank') || norm.contains('seab')) {
+        bin = '970440';
+      } else if (norm.contains('abbank') || norm.contains('abb')) {
+        bin = '970425';
+      } else if (norm.contains('vib')) {
+        bin = '970441';
+      } else if (norm.contains('msb')) {
+        bin = '970426';
+      } else if (norm.contains('namabank') || norm.contains('nab')) {
+        bin = '970428';
+      } else if (norm.contains('pvcombank') || norm.contains('pvcb')) {
+        bin = '970412';
+      } else if (norm.contains('scb')) {
+        bin = '970429';
+      } else if (norm.contains('ncb')) {
+        bin = '970419';
+      } else if (norm.contains('eximbank') || norm.contains('eib')) {
+        bin = '970431';
+      } else if (norm.contains('baovietbank') || norm.contains('bvb')) {
+        bin = '970438';
+      } else if (norm.contains('lpbank') || norm.contains('lpb') || norm.contains('lienviet') || norm.contains('lienvietpostbank')) {
+        bin = '970449';
+      } else if (norm.contains('kienlong') || norm.contains('klb')) {
+        bin = '970452';
+      } else if (norm.contains('saigonbank') || norm.contains('sgicb')) {
+        bin = '970400';
+      } else if (norm.contains('bacabank') || norm.contains('bab')) {
+        bin = '970409';
+      } else if (norm.contains('vietabank') || norm.contains('vab')) {
+        bin = '970427';
+      } else if (norm.contains('vietbank')) {
+        bin = '970433';
+      } else if (norm.contains('pgbank') || norm.contains('pgb')) {
+        bin = '970430';
+      } else if (norm.contains('shinhan')) {
+        bin = '970424';
+      } else if (norm.contains('woori')) {
+        bin = '970457';
+      }
     }
 
-    // Sub-fields cho Merchant Account Info (tag 38 — NAPAS VietQR)
-    final acctField = tlv('01', accountNumber);
-    final bankField = tlv('00', guid);
-    final merchantInfo = tlv('38', '$bankField$acctField');
+    // 2. Sanitize account number (remove any spaces, dashes, or special characters)
+    final cleanAcc = accountNumber.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
 
-    // Amount field (tag 54)
-    final amountStr = amountVnd > 0 ? amountVnd.toString() : '';
-    final amountField = amountStr.isNotEmpty ? tlv('54', amountStr) : '';
+    // TLV: ID (2 char) + Length (2 char, zero-padded) + Value
+    String tlv(String id, String value) =>
+        '$id${value.length.toString().padLeft(2, '0')}$value';
 
-    // Additional data field (tag 62) — addInfo in sub-tag 08
-    final addInfoSanitized = addInfo
+    // ── Tag 38: Merchant Account Information (VietQR / NAPAS) ────────────────
+    // Sub-tag 00: GUID cố định của NAPAS
+    final guidSub = tlv('00', 'A000000727');
+
+    // Sub-tag 01: Payment network specific
+    //   Sub-sub-tag 00: BIN ngân hàng
+    //   Sub-sub-tag 01: Số tài khoản
+    final bankBinSub = tlv('00', bin);
+    final acctSub    = tlv('01', cleanAcc);
+    final netSub     = tlv('01', '$bankBinSub$acctSub');
+
+    // Sub-tag 02: Service code cố định
+    final serviceSub = tlv('02', 'QRIBFTTA');
+
+    final merchantInfo = tlv('38', '$guidSub$netSub$serviceSub');
+
+    // ── Tag 54: Transaction Amount ─────────────────────────────────────────────
+    final amountField = amountVnd > 0 ? tlv('54', amountVnd.toString()) : '';
+
+    // ── Tag 62: Additional Data ────────────────────────────────────────────────
+    // Sub-tag 08: Bill number / thông tin thanh toán (ASCII only, tối đa 25 ký tự)
+    final addInfoAscii = addInfo
         .replaceAll(RegExp(r'[^\x20-\x7E]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
-        .trim()
-        .substring(0, addInfo.length.clamp(0, 25));
-    final addInfoField = addInfoSanitized.isNotEmpty
-        ? tlv('62', tlv('08', addInfoSanitized))
+        .trim();
+    final addInfoTrimmed = addInfoAscii.length > 25
+        ? addInfoAscii.substring(0, 25)
+        : addInfoAscii;
+    final addInfoField = addInfoTrimmed.isNotEmpty
+        ? tlv('62', tlv('08', addInfoTrimmed))
         : '';
 
-    // Build payload WITHOUT CRC
-    final payload =
-        '000201' // Payload Format Indicator
-        '010212' // Dynamic QR
-        '$merchantInfo'
-        '5303704' // VND
-        '$amountField'
-        '5802VN' // Country
-        '$addInfoField'
-        '6304'; // CRC placeholder prefix
+    // ── Dynamic Point of Initiation Method ─────────────────────────────────────
+    final pointOfInitiation = amountVnd > 0 ? '010212' : '010211';
 
-    // CRC-16/CCITT-FALSE (poly=0x1021, init=0xFFFF) over payload+"6304"
+    // ── Ghép payload (không có CRC value) ─────────────────────────────────────
+    final payload = '000201'     // Payload Format Indicator = 01
+        '$pointOfInitiation'     // Point of Initiation = 12 (dynamic) or 11 (static)
+        '$merchantInfo'          // Tag 38
+        '5303704'                // Currency = 704 (VND)
+        '$amountField'           // Tag 54 (nếu có)
+        '5802VN'                 // Country = VN
+        '$addInfoField'          // Tag 62 (nếu có)
+        '6304';                  // CRC tag prefix (value tính bên dưới)
+
+    // ── CRC-16/CCITT-FALSE ─────────────────────────────────────────────────────
+    // poly = 0x1021, init = 0xFFFF, no reflection (MSB-first)
     int crc = 0xFFFF;
     for (final byte in payload.codeUnits) {
       crc ^= (byte << 8);
       for (int i = 0; i < 8; i++) {
-        crc = (crc & 0x8000) != 0 ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+        crc = (crc & 0x8000) != 0
+            ? ((crc << 1) ^ 0x1021) & 0xFFFF
+            : (crc << 1) & 0xFFFF;
       }
     }
     final crcHex = crc.toRadixString(16).toUpperCase().padLeft(4, '0');
@@ -675,15 +733,17 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
           ],
 
           // ── TÊN QUÁN ─────────────────────────────────────────────────────
-          Text(
-            t.storeName.toUpperCase(),
-            textAlign: _toTextAlign(t.alignStoreName),
-            style: mono.copyWith(
-              fontWeight: FontWeight.w900,
-              fontSize: _storeNameFs(t.fontSizeStoreName),
-              height: 1.2,
+          if (t.showStoreName) ...[
+            Text(
+              t.storeName.toUpperCase(),
+              textAlign: _toTextAlign(t.alignStoreName),
+              style: mono.copyWith(
+                fontWeight: FontWeight.w900,
+                fontSize: _storeNameFs(t.fontSizeStoreName),
+                height: 1.2,
+              ),
             ),
-          ),
+          ],
 
           // ── ĐỊA CHỈ ──────────────────────────────────────────────────────
           if (t.address != null && t.address!.isNotEmpty) ...[

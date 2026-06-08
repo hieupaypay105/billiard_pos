@@ -6,6 +6,7 @@ class InvoiceTemplate {
   final String storeName;
   final String alignStoreName;
   final String fontSizeStoreName;
+  final bool showStoreName;
   final String? address;
   final String alignAddress;
   final String? phone;
@@ -37,6 +38,7 @@ class InvoiceTemplate {
     required this.storeName,
     required this.alignStoreName,
     required this.fontSizeStoreName,
+    required this.showStoreName,
     this.address,
     required this.alignAddress,
     this.phone,
@@ -83,6 +85,7 @@ class InvoiceTemplate {
       storeName: m['store_name']?.toString() ?? 'Billiard Club',
       alignStoreName: m['align_store_name']?.toString() ?? 'center',
       fontSizeStoreName: m['font_size_store_name']?.toString() ?? 'medium',
+      showStoreName: parseBool(m['show_store_name']),
       address: m['address']?.toString(),
       alignAddress: m['align_address']?.toString() ?? 'center',
       phone: m['phone']?.toString(),
@@ -117,6 +120,7 @@ class InvoiceTemplate {
     storeName: 'Billiard Club',
     alignStoreName: 'center',
     fontSizeStoreName: 'medium',
+    showStoreName: true,
     address: null,
     alignAddress: 'center',
     phone: null,
