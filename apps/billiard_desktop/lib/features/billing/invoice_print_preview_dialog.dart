@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../core/config/env_config.dart';
 import '../../core/constants/app_colors.dart';
 import 'invoice_template_provider.dart';
 
@@ -53,17 +54,44 @@ class _CachedNetworkImageState extends State<_CachedNetworkImage> {
 
   /// Trả về File ảnh – lấy từ cache nếu đã có, ngược lại tải về và cache.
   static Future<File> _resolve(String url) async {
-    final cacheDir = await getTemporaryDirectory();
-    final hash = md5.convert(url.codeUnits).toString();
-    final ext = url.contains('.png') ? 'png' : 'jpg';
-    final file = File('${cacheDir.path}/invoice_img_$hash.$ext');
-    if (await file.exists()) return file;
-    final res = await Dio().get<Uint8List>(
-      url,
-      options: Options(responseType: ResponseType.bytes),
-    );
-    await file.writeAsBytes(res.data!);
-    return file;
+    try {
+      final cacheDir = await getTemporaryDirectory();
+
+      // Resolve relative URL if it does not start with http/https
+      String resolvedUrl = url;
+      if (!url.startsWith('http')) {
+        final apiUri = Uri.parse(EnvConfig.apiBaseUrl);
+        final host = '${apiUri.scheme}://${apiUri.host}${apiUri.hasPort ? ":${apiUri.port}" : ""}';
+        // Ensure url has a leading slash
+        final normalizedPath = url.startsWith('/') ? url : '/$url';
+        resolvedUrl = '$host$normalizedPath';
+        debugPrint('[_CachedNetworkImage] resolved relative URL: $url -> $resolvedUrl');
+      }
+
+      final hash = md5.convert(resolvedUrl.codeUnits).toString();
+      final ext = resolvedUrl.contains('.png') ? 'png' : 'jpg';
+      final file = File('${cacheDir.path}/invoice_img_$hash.$ext');
+      if (await file.exists()) return file;
+
+      debugPrint('[_CachedNetworkImage] downloading: $resolvedUrl');
+      final res = await Dio().get<Uint8List>(
+        resolvedUrl,
+        options: Options(
+          responseType: ResponseType.bytes,
+          receiveTimeout: const Duration(seconds: 10),
+          sendTimeout: const Duration(seconds: 10),
+        ),
+      );
+      if (res.data != null) {
+        await file.writeAsBytes(res.data!);
+        debugPrint('[_CachedNetworkImage] cached to: ${file.path}');
+        return file;
+      }
+      throw Exception('Empty data response');
+    } catch (e, stack) {
+      debugPrint('[_CachedNetworkImage] error loading logo image: $url -> error: $e\n$stack');
+      rethrow;
+    }
   }
 
   @override
