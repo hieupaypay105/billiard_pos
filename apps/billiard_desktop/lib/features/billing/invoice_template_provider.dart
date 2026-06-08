@@ -66,13 +66,13 @@ class InvoiceTemplate {
   });
 
   factory InvoiceTemplate.fromMap(Map<String, dynamic> m) {
-    int _parseInt(dynamic v, int fallback) {
+    int parseInt(dynamic v, int fallback) {
       if (v == null) return fallback;
       if (v is int) return v;
       return int.tryParse(v.toString()) ?? fallback;
     }
 
-    bool _parseBool(dynamic v, {bool fallback = true}) {
+    bool parseBool(dynamic v, {bool fallback = true}) {
       if (v == null) return fallback;
       if (v is bool) return v;
       if (v is int) return v != 0;
@@ -91,15 +91,15 @@ class InvoiceTemplate {
       alignTitle: m['align_title']?.toString() ?? 'center',
       fontSizeTitle: m['font_size_title']?.toString() ?? 'large',
       logoUrl: m['logo_url']?.toString(),
-      showLogo: _parseBool(m['show_logo']),
+      showLogo: parseBool(m['show_logo']),
       logoPosition: m['logo_position']?.toString() ?? 'center',
-      logoHeight: _parseInt(m['logo_height'], 80),
-      showTableName: _parseBool(m['show_table_name']),
-      showCashier: _parseBool(m['show_cashier']),
-      showCustomer: _parseBool(m['show_customer']),
-      showCheckinCheckout: _parseBool(m['show_checkin_checkout']),
-      showDuration: _parseBool(m['show_duration']),
-      showQrPayment: _parseBool(m['show_qr_payment'], fallback: false),
+      logoHeight: parseInt(m['logo_height'], 80),
+      showTableName: parseBool(m['show_table_name']),
+      showCashier: parseBool(m['show_cashier']),
+      showCustomer: parseBool(m['show_customer']),
+      showCheckinCheckout: parseBool(m['show_checkin_checkout']),
+      showDuration: parseBool(m['show_duration']),
+      showQrPayment: parseBool(m['show_qr_payment'], fallback: false),
       qrBankName: m['qr_bank_name']?.toString(),
       qrAccountNumber: m['qr_account_number']?.toString(),
       qrAccountName: m['qr_account_name']?.toString(),
@@ -148,26 +148,30 @@ class InvoiceTemplate {
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
-/// FutureProvider đọc template từ local DB (đã được sync từ backend).
-/// Nếu chưa có, thử fetch trực tiếp từ API.
+/// FutureProvider đọc template từ local DB (đã được sync từ backend) hoặc fetch online.
+/// Sử dụng autoDispose để tự động giải phóng và tải lại cấu hình mới nhất mỗi khi Dialog xem trước mở ra.
 final invoiceTemplateProvider =
-    FutureProvider<InvoiceTemplate>((ref) async {
+    FutureProvider.autoDispose<InvoiceTemplate>((ref) async {
   final localDb = ref.read(localDbServiceProvider);
   final api = ref.read(apiClientProvider);
 
-  // 1. Đọc từ local cache trước
+  // 1. Nếu online, thử fetch online trước để luôn lấy cấu hình mới nhất từ backend
+  try {
+    final remote = await api.getInvoiceTemplate().timeout(const Duration(seconds: 2));
+    if (remote != null) {
+      await localDb.saveInvoiceTemplate(remote);
+      return InvoiceTemplate.fromMap(remote);
+    }
+  } catch (e) {
+    // Bỏ qua lỗi kết nối / timeout và chuyển sang đọc SQLite cache
+  }
+
+  // 2. Fallback đọc từ SQLite cache cục bộ
   final cached = await localDb.getInvoiceTemplate();
   if (cached != null) {
     return InvoiceTemplate.fromMap(cached);
   }
 
-  // 2. Nếu không có, thử fetch online
-  final remote = await api.getInvoiceTemplate();
-  if (remote != null) {
-    await localDb.saveInvoiceTemplate(remote);
-    return InvoiceTemplate.fromMap(remote);
-  }
-
-  // 3. Fallback về default
+  // 3. Fallback về default khi không có cả mạng lẫn cache
   return InvoiceTemplate.defaultTemplate;
 });

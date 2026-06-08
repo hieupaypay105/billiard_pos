@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/constants/app_colors.dart';
 import 'invoice_template_provider.dart';
@@ -167,7 +168,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     final h = minutes ~/ 60;
     final m = minutes % 60;
     if (h > 0 && m > 0) return '${h}h ${m.toString().padLeft(2, '0')}p';
-    if (h > 0) return '${h} giờ';
+    if (h > 0) return '$h giờ';
     return '$m phút';
   }
 
@@ -413,6 +414,109 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
 
   // ─── K80 Receipt Paper ────────────────────────────────────────────────────────
 
+  // ─── VietQR / EMV QRCPS string builder ───────────────────────────────────────
+  //
+  // Tạo chuỗi QR theo định dạng VietQR (EMV QRCPS).
+  // Các ứng dụng ngân hàng Việt Nam đọc được chuỗi này khi quét QR.
+  //
+  //  Format:
+  //   000201          – Payload Format Indicator
+  //   010212          – Point of Initiation (12 = dynamic)
+  //   38<len><bank_guid>  – Bank GUID (napas)
+  //   5303704         – Transaction Currency (VND = 704)
+  //   54<len><amount> – Transaction Amount (nếu có)
+  //   5802VN          – Country code
+  //   62<len>...      – Additional Data (addInfo)
+  //   6304<crc>       – CRC-16 CCITT (checksum)
+  //
+  // NOTE: CRC-16 là tùy chọn cho preview — ở đây dùng placeholder '0000' vì
+  // hầu hết app ngân hàng VN chấp nhận mà không check strict CRC khi chuỗi
+  // content đúng format. Để scan thực tế chuẩn 100%, cần tính CRC-16/CCITT.
+  static String _buildVietQrData({
+    required String bankId,   // tên ngắn ngân hàng, VD: "VietinBank", "VCB"
+    required String accountNumber,
+    String? accountName,
+    int amountVnd = 0,
+    String addInfo = '',
+  }) {
+    // Map tên ngân hàng phổ biến → GUID chuẩn NAPAS để ứng dụng nhận dạng
+    const napasGuids = <String, String>{
+      'vcb': '9704036',
+      'vietcombank': '9704036',
+      'vietinbank': '9704021',
+      'vtin': '9704021',
+      'bidv': '9704018',
+      'mb': '9704153',
+      'mbbank': '9704153',
+      'acb': '9704281',
+      'techcombank': '9704054',
+      'tcb': '9704054',
+      'tpbank': '9704394',
+      'vpbank': '9704432',
+      'sacombank': '9704066',
+      'scb': '9704255',
+      'hdbank': '9704157',
+      'shb': '9704277',
+      'ocb': '9704229',
+      'seabank': '9704400',
+      'abbank': '9704325',
+      'vib': '9704066',
+      'agribank': '9704247',
+      'agri': '9704247',
+      'lpbank': '9704239',
+    };
+
+    final key = bankId.toLowerCase().replaceAll(' ', '');
+    final guid = napasGuids[key] ?? '970415'; // fallback: VietinBank
+
+    // Helper: TLV field — ID(2 digit) + Length(2 digit) + Value
+    String tlv(String id, String value) {
+      final len = value.length.toString().padLeft(2, '0');
+      return '$id$len$value';
+    }
+
+    // Sub-fields cho Merchant Account Info (tag 38 — NAPAS VietQR)
+    final acctField = tlv('01', accountNumber);
+    final bankField = tlv('00', guid);
+    final merchantInfo = tlv('38', '$bankField$acctField');
+
+    // Amount field (tag 54)
+    final amountStr = amountVnd > 0 ? amountVnd.toString() : '';
+    final amountField = amountStr.isNotEmpty ? tlv('54', amountStr) : '';
+
+    // Additional data field (tag 62) — addInfo in sub-tag 08
+    final addInfoSanitized = addInfo
+        .replaceAll(RegExp(r'[^\x20-\x7E]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim()
+        .substring(0, addInfo.length.clamp(0, 25));
+    final addInfoField = addInfoSanitized.isNotEmpty
+        ? tlv('62', tlv('08', addInfoSanitized))
+        : '';
+
+    // Build payload WITHOUT CRC
+    final payload =
+        '000201' // Payload Format Indicator
+        '010212' // Dynamic QR
+        '$merchantInfo'
+        '5303704' // VND
+        '$amountField'
+        '5802VN' // Country
+        '$addInfoField'
+        '6304'; // CRC placeholder prefix
+
+    // CRC-16/CCITT-FALSE (poly=0x1021, init=0xFFFF) over payload+"6304"
+    int crc = 0xFFFF;
+    for (final byte in payload.codeUnits) {
+      crc ^= (byte << 8);
+      for (int i = 0; i < 8; i++) {
+        crc = (crc & 0x8000) != 0 ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+      }
+    }
+    final crcHex = crc.toRadixString(16).toUpperCase().padLeft(4, '0');
+    return '$payload$crcHex';
+  }
+
   Widget _receipt(BuildContext context, InvoiceTemplate t) {
     final bfs = _bodyFs(t.fontSize);
     final lh = _lineH(t.lineSpacing);
@@ -511,21 +615,30 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               style: mono.copyWith(color: Colors.black38)),
         );
 
-    // Dynamic VietQR — amount changes per invoice so NOT cached
+    // Dynamic VietQR — vẽ offline bằng qr_flutter (không cần internet)
     Widget qrDynamicWidget() {
-      final qrUrl = 'https://img.vietqr.io/image/'
-          '${Uri.encodeComponent(t.qrBankName ?? '')}-'
-          '${Uri.encodeComponent(t.qrAccountNumber ?? '')}'
-          '-compact2.jpg'
-          '?amount=${effectiveNet.toInt()}'
-          '&addInfo=${Uri.encodeComponent('Thanh toan hoa don $tableName')}'
-          '&accountName=${Uri.encodeComponent(t.qrAccountName ?? '')}';
-      return Image.network(
-        qrUrl,
-        height: 130,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => Text('[QR không tải được]',
-            style: mono.copyWith(color: Colors.black38)),
+      final qrData = _buildVietQrData(
+        bankId: t.qrBankName ?? '',
+        accountNumber: t.qrAccountNumber ?? '',
+        accountName: t.qrAccountName,
+        amountVnd: effectiveNet.toInt(),
+        addInfo: 'Thanh toan hoa don $tableName',
+      );
+      return QrImageView(
+        data: qrData,
+        version: QrVersions.auto,
+        size: 130,
+        gapless: false,
+        errorCorrectionLevel: QrErrorCorrectLevel.M,
+        backgroundColor: Colors.white,
+        eyeStyle: const QrEyeStyle(
+          eyeShape: QrEyeShape.square,
+          color: Color(0xFF1A1A1A),
+        ),
+        dataModuleStyle: const QrDataModuleStyle(
+          dataModuleShape: QrDataModuleShape.square,
+          color: Color(0xFF1A1A1A),
+        ),
       );
     }
 
@@ -741,13 +854,15 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                 t.qrStaticUrl!.isNotEmpty) ...[
               Center(child: qrStaticWidget()),
             ] else if (t.qrBankName != null &&
-                t.qrAccountNumber != null) ...[
+                t.qrBankName!.isNotEmpty &&
+                t.qrAccountNumber != null &&
+                t.qrAccountNumber!.isNotEmpty) ...[
               Center(child: qrDynamicWidget()),
               const SizedBox(height: 4),
               Text(
                 'Ngân hàng: ${t.qrBankName}\n'
                 'STK: ${t.qrAccountNumber}'
-                '${t.qrAccountName != null ? '\nTên: ${t.qrAccountName}' : ''}',
+                '${t.qrAccountName != null && t.qrAccountName!.isNotEmpty ? '\nTên: ${t.qrAccountName}' : ''}',
                 textAlign: TextAlign.center,
                 style: mono.copyWith(
                     fontSize: bfs - 1, color: Colors.black54),

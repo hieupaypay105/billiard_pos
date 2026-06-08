@@ -35,10 +35,12 @@ dependencies:
   intl: ^0.19.0
   uuid: ^4.5.1
   connectivity_plus: ^6.1.1
+  crypto: ^3.0.3
 
   # UI / Charts
   fl_chart: ^0.69.0
   data_table_2: ^2.5.14
+  qr_flutter: ^4.1.0
 
   # Receipt Printing (K80) - TODO: integrate when printer hardware confirmed
   # esc_pos_utils_plus: ^2.0.4  # add when ready to integrate
