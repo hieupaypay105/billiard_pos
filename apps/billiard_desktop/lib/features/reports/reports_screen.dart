@@ -5,6 +5,7 @@ import '../../core/constants/app_text_styles.dart';
 import '../../core/providers/providers.dart';
 import '../../features/sync/sync_provider.dart';
 import '../billing/invoice_print_preview_dialog.dart';
+import 'report_print_preview_dialog.dart';
 
 // ─── Data Models ──────────────────────────────────────────────────────────────
 
@@ -236,13 +237,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     }
 
     final filtered = orders.map((o) => _normalizeOrder(o)).where((o) {
-      if (_selectedStatus != 'all' && o['status'] != _selectedStatus)
+      if (_selectedStatus != 'all' && o['status'] != _selectedStatus) {
         return false;
+      }
       if (_selectedCashier != 'all') {
         final creator = o['created_by']?.toString() ?? '';
         final closer = o['closed_by']?.toString() ?? '';
-        if (creator != _selectedCashier && closer != _selectedCashier)
+        if (creator != _selectedCashier && closer != _selectedCashier) {
           return false;
+        }
       }
       return true;
     }).toList();
@@ -274,57 +277,24 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
       (sum, o) => sum + _toDouble(o['total_amount']),
     );
 
-    final textBuffer = StringBuffer();
-    textBuffer.writeln('==========================================');
-    textBuffer.writeln('            BÁO CÁO DOANH THU             ');
-    textBuffer.writeln(
-      'Từ ngày: ${_fmtDate(_dateRange.start)} - Đến ngày: ${_fmtDate(_dateRange.end)}',
-    );
-    textBuffer.writeln('------------------------------------------');
-    textBuffer.writeln('Lọc trạng thái: ${_getStatusLabel(_selectedStatus)}');
-    textBuffer.writeln(
-      'Lọc nhân viên: ${_selectedCashier == 'all' ? 'Tất cả' : _getCashierName(_selectedCashier, users)}',
-    );
-    textBuffer.writeln('Tổng số hóa đơn: ${filtered.length}');
-    textBuffer.writeln('Tổng tiền giờ: ${_fmtCurrency(totalPlay)}');
-    textBuffer.writeln('Tổng dịch vụ: ${_fmtCurrency(totalService)}');
-    textBuffer.writeln('Tổng chiết khấu: -${_fmtCurrency(totalDiscount)}');
-    textBuffer.writeln('TỔNG DOANH THU: ${_fmtCurrency(totalAmount)}');
-    textBuffer.writeln('==========================================');
-
-    debugPrint(textBuffer.toString());
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Đang in báo cáo doanh thu từ ${_fmtDate(_dateRange.start)} đến ${_fmtDate(_dateRange.end)}...',
-        ),
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: 'Xem log',
-          onPressed: () {
-            showDialog(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                title: const Text('Bản xem trước in báo cáo'),
-                content: SingleChildScrollView(
-                  child: Text(
-                    textBuffer.toString(),
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(ctx).pop(),
-                    child: const Text('Đóng'),
-                  ),
-                ],
-              ),
-            );
-          },
+    final container = ProviderScope.containerOf(context);
+    showDialog(
+      context: context,
+      builder: (_) => UncontrolledProviderScope(
+        container: container,
+        child: ReportPrintPreviewDialog(
+          dateRange: _dateRange,
+          statusFilterLabel: _getStatusLabel(_selectedStatus),
+          cashierFilterLabel: _selectedCashier == 'all'
+              ? 'Tất cả nhân viên'
+              : _getCashierName(_selectedCashier, users),
+          totalInvoices: filtered.length,
+          totalPlay: totalPlay,
+          totalService: totalService,
+          totalDiscount: totalDiscount,
+          totalAmount: totalAmount,
+          orders: filtered,
+          showInvoiceList: _tabCtrl.index == 0,
         ),
       ),
     );

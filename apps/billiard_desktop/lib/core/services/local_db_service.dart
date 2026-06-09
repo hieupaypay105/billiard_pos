@@ -269,10 +269,15 @@ class LocalDbService {
 
   Future<int> getPendingCount() async {
     final db = await database;
-    final result = await db.rawQuery(
+    final ordersResult = await db.rawQuery(
       'SELECT COUNT(*) as count FROM pending_orders WHERE synced = 0',
     );
-    return (result.first['count'] as int?) ?? 0;
+    final cancelsResult = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM cancelled_invoices WHERE synced = 0',
+    );
+    final ordersCount = (ordersResult.first['count'] as int?) ?? 0;
+    final cancelsCount = (cancelsResult.first['count'] as int?) ?? 0;
+    return ordersCount + cancelsCount;
   }
 
   /// Lấy tất cả orders trong local DB (bao gồm cả đã sync) để dùng cho báo cáo offline.

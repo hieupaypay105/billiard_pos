@@ -17,6 +17,7 @@ import 'shift_provider.dart';
 import '../../core/services/local_db_service.dart';
 import '../../core/services/sync_service.dart';
 import 'package:flutter/services.dart';
+import 'package:uuid/uuid.dart';
 
 
 class TablesScreen extends ConsumerStatefulWidget {
@@ -28,14 +29,7 @@ class TablesScreen extends ConsumerStatefulWidget {
 
 class _TablesScreenState extends ConsumerState<TablesScreen> {
   Timer? _ticker;
-  String _filterStatus = 'all';
-  final _filters = [
-    ('all', 'Tất cả'),
-    ('idle', 'Trống'),
-    ('active', 'Đang chơi'),
-    ('booked', 'Đặt trước'),
-    ('maintenance', 'Bảo trì'),
-  ];
+  int? _selectedTableTypeId;
 
   // Quick product search suggest variables
   final FocusNode _searchFocusNode = FocusNode();
@@ -159,10 +153,12 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
   @override
   Widget build(BuildContext context) {
     final tablesState = ref.watch(tablesProvider);
-    final filteredTables = _filterStatus == 'all'
+    final activeTableTypeId = _selectedTableTypeId ?? 
+        (tablesState.tableTypes.isNotEmpty ? tablesState.tableTypes.first.id : null);
+    final filteredTables = activeTableTypeId == null
         ? tablesState.tables
         : tablesState.tables
-            .where((t) => t.status == _filterStatus)
+            .where((t) => t.tableTypeId == activeTableTypeId)
             .toList();
 
     final activeCnt =
@@ -236,27 +232,24 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // ── FILTER CHIPS ──
+                      // ── TABLE TYPE TABS ──
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(
-                          children: _filters.map((f) {
-                            final (status, label) = f;
-                            final count = status == 'all'
-                                ? tablesState.tables.length
-                                : tablesState.tables
-                                    .where((t) => t.status == status)
-                                    .length;
-                            final isSelected = _filterStatus == status;
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
+                          children: [
+                            // Table type chips
+                            ...tablesState.tableTypes.map((type) {
+                              final count = tablesState.tables
+                                  .where((t) => t.tableTypeId == type.id)
+                                  .length;
+                              final isSelected = activeTableTypeId == type.id;
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8),
                                 child: FilterChip(
-                                  label: Text('$label ($count)'),
+                                  label: Text('${type.typeName} ($count)'),
                                   selected: isSelected,
                                   onSelected: (_) =>
-                                      setState(() => _filterStatus = status),
+                                      setState(() => _selectedTableTypeId = type.id),
                                   selectedColor: AppColors.primarySurface,
                                   checkmarkColor: AppColors.primary,
                                   labelStyle: TextStyle(
@@ -274,9 +267,9 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                                           ? AppColors.primary
                                           : AppColors.border),
                                 ),
-                              ),
-                            );
-                          }).toList(),
+                              );
+                            }),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -343,16 +336,16 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                                             ),
                                             const SizedBox(height: 16),
                                             Text(
-                                              _filterStatus == 'all'
+                                              tablesState.tables.isEmpty
                                                   ? 'Không có dữ liệu bàn chơi. Vui lòng đồng bộ.'
-                                                  : 'Không tìm thấy bàn nào với trạng thái này.',
+                                                  : 'Không tìm thấy bàn nào thuộc loại này.',
                                               style: const TextStyle(
                                                 fontFamily: 'Inter',
                                                 fontSize: 14,
                                                 color: AppColors.textSecondary,
                                               ),
                                             ),
-                                            if (_filterStatus == 'all') ...[
+                                            if (tablesState.tables.isEmpty) ...[
                                               const SizedBox(height: 16),
                                               ElevatedButton.icon(
                                                 onPressed: () => ref.read(syncStateProvider.notifier).syncNow(),
@@ -1010,17 +1003,7 @@ class _TableCard extends StatelessWidget {
     required this.hourlyRate,
   });
 
-  String _fmtCurrency(double v) {
-    final s = v.toStringAsFixed(0);
-    final buf = StringBuffer();
-    int count = 0;
-    for (int i = s.length - 1; i >= 0; i--) {
-      if (count > 0 && count % 3 == 0) buf.write('.');
-      buf.write(s[i]);
-      count++;
-    }
-    return '${buf.toString().split('').reversed.join()} đ';
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -1049,13 +1032,6 @@ class _TableCard extends StatelessWidget {
       borderColor = AppColors.border;
       statusDotColor = AppColors.textMuted;
     }
-
-    final durationStr =
-        '${playDuration.inHours.toString().padLeft(2, '0')}:'
-        '${(playDuration.inMinutes % 60).toString().padLeft(2, '0')}:'
-        '${(playDuration.inSeconds % 60).toString().padLeft(2, '0')}';
-
-    final costStr = _fmtCurrency(playCost);
 
     return GestureDetector(
       onTap: onSelect,
@@ -1296,31 +1272,32 @@ class _InvoicePanel extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               // Timer display
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.primarySurface,
-                  borderRadius: BorderRadius.circular(10),
+              if (rate > 0)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySurface,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.timer_outlined, size: 16, color: AppColors.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        _fmtDuration(duration),
+                        style: AppTextStyles.mono.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16),
+                      ),
+                      const Spacer(),
+                      Text(
+                        _fmtCurrency(playAmount),
+                        style: AppTextStyles.currencySmall,
+                      ),
+                    ],
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.timer_outlined, size: 16, color: AppColors.primary),
-                    const SizedBox(width: 8),
-                    Text(
-                      _fmtDuration(duration),
-                      style: AppTextStyles.mono.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16),
-                    ),
-                    const Spacer(),
-                    Text(
-                      _fmtCurrency(playAmount),
-                      style: AppTextStyles.currencySmall,
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
@@ -1483,7 +1460,8 @@ class _InvoicePanel extends ConsumerWidget {
           child: Column(
             children: [
               // Summary rows
-              _SummaryRow('Tiền giờ chơi', _fmtCurrency(playAmount)),
+              if (rate > 0)
+                _SummaryRow('Tiền giờ chơi', _fmtCurrency(playAmount)),
               _SummaryRow('Dịch vụ', _fmtCurrency(productTotal)),
               if (discountPercent > 0)
                 _SummaryRow(
@@ -1778,7 +1756,7 @@ class _InvoicePanel extends ConsumerWidget {
             final qty = int.tryParse(p['qty']?.toString() ?? '') ?? 1;
             final price = double.tryParse(p['price']?.toString() ?? '') ?? 0.0;
             details.add(OrderDetailModel(
-              id: 'det-${DateTime.now().millisecondsSinceEpoch}-$pid-$i',
+              id: const Uuid().v4(),
               orderId: orderId,
               productId: pid,
               quantity: qty,
@@ -1883,31 +1861,32 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               // Timer display (Static / Frozen)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.accent.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
+              if (rate > 0)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.timer_off_outlined, size: 16, color: AppColors.accent),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${invoice.playMinutes} phút (Đã dừng)',
+                        style: AppTextStyles.mono.copyWith(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14),
+                      ),
+                      const Spacer(),
+                      Text(
+                        _fmtCurrency(playAmount),
+                        style: AppTextStyles.currencySmall.copyWith(color: AppColors.accent),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.timer_off_outlined, size: 16, color: AppColors.accent),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${invoice.playMinutes} phút (Đã dừng)',
-                      style: AppTextStyles.mono.copyWith(
-                          color: AppColors.accent,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14),
-                    ),
-                    const Spacer(),
-                    Text(
-                      _fmtCurrency(playAmount),
-                      style: AppTextStyles.currencySmall.copyWith(color: AppColors.accent),
-                    ),
-                  ],
-                ),
-              ),
             ],
           ),
         ),
@@ -2069,7 +2048,8 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
           child: Column(
             children: [
               // Summary rows
-              _SummaryRow('Tiền giờ chơi', _fmtCurrency(playAmount)),
+              if (rate > 0)
+                _SummaryRow('Tiền giờ chơi', _fmtCurrency(playAmount)),
               _SummaryRow('Dịch vụ', _fmtCurrency(productTotal)),
               if (discountPercent > 0)
                 _SummaryRow(
@@ -2272,7 +2252,7 @@ Future<void> _checkoutUnpaidInvoice({
           final qty = int.tryParse(p['qty']?.toString() ?? '') ?? 1;
           final price = double.tryParse(p['price']?.toString() ?? '') ?? 0.0;
           details.add(OrderDetailModel(
-            id: 'det-${DateTime.now().millisecondsSinceEpoch}-$pid-$i',
+            id: const Uuid().v4(),
             orderId: orderId,
             productId: pid,
             quantity: qty,

@@ -99,6 +99,12 @@ class SyncService {
     _currentStatus = ConnectivityStatus.online;
     _statusController.add(ConnectivityStatus.online);
     _log('Kết nối mạng được khôi phục.');
+    
+    // Tự động sync khi giả lập online trở lại (đồng bộ cả hoá đơn đã huỷ ở local)
+    Future.microtask(() async {
+      await _syncPendingRecords();
+      await pullOnlineDataToOffline();
+    });
   }
 
   /// Xóa toàn bộ dữ liệu cache SQLite local.
@@ -283,97 +289,121 @@ class SyncService {
 
     try {
       final pendingOrders = await _localDb.getPendingOrders();
-      if (pendingOrders.isEmpty) {
+      final pendingCancellations = await _localDb.getUnsyncedCancelledInvoices();
+
+      if (pendingOrders.isEmpty && pendingCancellations.isEmpty) {
         _log('No pending records to sync.');
         return const SyncResult(success: true, message: 'Không có dữ liệu chờ', synced: 0);
       }
 
-      _log('Syncing ${pendingOrders.length} pending orders...');
+      int totalPending = pendingOrders.length + pendingCancellations.length;
 
-      final List<Map<String, dynamic>> orders = [];
-      final List<Map<String, dynamic>> details = [];
-      final List<Map<String, dynamic>> members = [];
-      final List<Map<String, dynamic>> shifts = [];
-      final List<Map<String, dynamic>> auditLogs = [];
+      if (pendingOrders.isNotEmpty) {
+        _log('Syncing ${pendingOrders.length} pending orders...');
 
-      for (final item in pendingOrders) {
-        if (item.containsKey('order')) {
-          final orderMap = item['order'] as Map<String, dynamic>?;
-          if (orderMap != null) {
-            orders.add(orderMap);
+        final List<Map<String, dynamic>> orders = [];
+        final List<Map<String, dynamic>> details = [];
+        final List<Map<String, dynamic>> members = [];
+        final List<Map<String, dynamic>> shifts = [];
+        final List<Map<String, dynamic>> auditLogs = [];
+
+        for (final item in pendingOrders) {
+          if (item.containsKey('order')) {
+            final orderMap = item['order'] as Map<String, dynamic>?;
+            if (orderMap != null) {
+              orders.add(orderMap);
+            }
           }
-        }
-        if (item.containsKey('details')) {
-          final detailsList = item['details'] as List<dynamic>?;
-          if (detailsList != null) {
-            for (final d in detailsList) {
-              if (d is Map<String, dynamic>) {
-                details.add(d);
+          if (item.containsKey('details')) {
+            final detailsList = item['details'] as List<dynamic>?;
+            if (detailsList != null) {
+              for (final d in detailsList) {
+                if (d is Map<String, dynamic>) {
+                  details.add(d);
+                }
+              }
+            }
+          }
+          if (item.containsKey('member')) {
+            final memberMap = item['member'] as Map<String, dynamic>?;
+            if (memberMap != null) {
+              members.add(memberMap);
+            }
+          }
+          if (item.containsKey('shift')) {
+            final shiftMap = item['shift'] as Map<String, dynamic>?;
+            if (shiftMap != null) {
+              shifts.add(shiftMap);
+            }
+          }
+          if (item.containsKey('audit_logs')) {
+            final logsList = item['audit_logs'] as List<dynamic>?;
+            if (logsList != null) {
+              for (final log in logsList) {
+                if (log is Map<String, dynamic>) {
+                  auditLogs.add(log);
+                }
               }
             }
           }
         }
-        if (item.containsKey('member')) {
-          final memberMap = item['member'] as Map<String, dynamic>?;
-          if (memberMap != null) {
-            members.add(memberMap);
-          }
-        }
-        if (item.containsKey('shift')) {
-          final shiftMap = item['shift'] as Map<String, dynamic>?;
-          if (shiftMap != null) {
-            shifts.add(shiftMap);
-          }
-        }
-        if (item.containsKey('audit_logs')) {
-          final logsList = item['audit_logs'] as List<dynamic>?;
-          if (logsList != null) {
-            for (final log in logsList) {
-              if (log is Map<String, dynamic>) {
-                auditLogs.add(log);
-              }
-            }
-          }
-        }
-      }
 
-      final payload = {
-        'orders': orders,
-        'order_details': details,
-        'members': members,
-        'shifts': shifts,
-        'audit_logs': auditLogs,
-      };
+        final payload = {
+          'orders': orders,
+          'order_details': details,
+          'members': members,
+          'shifts': shifts,
+          'audit_logs': auditLogs,
+        };
 
-      final result = await _apiClient.syncOrders(payload);
-      final status = result['status'];
-      final isSuccess = status == 1 || status == '1';
+        final result = await _apiClient.syncOrders(payload);
+        final status = result['status'];
+        final isSuccess = status == 1 || status == '1';
 
-      if (isSuccess) {
-        final syncedIds = (result['synced_ids'] as List<dynamic>?)
-                ?.map((e) => e.toString())
-                .toList() ??
-            [];
-        if (syncedIds.isNotEmpty) {
-          for (final id in syncedIds) {
-            await _localDb.markOrderSynced(id);
-            synced++;
-          }
-        } else {
-          // Fallback: mark all orders in this batch as synced
-          for (final o in orders) {
-            final id = o['id']?.toString() ?? '';
-            if (id.isNotEmpty) {
+        if (isSuccess) {
+          final syncedIds = (result['synced_ids'] as List<dynamic>?)
+                  ?.map((e) => e.toString())
+                  .toList() ??
+              [];
+          if (syncedIds.isNotEmpty) {
+            for (final id in syncedIds) {
               await _localDb.markOrderSynced(id);
               synced++;
             }
+          } else {
+            // Fallback: mark all orders in this batch as synced
+            for (final o in orders) {
+              final id = o['id']?.toString() ?? '';
+              if (id.isNotEmpty) {
+                await _localDb.markOrderSynced(id);
+                synced++;
+              }
+            }
           }
+        } else {
+          throw Exception(result['message'] ?? 'Unknown backend error');
         }
-      } else {
-        throw Exception(result['message'] ?? 'Unknown backend error');
       }
 
-      final failed = pendingOrders.length - synced;
+      if (pendingCancellations.isNotEmpty) {
+        _log('Syncing ${pendingCancellations.length} pending cancellations...');
+        for (final item in pendingCancellations) {
+          final id = item['id']?.toString() ?? '';
+          final orderId = item['order_id']?.toString() ?? '';
+          final reason = item['cancel_reason']?.toString() ?? '';
+          if (orderId.isNotEmpty) {
+            try {
+              await _apiClient.voidOrder(orderId, reason);
+              await _localDb.markCancelledInvoiceSynced(id);
+              synced++;
+            } catch (e) {
+              _log('Error syncing cancellation for order $orderId: $e');
+            }
+          }
+        }
+      }
+
+      final failed = totalPending - synced;
       await _refreshPendingCount();
       _log('Sync complete: $synced synced, $failed failed.');
       return SyncResult(

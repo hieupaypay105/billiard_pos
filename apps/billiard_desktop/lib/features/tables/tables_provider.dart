@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:core_shared/core_shared.dart';
 import 'package:iot_controller/iot_controller.dart';
+import 'package:uuid/uuid.dart';
 import '../../core/services/api_client.dart';
 import '../../core/services/local_db_service.dart';
 import '../../core/services/sync_service.dart';
@@ -313,6 +314,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
   final LocalDbService? _localDb;
   final ApiClient? _apiClient;
   final SyncService? _syncService;
+
+  bool get _isOnline => _syncService?.isOnline ?? true;
 
   TablesNotifier({
     LocalDbService? localDb,
@@ -712,7 +715,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
 
     // 1. Tạo order trên backend (nếu online)
     String serverOrderId = 'ord-${DateTime.now().millisecondsSinceEpoch}';
-    if (_apiClient != null) {
+    if (_apiClient != null && _isOnline) {
       try {
         final res = await _apiClient!.openOrder(
           tableId: tableId,
@@ -777,7 +780,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       _controllers.remove(tableId);
     }
 
-    if (_apiClient != null) {
+    if (_apiClient != null && _isOnline) {
       try {
         await _apiClient!.updateTableStatus(tableId, 'idle');
       } catch (e) {
@@ -870,7 +873,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
         table.currentOrderId ?? 'ord-${DateTime.now().millisecondsSinceEpoch}';
 
     // Cập nhật tình trạng bàn về idle trên backend khi tắt bàn
-    if (_apiClient != null) {
+    if (_apiClient != null && _isOnline) {
       try {
         await _apiClient!.updateTableStatus(tableId, 'idle');
       } catch (e) {
@@ -974,7 +977,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
           final price = double.tryParse(p['price']?.toString() ?? '') ?? 0.0;
           details.add(
             OrderDetailModel(
-              id: 'det-${DateTime.now().millisecondsSinceEpoch}-$pid-$i',
+              id: const Uuid().v4(),
               orderId: orderId,
               productId: pid,
               quantity: qty,
@@ -1197,7 +1200,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
     );
 
     final orderId = sourceTable.currentOrderId;
-    if (_apiClient != null && orderId != null && !orderId.startsWith('ord-')) {
+    if (_apiClient != null && _isOnline && orderId != null && !orderId.startsWith('ord-')) {
       try {
         await _apiClient!.updateOrder(orderId, {
           'table_id': targetTableId,
@@ -1321,6 +1324,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
 
     final sourceOrderId = sourceTable.currentOrderId;
     if (_apiClient != null &&
+        _isOnline &&
         sourceOrderId != null &&
         !sourceOrderId.startsWith('ord-')) {
       try {
@@ -1336,6 +1340,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
 
     final targetOrderId = targetTable.currentOrderId;
     if (_apiClient != null &&
+        _isOnline &&
         targetOrderId != null &&
         !targetOrderId.startsWith('ord-')) {
       try {
@@ -1437,7 +1442,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tableNotes: updatedNotes,
     );
 
-    if (_apiClient != null && !invoiceId.startsWith('ord-')) {
+    if (_apiClient != null && _isOnline && !invoiceId.startsWith('ord-')) {
       try {
         await _apiClient!.updateOrder(invoiceId, {
           'table_id': targetTableId,
@@ -1532,7 +1537,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tableNotes: updatedNotes,
     );
 
-    if (_apiClient != null && !invoiceId.startsWith('ord-')) {
+    if (_apiClient != null && _isOnline && !invoiceId.startsWith('ord-')) {
       try {
         await _apiClient!.voidOrder(
           invoiceId,
@@ -1545,6 +1550,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
 
     final targetOrderId = targetTable.currentOrderId;
     if (_apiClient != null &&
+        _isOnline &&
         targetOrderId != null &&
         !targetOrderId.startsWith('ord-')) {
       try {
@@ -1616,7 +1622,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
 
     // 3. Attempt immediate backend sync
-    if (_apiClient != null) {
+    if (_apiClient != null && _isOnline) {
       try {
         await _apiClient!.voidOrder(invoice.id, reason);
         await _localDb!.markCancelledInvoiceSynced('cancel-${invoice.id}');

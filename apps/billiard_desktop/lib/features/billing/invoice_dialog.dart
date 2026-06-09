@@ -161,22 +161,24 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     // Time info
-                    _InfoRow(
-                        'Giờ vào',
-                        _fmtTime(widget.startTime),
-                        Icons.play_circle_outline),
-                    _InfoRow(
-                        'Giờ ra',
-                        _fmtTime(widget.endTime),
-                        Icons.stop_circle_outlined),
-                    _InfoRow(
-                        'Tổng thời gian',
-                        '${widget.playMinutes} phút',
-                        Icons.timer_outlined),
-                    _InfoRow(
-                        'Đơn giá',
-                        '${_fmtCurrency(widget.hourlyRate)}/giờ',
-                        Icons.attach_money),
+                    if (widget.hourlyRate > 0) ...[
+                      _InfoRow(
+                          'Giờ vào',
+                          _fmtTime(widget.startTime),
+                          Icons.play_circle_outline),
+                      _InfoRow(
+                          'Giờ ra',
+                          _fmtTime(widget.endTime),
+                          Icons.stop_circle_outlined),
+                      _InfoRow(
+                          'Tổng thời gian',
+                          '${widget.playMinutes} phút',
+                          Icons.timer_outlined),
+                      _InfoRow(
+                          'Đơn giá',
+                          '${_fmtCurrency(widget.hourlyRate)}/giờ',
+                          Icons.attach_money),
+                    ],
                     _InfoRow(
                         'Ngày tạo HĐ',
                         _fmtDateTime(widget.startTime),
@@ -215,31 +217,33 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 12),
-                    // Play amount box
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: AppColors.primarySurface,
-                        borderRadius: BorderRadius.circular(10),
+                    if (widget.hourlyRate > 0) ...[
+                      const SizedBox(height: 12),
+                      // Play amount box
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: AppColors.primarySurface,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            const Text('Tiền giờ chơi:',
+                                style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 14)),
+                            const Spacer(),
+                            Text(_fmtCurrency(widget.playAmount),
+                                style: const TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                    color: AppColors.primary)),
+                          ],
+                        ),
                       ),
-                      child: Row(
-                        children: [
-                          const Text('Tiền giờ chơi:',
-                              style: TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 14)),
-                          const Spacer(),
-                          Text(_fmtCurrency(widget.playAmount),
-                              style: const TextStyle(
-                                  fontFamily: 'Inter',
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                  color: AppColors.primary)),
-                        ],
-                      ),
-                    ),
+                    ],
 
                     // Products
                     if (widget.products.isNotEmpty) ...[

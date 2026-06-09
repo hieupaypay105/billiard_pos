@@ -163,22 +163,22 @@ final invoiceTemplateProvider =
   final localDb = ref.read(localDbServiceProvider);
   final api = ref.read(apiClientProvider);
 
-  // 1. Nếu online, thử fetch online trước để luôn lấy cấu hình mới nhất từ backend
+  // 1. Thử đọc từ SQLite cache cục bộ trước để tránh gọi API dư thừa khi in hóa đơn/báo cáo
+  try {
+    final cached = await localDb.getInvoiceTemplate();
+    if (cached != null) {
+      return InvoiceTemplate.fromMap(cached);
+    }
+  } catch (_) {}
+
+  // 2. Nếu không có cache, thử fetch online từ backend
   try {
     final remote = await api.getInvoiceTemplate().timeout(const Duration(seconds: 2));
     if (remote != null) {
       await localDb.saveInvoiceTemplate(remote);
       return InvoiceTemplate.fromMap(remote);
     }
-  } catch (e) {
-    // Bỏ qua lỗi kết nối / timeout và chuyển sang đọc SQLite cache
-  }
-
-  // 2. Fallback đọc từ SQLite cache cục bộ
-  final cached = await localDb.getInvoiceTemplate();
-  if (cached != null) {
-    return InvoiceTemplate.fromMap(cached);
-  }
+  } catch (_) {}
 
   // 3. Fallback về default khi không có cả mạng lẫn cache
   return InvoiceTemplate.defaultTemplate;

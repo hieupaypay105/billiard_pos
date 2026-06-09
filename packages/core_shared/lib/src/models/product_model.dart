@@ -37,7 +37,11 @@ class ProductModel extends Equatable {
       costPrice: double.tryParse(json['cost_price']?.toString() ?? '') ?? 0.0,
       stockQuantity: int.tryParse(json['stock_quantity']?.toString() ?? '') ?? 0,
       barcode: json['barcode'] as String?,
-      isActive: json['is_active'] is bool ? json['is_active'] as bool : (json['is_active'] == 1 || json['is_active'] == 'true'),
+      isActive: json['is_active'] is bool
+          ? json['is_active'] as bool
+          : (json['is_active'] == 1 ||
+              json['is_active']?.toString() == '1' ||
+              json['is_active']?.toString() == 'true'),
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at'] as String) : null,
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at'] as String) : null,
     );

@@ -44,7 +44,11 @@ class TablePriceModel extends Equatable {
       startHour: json['start_hour'] as String? ?? '00:00:00',
       endHour: json['end_hour'] as String? ?? '23:59:59',
       daysOfWeek: parsedDays,
-      isActive: json['is_active'] is bool ? json['is_active'] as bool : (json['is_active'] == 1 || json['is_active'] == 'true'),
+      isActive: json['is_active'] is bool
+          ? json['is_active'] as bool
+          : (json['is_active'] == 1 ||
+              json['is_active']?.toString() == '1' ||
+              json['is_active']?.toString() == 'true'),
       priority: int.tryParse(json['priority']?.toString() ?? '') ?? 0,
     );
   }

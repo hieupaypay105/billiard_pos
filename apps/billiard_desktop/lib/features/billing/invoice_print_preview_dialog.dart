@@ -876,13 +876,13 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               '${(member!['tier'] ?? member!['tier_name']) != null ? ' (${member!['tier'] ?? member!['tier_name']})' : ''}',
             ),
           ],
-          if (t.showCheckinCheckout) ...[
+          if (t.showCheckinCheckout && (hourlyRate > 0 || playMinutes > 0 || playAmount > 0)) ...[
             metaRow(
               'Giờ vào / ra:',
               '${_fmtTime(startTime)} - ${_fmtTime(endTime)}',
             ),
           ],
-          if (t.showDuration) ...[
+          if (t.showDuration && (hourlyRate > 0 || playMinutes > 0 || playAmount > 0)) ...[
             metaRow('Thời lượng chơi:', _fmtDuration(playMinutes)),
           ],
 
@@ -893,11 +893,12 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
           solidDiv(),
 
           // ── Tiền giờ chơi (SL = số giờ, không hiện đơn giá) ─────────────
-          itemRow(
-            'Tiền giờ ($tableName)',
-            _fmtHours(playMinutes), // e.g. "2.50h"
-            _fmtCurrency(playAmount),
-          ),
+          if (hourlyRate > 0 || playAmount > 0)
+            itemRow(
+              'Tiền giờ ($tableName)',
+              _fmtHours(playMinutes), // e.g. "2.50h"
+              _fmtCurrency(playAmount),
+            ),
 
           // ── Sản phẩm / dịch vụ ───────────────────────────────────────────
           ...products.map((p) {
