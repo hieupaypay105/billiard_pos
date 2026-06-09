@@ -10,6 +10,7 @@ import '../billing/member_lookup.dart';
 import '../billing/discount_panel.dart';
 import '../billing/invoice_dialog.dart';
 import '../billing/table_merge_dialog.dart';
+import '../billing/add_product_panel.dart';
 import '../sync/sync_provider.dart';
 import '../../core/providers/providers.dart';
 import '../auth/auth_provider.dart';
@@ -115,7 +116,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
     });
   }
 
-  void _addHighlightedProduct() {
+  Future<void> _addHighlightedProduct() async {
     if (_filteredSuggestions.isEmpty) return;
     final product = _filteredSuggestions[_highlightedIndex];
     
@@ -125,22 +126,36 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
     final targetId = isTargetActive ? tablesState.selectedTable!.id : (isTargetUnpaid ? tablesState.selectedUnpaidInvoiceId : null);
 
     if (targetId != null) {
+      final quantity = await showDialog<int>(
+        context: context,
+        builder: (ctx) => QuantityPickerDialog(
+          productName: product['name'] as String,
+          price: product['price'] as double,
+        ),
+      );
+      if (quantity == null || quantity <= 0) {
+        _searchFocusNode.requestFocus();
+        return;
+      }
+
       ref.read(tablesProvider.notifier).addProductToTable(
         targetId,
         {
           'product_id': product['id'],
           'name': product['name'],
           'price': product['price'],
-          'qty': 1,
+          'qty': quantity,
         },
       );
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Đã thêm ${product['name']} vào hóa đơn'),
-        duration: const Duration(seconds: 1),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: AppColors.success,
-        width: 280,
-      ));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Đã thêm x$quantity ${product['name']} vào hóa đơn'),
+          duration: const Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.success,
+          width: 280,
+        ));
+      }
     }
 
     setState(() {
@@ -148,6 +163,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
       _highlightedIndex = 0;
       _searchCtrl.clear();
     });
+    if (mounted) _searchFocusNode.requestFocus();
   }
 
   @override
@@ -863,7 +879,51 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                       final totalAmt = inv.playAmount + prodTotal;
                       
                       return InkWell(
-                        onTap: () => ref.read(tablesProvider.notifier).selectUnpaidInvoice(inv.id),
+                        onTap: () async {
+                          ref.read(tablesProvider.notifier).selectUnpaidInvoice(inv.id);
+                          
+                          final currentUser = ref.read(currentUserProvider);
+                          final currentUserId = currentUser?.id ?? 'system';
+                          final currentShiftId = ref.read(currentShiftIdProvider) ?? 'shift-default';
+                          final localDb = ref.read(localDbServiceProvider);
+                          final syncService = ref.read(syncServiceProvider);
+                          final tablesNotifier = ref.read(tablesProvider.notifier);
+
+                          final products = inv.products;
+                          final startTime = inv.startTime;
+                          final endTime = inv.endTime;
+                          final rate = inv.hourlyRate;
+                          final playAmount = inv.playAmount;
+                          
+                          final member = inv.member;
+                          final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
+                          final manualDiscountPercent = inv.manualDiscountPercent;
+                          final discountPercent = (memberDiscountPercent + manualDiscountPercent).clamp(0.0, 100.0);
+                          
+                          final discountAmount = (inv.playAmount + prodTotal) * (discountPercent / 100.0);
+                          final netTotal = (inv.playAmount + prodTotal) - discountAmount;
+
+                          await _checkoutUnpaidInvoice(
+                            context: context,
+                            currentUserId: currentUserId,
+                            currentShiftId: currentShiftId,
+                            localDb: localDb,
+                            syncService: syncService,
+                            tablesNotifier: tablesNotifier,
+                            invoice: inv,
+                            initialStatus: 'paid',
+                            playAmount: playAmount,
+                            productTotal: prodTotal,
+                            discountPercent: discountPercent,
+                            discountAmount: discountAmount,
+                            netTotal: netTotal,
+                            startTime: startTime,
+                            endTime: endTime,
+                            products: products,
+                            rate: rate,
+                            member: member,
+                          );
+                        },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 150),
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

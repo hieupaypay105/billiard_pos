@@ -66,6 +66,7 @@ class TableMergeDialog extends ConsumerWidget {
                   constraints: const BoxConstraints(maxHeight: 320),
                   child: Scrollbar(
                     child: SingleChildScrollView(
+                      primary: true,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: activeTables.map((t) => Padding(
@@ -211,6 +212,7 @@ class TableTransferDialog extends ConsumerWidget {
                   constraints: const BoxConstraints(maxHeight: 320),
                   child: Scrollbar(
                     child: SingleChildScrollView(
+                      primary: true,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: idleTables.map((t) => Padding(

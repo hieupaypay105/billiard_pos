@@ -80,6 +80,7 @@ class _AddProductPanelState extends ConsumerState<AddProductPanel> {
   String _selectedCategory = 'Tất cả';
   String _searchQuery = '';
   final _searchCtrl = TextEditingController();
+  final _searchFocus = FocusNode();
 
   List<Map<String, dynamic>> _products = [];
   List<String> _categoryNames = [];
@@ -94,6 +95,7 @@ class _AddProductPanelState extends ConsumerState<AddProductPanel> {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -190,6 +192,7 @@ class _AddProductPanelState extends ConsumerState<AddProductPanel> {
               // Search bar
               TextField(
                 controller: _searchCtrl,
+                focusNode: _searchFocus,
                 onChanged: (v) => setState(() => _searchQuery = v),
                 decoration: InputDecoration(
                   hintText: 'Tìm sản phẩm...',
@@ -293,7 +296,16 @@ class _AddProductPanelState extends ConsumerState<AddProductPanel> {
                           final emoji = _resolveEmoji(product);
                           return _ProductCard(
                             product: {...product, 'emoji': emoji},
-                            onAdd: () {
+                            onAdd: () async {
+                              final quantity = await showDialog<int>(
+                                context: context,
+                                builder: (ctx) => QuantityPickerDialog(
+                                  productName: product['name'] as String,
+                                  price: product['price'] as double,
+                                ),
+                              );
+                              if (quantity == null || quantity <= 0) return;
+
                               ref
                                   .read(tablesProvider.notifier)
                                   .addProductToTable(
@@ -302,18 +314,21 @@ class _AddProductPanelState extends ConsumerState<AddProductPanel> {
                                   'product_id': product['id'],
                                   'name': product['name'],
                                   'price': product['price'],
-                                  'qty': 1,
+                                  'qty': quantity,
                                 },
                               );
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(SnackBar(
-                                content: Text(
-                                    'Đã thêm ${product['name']} vào hóa đơn'),
-                                duration: const Duration(seconds: 1),
-                                behavior: SnackBarBehavior.floating,
-                                backgroundColor: AppColors.success,
-                                width: 280,
-                              ));
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context)
+                                    .showSnackBar(SnackBar(
+                                  content: Text(
+                                      'Đã thêm x$quantity ${product['name']} vào hóa đơn'),
+                                  duration: const Duration(seconds: 1),
+                                  behavior: SnackBarBehavior.floating,
+                                  backgroundColor: AppColors.success,
+                                  width: 280,
+                                ));
+                                _searchFocus.requestFocus();
+                              }
                             },
                           );
                         },
@@ -442,6 +457,161 @@ class _ProductCardState extends State<_ProductCard>
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─── Quantity Picker Dialog ──────────────────────────────────────────────────
+
+class QuantityPickerDialog extends StatefulWidget {
+  final String productName;
+  final double price;
+  const QuantityPickerDialog({
+    super.key,
+    required this.productName,
+    required this.price,
+  });
+
+  @override
+  State<QuantityPickerDialog> createState() => _QuantityPickerDialogState();
+}
+
+class _QuantityPickerDialogState extends State<QuantityPickerDialog> {
+  int _qty = 1;
+  late final TextEditingController _qtyController;
+
+  @override
+  void initState() {
+    super.initState();
+    _qtyController = TextEditingController(text: '1');
+  }
+
+  @override
+  void dispose() {
+    _qtyController.dispose();
+    super.dispose();
+  }
+
+  void _updateQty(int newQty) {
+    if (newQty < 1) return;
+    setState(() {
+      _qty = newQty;
+      _qtyController.text = newQty.toString();
+    });
+  }
+
+  String _fmtCurrency(double v) {
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    int count = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      if (count > 0 && count % 3 == 0) buf.write('.');
+      buf.write(s[i]);
+      count++;
+    }
+    return '${buf.toString().split('').reversed.join()} đ';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Chọn số lượng'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.productName,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Đơn giá: ${_fmtCurrency(widget.price)}',
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                onPressed: () => _updateQty(_qty - 1),
+                icon: const Icon(Icons.remove_circle_outline, size: 32, color: AppColors.primary),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 60,
+                child: TextField(
+                  controller: _qtyController,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(
+                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (val) {
+                    final intValue = int.tryParse(val);
+                    if (intValue != null && intValue > 0) {
+                      setState(() {
+                        _qty = intValue;
+                      });
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              IconButton(
+                onPressed: () => _updateQty(_qty + 1),
+                icon: const Icon(Icons.add_circle_outline, size: 32, color: AppColors.primary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          const Divider(),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Thành tiền:',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+              Text(
+                _fmtCurrency(widget.price * _qty),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.accent,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Hủy', style: TextStyle(color: AppColors.textSecondary)),
+        ),
+        ElevatedButton(
+          autofocus: true,
+          onPressed: () => Navigator.of(context).pop(_qty),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: const Text('Xác nhận'),
+        ),
+      ],
     );
   }
 }
