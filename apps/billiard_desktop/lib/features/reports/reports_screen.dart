@@ -702,9 +702,13 @@ class _InvoiceDetailsListTab extends StatelessWidget {
       0.0,
       (sum, o) => sum + _toDouble(o['total_amount']),
     );
-    final int totalMinutes = orders.fold(
-      0,
-      (sum, o) => sum + _toInt(o['total_play_time_minutes']),
+    final double totalPlayAmount = orders.fold(
+      0.0,
+      (sum, o) => sum + _toDouble(o['total_play_time_amount']),
+    );
+    final double totalServiceAmount = orders.fold(
+      0.0,
+      (sum, o) => sum + _toDouble(o['total_product_amount']),
     );
 
     return Padding(
@@ -719,9 +723,15 @@ class _InvoiceDetailsListTab extends StatelessWidget {
               _ReportCard('Số hóa đơn', '${orders.length} HĐ', AppColors.info),
               const SizedBox(width: 12),
               _ReportCard(
-                'Tổng giờ chơi',
-                _fmtDuration(totalMinutes),
+                'Tổng tiền giờ',
+                _fmtCurrency(totalPlayAmount),
                 AppColors.accent,
+              ),
+              const SizedBox(width: 12),
+              _ReportCard(
+                'Tổng dịch vụ',
+                _fmtCurrency(totalServiceAmount),
+                AppColors.warning,
               ),
               const SizedBox(width: 12),
               _ReportCard(

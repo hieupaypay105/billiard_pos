@@ -62,64 +62,84 @@ class TableMergeDialog extends ConsumerWidget {
               ] else ...[
                 Text('Chọn bàn đích để gộp vào:', style: AppTextStyles.labelLarge),
                 const SizedBox(height: 12),
-                ...activeTables.map((t) => ListTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.tableActive,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.table_bar,
-                            color: AppColors.tableActiveAccent, size: 20),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 320),
+                  child: Scrollbar(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: activeTables.map((t) => Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: ListTile(
+                                dense: true,
+                                leading: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.tableActive,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.table_bar,
+                                      color: AppColors.tableActiveAccent, size: 18),
+                                ),
+                                title: Text(t.tableName, style: AppTextStyles.titleMedium.copyWith(fontSize: 14)),
+                                subtitle: Text(
+                                    '${(tablesState.tableOrders[t.id] ?? []).length} sản phẩm',
+                                    style: AppTextStyles.labelSmall),
+                                trailing: SizedBox(
+                                  height: 32,
+                                  child: ElevatedButton(
+                                    onPressed: () async {
+                                      final navigator = Navigator.of(context);
+                                      final messenger = ScaffoldMessenger.of(context);
+                                      final success = sourceInvoiceId != null
+                                          ? await ref
+                                              .read(tablesProvider.notifier)
+                                              .mergeUnpaidInvoiceToTable(sourceInvoiceId!, t.id)
+                                          : await ref
+                                              .read(tablesProvider.notifier)
+                                              .mergeTable(sourceTableId!, t.id);
+                                      if (success) {
+                                        if (navigator.mounted) {
+                                          navigator.pop();
+                                        }
+                                        messenger.showSnackBar(SnackBar(
+                                          content: Text(
+                                              'Đã gộp $sourceName → ${t.tableName}'),
+                                          backgroundColor: AppColors.success,
+                                          behavior: SnackBarBehavior.floating,
+                                        ));
+                                      } else {
+                                        messenger.showSnackBar(const SnackBar(
+                                          content: Text('Gộp bàn thất bại!'),
+                                          backgroundColor: AppColors.error,
+                                          behavior: SnackBarBehavior.floating,
+                                        ));
+                                      }
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8)),
+                                      elevation: 0,
+                                    ),
+                                    child: const Text('Gộp', style: TextStyle(fontSize: 13)),
+                                  ),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8)),
+                                tileColor: AppColors.background,
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 2),
+                              ),
+                            )).toList(),
                       ),
-                      title: Text(t.tableName, style: AppTextStyles.titleMedium),
-                      subtitle: Text(
-                          '${(tablesState.tableOrders[t.id] ?? []).length} sản phẩm',
-                          style: AppTextStyles.labelSmall),
-                      trailing: ElevatedButton(
-                        onPressed: () async {
-                          final navigator = Navigator.of(context);
-                          final messenger = ScaffoldMessenger.of(context);
-                          final success = sourceInvoiceId != null
-                              ? await ref
-                                  .read(tablesProvider.notifier)
-                                  .mergeUnpaidInvoiceToTable(sourceInvoiceId!, t.id)
-                              : await ref
-                                  .read(tablesProvider.notifier)
-                                  .mergeTable(sourceTableId!, t.id);
-                          if (success) {
-                            if (navigator.mounted) {
-                              navigator.pop();
-                            }
-                            messenger.showSnackBar(SnackBar(
-                              content: Text(
-                                  'Đã gộp $sourceName → ${t.tableName}'),
-                              backgroundColor: AppColors.success,
-                              behavior: SnackBarBehavior.floating,
-                            ));
-                          } else {
-                            messenger.showSnackBar(const SnackBar(
-                              content: Text('Gộp bàn thất bại!'),
-                              backgroundColor: AppColors.error,
-                              behavior: SnackBarBehavior.floating,
-                            ));
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          elevation: 0,
-                        ),
-                        child: const Text('Gộp'),
-                      ),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      tileColor: AppColors.background,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
-                    )),
+                    ),
+                  ),
+                ),
               ],
               const SizedBox(height: 8),
             ],
@@ -187,104 +207,124 @@ class TableTransferDialog extends ConsumerWidget {
               ] else ...[
                 Text('Chọn bàn muốn chuyển đến:', style: AppTextStyles.labelLarge),
                 const SizedBox(height: 12),
-                ...idleTables.map((t) => ListTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceVariant,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.table_bar,
-                            color: AppColors.textSecondary, size: 20),
-                      ),
-                      title: Text(t.tableName, style: AppTextStyles.titleMedium),
-                      subtitle: Text('Trống', style: AppTextStyles.labelSmall
-                          .copyWith(color: AppColors.success)),
-                      trailing: ElevatedButton(
-                        onPressed: () async {
-                          final navigator = Navigator.of(context);
-                          final messenger = ScaffoldMessenger.of(context);
-                          final notifier = ref.read(tablesProvider.notifier);
-                          final success = sourceInvoiceId != null
-                              ? await notifier.transferUnpaidInvoiceToTable(sourceInvoiceId!, t.id)
-                              : await notifier.transferTable(sourceTableId!, t.id);
-                          if (success) {
-                            if (navigator.mounted) {
-                              navigator.pop();
-                            }
-                            messenger.showSnackBar(SnackBar(
-                              content: Text(
-                                  'Đã chuyển $sourceName → ${t.tableName}'),
-                              backgroundColor: AppColors.info,
-                              behavior: SnackBarBehavior.floating,
-                            ));
-                          } else {
-                            if (navigator.mounted) {
-                              final force = await showDialog<bool>(
-                                context: context,
-                                builder: (context) => AlertDialog(
-                                  title: const Row(
-                                    children: [
-                                      Icon(Icons.warning_amber_rounded, color: AppColors.error),
-                                      SizedBox(width: 8),
-                                      Text('Lỗi kết nối IoT'),
-                                    ],
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 320),
+                  child: Scrollbar(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: idleTables.map((t) => Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: ListTile(
+                                dense: true,
+                                leading: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceVariant,
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
-                                  content: Text(
-                                    'Không thể kết nối đến Relay IoT cho bàn trống này.\n'
-                                    'Bạn có muốn bật bàn thủ công (không sử dụng IoT rơ-le) để tiếp tục '
-                                    '${sourceInvoiceId != null ? "chuyển hóa đơn" : "chuyển bàn"} không?'
-                                  ),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.of(context).pop(false),
-                                      child: const Text('Hủy', style: TextStyle(color: AppColors.textSecondary)),
-                                    ),
-                                    ElevatedButton(
-                                      onPressed: () => Navigator.of(context).pop(true),
-                                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
-                                      child: const Text('Bật thủ công'),
-                                    ),
-                                  ],
+                                  child: const Icon(Icons.table_bar,
+                                      color: AppColors.textSecondary, size: 18),
                                 ),
-                              );
-                              if (force == true && navigator.mounted) {
-                                final forceOk = sourceInvoiceId != null
-                                    ? await notifier.transferUnpaidInvoiceToTable(sourceInvoiceId!, t.id, ignoreIotError: true)
-                                    : await notifier.transferTable(sourceTableId!, t.id, ignoreIotError: true);
-                                if (forceOk && navigator.mounted) {
-                                  navigator.pop();
-                                  messenger.showSnackBar(SnackBar(
-                                    content: Text('Đã chuyển $sourceName → ${t.tableName} thủ công'),
-                                    backgroundColor: AppColors.success,
-                                    behavior: SnackBarBehavior.floating,
-                                  ));
-                                  return;
-                                }
-                              }
-                              messenger.showSnackBar(const SnackBar(
-                                content: Text('Chuyển bàn thất bại!'),
-                                backgroundColor: AppColors.error,
-                                behavior: SnackBarBehavior.floating,
-                              ));
-                            }
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.info,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          elevation: 0,
-                        ),
-                        child: const Text('Chuyển'),
+                                title: Text(t.tableName, style: AppTextStyles.titleMedium.copyWith(fontSize: 14)),
+                                subtitle: Text('Trống', style: AppTextStyles.labelSmall
+                                    .copyWith(color: AppColors.success)),
+                                trailing: SizedBox(
+                                  height: 32,
+                                  child: ElevatedButton(
+                                    onPressed: () async {
+                                      final navigator = Navigator.of(context);
+                                      final messenger = ScaffoldMessenger.of(context);
+                                      final notifier = ref.read(tablesProvider.notifier);
+                                      final success = sourceInvoiceId != null
+                                          ? await notifier.transferUnpaidInvoiceToTable(sourceInvoiceId!, t.id)
+                                          : await notifier.transferTable(sourceTableId!, t.id);
+                                      if (success) {
+                                        if (navigator.mounted) {
+                                          navigator.pop();
+                                        }
+                                        messenger.showSnackBar(SnackBar(
+                                          content: Text(
+                                              'Đã chuyển $sourceName → ${t.tableName}'),
+                                          backgroundColor: AppColors.info,
+                                          behavior: SnackBarBehavior.floating,
+                                        ));
+                                      } else {
+                                        if (navigator.mounted) {
+                                          final force = await showDialog<bool>(
+                                            context: context,
+                                            builder: (context) => AlertDialog(
+                                              title: const Row(
+                                                children: [
+                                                  Icon(Icons.warning_amber_rounded, color: AppColors.error),
+                                                  SizedBox(width: 8),
+                                                  Text('Lỗi kết nối IoT'),
+                                                ],
+                                              ),
+                                              content: Text(
+                                                'Không thể kết nối đến Relay IoT cho bàn trống này.\n'
+                                                'Bạn có muốn bật bàn thủ công (không sử dụng IoT rơ-le) để tiếp tục '
+                                                '${sourceInvoiceId != null ? "chuyển hóa đơn" : "chuyển bàn"} không?'
+                                              ),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () => Navigator.of(context).pop(false),
+                                                  child: const Text('Hủy', style: TextStyle(color: AppColors.textSecondary)),
+                                                ),
+                                                ElevatedButton(
+                                                  onPressed: () => Navigator.of(context).pop(true),
+                                                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
+                                                  child: const Text('Bật thủ công'),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                          if (force == true && navigator.mounted) {
+                                            final forceOk = sourceInvoiceId != null
+                                                ? await notifier.transferUnpaidInvoiceToTable(sourceInvoiceId!, t.id, ignoreIotError: true)
+                                                : await notifier.transferTable(sourceTableId!, t.id, ignoreIotError: true);
+                                            if (forceOk && navigator.mounted) {
+                                              navigator.pop();
+                                              messenger.showSnackBar(SnackBar(
+                                                content: Text('Đã chuyển $sourceName → ${t.tableName} thủ công'),
+                                                backgroundColor: AppColors.success,
+                                                behavior: SnackBarBehavior.floating,
+                                              ));
+                                              return;
+                                            }
+                                          }
+                                          messenger.showSnackBar(const SnackBar(
+                                            content: Text('Chuyển bàn thất bại!'),
+                                            backgroundColor: AppColors.error,
+                                            behavior: SnackBarBehavior.floating,
+                                          ));
+                                        }
+                                      }
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.info,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8)),
+                                      elevation: 0,
+                                    ),
+                                    child: const Text('Chuyển', style: TextStyle(fontSize: 13)),
+                                  ),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8)),
+                                tileColor: AppColors.background,
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 2),
+                              ),
+                            )).toList(),
                       ),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      tileColor: AppColors.background,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 4),
-                    )),
+                    ),
+                  ),
+                ),
               ],
               const SizedBox(height: 8),
             ],
