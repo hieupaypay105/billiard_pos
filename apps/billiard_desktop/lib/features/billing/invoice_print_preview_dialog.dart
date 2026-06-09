@@ -347,8 +347,10 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
   // ─── Outer shell ─────────────────────────────────────────────────────────────
 
   Widget _shell(BuildContext context, {required Widget child}) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final dialogWidth = screenWidth > 420 ? 380.0 : screenWidth - 40;
     return Container(
-      width: 420,
+      width: dialogWidth,
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.9,
       ),
@@ -637,21 +639,42 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     final hasDiscount = effectiveDiscount > 0;
 
     final mono = TextStyle(
-      fontFamily: 'Courier New',
       fontSize: bfs,
       height: lh,
-      color: Colors.black87,
+      color: const Color(0xFF1A1A1A),
     );
 
     // ── Local helpers ─────────────────────────────────────────────────────────
 
+    Widget metaRow(String label, String value) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1.5),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: mono.copyWith(fontSize: bfs - 0.5, color: const Color(0xFF5A5A5A))),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                value,
+                style: mono.copyWith(fontSize: bfs - 0.5, color: const Color(0xFF1A1A1A)),
+                textAlign: TextAlign.right,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     Widget dashedDiv() => Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Text(
-            '- - - - - - - - - - - - - - - - - - - - - - -',
-            style: mono.copyWith(
-                fontSize: bfs - 1, color: Colors.black38, height: 1),
-            textAlign: TextAlign.center,
+          child: CustomPaint(
+            size: const Size(double.infinity, 1),
+            painter: _DashedLinePainter(
+              color: Colors.black26,
+              dashWidth: 4,
+              dashGap: 3,
+            ),
           ),
         );
 
@@ -766,7 +789,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
           ),
         ],
       ),
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -804,7 +827,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               textAlign: _toTextAlign(t.alignAddress),
               style: mono.copyWith(
                   fontSize: bfs - 0.5,
-                  color: Colors.black54,
+                  color: const Color(0xFF3A3A3A),
                   height: 1.3),
             ),
           ],
@@ -816,7 +839,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               'ĐT: ${t.phone}',
               textAlign: _toTextAlign(t.alignPhone),
               style: mono.copyWith(
-                  fontSize: bfs - 0.5, color: Colors.black54),
+                  fontSize: bfs - 0.5, color: const Color(0xFF3A3A3A)),
             ),
           ],
 
@@ -836,46 +859,31 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
 
           // ── NGÀY GIỜ + META ───────────────────────────────────────────────
           const SizedBox(height: 6),
-          Text('Ngày: ${_fmtDateTime(startTime)}',
-              style: mono.copyWith(
-                  fontSize: bfs - 0.5, color: Colors.black54)),
+          metaRow('Ngày:', _fmtDateTime(startTime)),
           if (t.showCashier) ...[
-            const SizedBox(height: 1),
-            Text(
-              'Thu ngân: $cashierName'
-              '${shiftLabel != null ? ' ($shiftLabel)' : ''}',
-              style: mono.copyWith(
-                  fontSize: bfs - 0.5, color: Colors.black54),
+            metaRow(
+              'Thu ngân:',
+              '$cashierName${shiftLabel != null ? ' ($shiftLabel)' : ''}',
             ),
           ],
           if (t.showTableName) ...[
-            const SizedBox(height: 1),
-            Text('Bàn: $tableName',
-                style: mono.copyWith(
-                    fontSize: bfs - 0.5, color: Colors.black54)),
+            metaRow('Bàn:', tableName),
           ],
           if (t.showCustomer && member != null) ...[
-            const SizedBox(height: 1),
-            Text(
-              'Khách hàng: ${member!['full_name'] ?? member!['name'] ?? ''}'
+            metaRow(
+              'Khách hàng:',
+              '${member!['full_name'] ?? member!['name'] ?? ''}'
               '${(member!['tier'] ?? member!['tier_name']) != null ? ' (${member!['tier'] ?? member!['tier_name']})' : ''}',
-              style: mono.copyWith(
-                  fontSize: bfs - 0.5, color: Colors.black54),
             ),
           ],
           if (t.showCheckinCheckout) ...[
-            const SizedBox(height: 1),
-            Text(
-              'Vào: ${_fmtTime(startTime)} | Ra: ${_fmtTime(endTime)}',
-              style: mono.copyWith(
-                  fontSize: bfs - 0.5, color: Colors.black54),
+            metaRow(
+              'Giờ vào / ra:',
+              '${_fmtTime(startTime)} - ${_fmtTime(endTime)}',
             ),
           ],
           if (t.showDuration) ...[
-            const SizedBox(height: 1),
-            Text('T.Gian chơi: ${_fmtDuration(playMinutes)}',
-                style: mono.copyWith(
-                    fontSize: bfs - 0.5, color: Colors.black54)),
+            metaRow('Thời lượng chơi:', _fmtDuration(playMinutes)),
           ],
 
           dashedDiv(),
@@ -936,7 +944,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               style: mono.copyWith(
                   fontSize: bfs - 0.5,
                   fontWeight: FontWeight.w700,
-                  color: Colors.black54),
+                  color: const Color(0xFF3A3A3A)),
             ),
             const SizedBox(height: 2),
             Text(
@@ -944,7 +952,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               textAlign: TextAlign.center,
               style: mono.copyWith(
                   fontSize: bfs - 0.5,
-                  color: Colors.black54,
+                  color: const Color(0xFF3A3A3A),
                   fontStyle: FontStyle.italic),
             ),
           ],
@@ -976,7 +984,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                 '${t.qrAccountName != null && t.qrAccountName!.isNotEmpty ? '\nTên: ${t.qrAccountName}' : ''}',
                 textAlign: TextAlign.center,
                 style: mono.copyWith(
-                    fontSize: bfs - 1, color: Colors.black54),
+                    fontSize: bfs - 1, color: const Color(0xFF3A3A3A)),
               ),
             ],
           ],
@@ -989,7 +997,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               textAlign: _toTextAlign(t.alignFooter),
               style: mono.copyWith(
                   fontSize: bfs,
-                  color: Colors.black54,
+                  color: const Color(0xFF3A3A3A),
                   fontStyle: FontStyle.italic),
             ),
           ],
@@ -999,4 +1007,36 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _DashedLinePainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+  final double dashWidth;
+  final double dashGap;
+
+  _DashedLinePainter({
+    required this.color,
+    this.strokeWidth = 1.0,
+    this.dashWidth = 4.0,
+    this.dashGap = 3.0,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke;
+
+    double startX = 0;
+    final y = size.height / 2;
+    while (startX < size.width) {
+      canvas.drawLine(Offset(startX, y), Offset(startX + dashWidth, y), paint);
+      startX += dashWidth + dashGap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
