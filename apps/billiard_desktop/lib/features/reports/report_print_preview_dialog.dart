@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -202,9 +203,9 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat(
-          80 * PdfPageFormat.mm,
+          72 * PdfPageFormat.mm,
           Platform.isWindows ? 400 * PdfPageFormat.mm : double.infinity,
-          marginAll: 4 * PdfPageFormat.mm,
+          marginAll: 3 * PdfPageFormat.mm,
         ),
         build: (pw.Context context) {
           return pw.Column(
@@ -472,12 +473,87 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
     );
   }
 
+  void _setupDefaultPrinter(BuildContext context) async {
+    try {
+      final printer = await Printing.pickPrinter(context: context);
+      if (printer != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('default_printer_name', printer.name);
+        await prefs.setString('default_printer_url', printer.url);
+        
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Đã cài máy in mặc định: ${printer.name}'),
+              backgroundColor: AppColors.success,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi khi cài đặt máy in: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   void _doPrint(BuildContext context, InvoiceTemplate t) async {
     try {
       final pdfBytes = await _generateReportPdf(t);
+      final prefs = await SharedPreferences.getInstance();
+      final defaultPrinterName = prefs.getString('default_printer_name');
+      final defaultPrinterUrl = prefs.getString('default_printer_url');
+
+      final targetFormat = PdfPageFormat(
+        72 * PdfPageFormat.mm,
+        Platform.isWindows ? 400 * PdfPageFormat.mm : double.infinity,
+        marginAll: 3 * PdfPageFormat.mm,
+      );
+
+      if (defaultPrinterName != null && defaultPrinterUrl != null) {
+        final printers = await Printing.listPrinters();
+        Printer? targetPrinter;
+        for (final p in printers) {
+          if (p.url == defaultPrinterUrl || p.name == defaultPrinterName) {
+            targetPrinter = p;
+            break;
+          }
+        }
+
+        if (targetPrinter != null) {
+          final success = await Printing.directPrintPdf(
+            printer: targetPrinter,
+            onLayout: (PdfPageFormat format) async => pdfBytes,
+            name: 'Bao_cao_doanh_thu',
+            format: targetFormat,
+          );
+          if (success) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Đã gửi lệnh in trực tiếp đến: $defaultPrinterName'),
+                  backgroundColor: AppColors.success,
+                  duration: const Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+            return;
+          }
+        }
+      }
+
       await Printing.layoutPdf(
         onLayout: (PdfPageFormat format) async => pdfBytes,
         name: 'Bao_cao_doanh_thu',
+        format: targetFormat,
       );
     } catch (e) {
       debugPrint('[ReportPrintPreviewDialog] print error: $e');
@@ -600,6 +676,18 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
             ),
             child: Row(
               children: [
+                OutlinedButton(
+                  onPressed: () => _setupDefaultPrinter(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.accent,
+                    side: const BorderSide(color: AppColors.accent, width: 1),
+                    padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Icon(Icons.print_disabled_outlined, size: 20, tooltip: 'Cài máy in mặc định'),
+                ),
+                const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => Navigator.of(context).pop(),
@@ -612,7 +700,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
                     child: const Text('Đóng'),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Expanded(
                   flex: 2,
                   child: ElevatedButton.icon(
