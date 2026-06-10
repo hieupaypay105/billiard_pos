@@ -1304,7 +1304,7 @@ class _InvoicePanel extends ConsumerWidget {
       children: [
         // ── Header ──
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1330,11 +1330,11 @@ class _InvoicePanel extends ConsumerWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               // Timer display
               if (rate > 0)
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: AppColors.primarySurface,
                     borderRadius: BorderRadius.circular(10),
@@ -1437,7 +1437,7 @@ class _InvoicePanel extends ConsumerWidget {
 
         // ── Member + Discount Actions ──
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           child: Row(
             children: [
               Expanded(
@@ -1450,7 +1450,7 @@ class _InvoicePanel extends ConsumerWidget {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
                     side: const BorderSide(color: AppColors.border),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
@@ -1466,7 +1466,7 @@ class _InvoicePanel extends ConsumerWidget {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.accent,
                     side: const BorderSide(color: AppColors.border),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
@@ -1516,7 +1516,7 @@ class _InvoicePanel extends ConsumerWidget {
 
         // ── Total & Payment ──
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Column(
             children: [
               // Summary rows
@@ -1528,7 +1528,7 @@ class _InvoicePanel extends ConsumerWidget {
                   'Chiết khấu (${discountPercent.toInt()}%)',
                   '-${_fmtCurrency(discountAmount)}',
                 ),
-              const Divider(height: 16),
+              const Divider(height: 12),
               Row(
                 children: [
                   const Text('TỔNG CỘNG',
@@ -1543,7 +1543,7 @@ class _InvoicePanel extends ConsumerWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               // Payment buttons (Stop Timer button removed from here)
               Row(
                 children: [
@@ -1890,7 +1890,7 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
       children: [
         // ── Header ──
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1919,11 +1919,11 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               // Timer display (Static / Frozen)
               if (rate > 0)
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: AppColors.accent.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10),
@@ -2025,7 +2025,7 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
 
         // ── Member + Discount Actions ──
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           child: Row(
             children: [
               Expanded(
@@ -2038,7 +2038,7 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
                     side: const BorderSide(color: AppColors.border),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
@@ -2054,7 +2054,7 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.accent,
                     side: const BorderSide(color: AppColors.border),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
@@ -2104,7 +2104,7 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
 
         // ── Total & Payment ──
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Column(
             children: [
               // Summary rows
@@ -2116,7 +2116,7 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
                   'Chiết khấu (${discountPercent.toInt()}%)',
                   '-${_fmtCurrency(discountAmount)}',
                 ),
-              const Divider(height: 16),
+              const Divider(height: 12),
               Row(
                 children: [
                   const Text('TỔNG CỘNG',
@@ -2131,7 +2131,7 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 10),
               // Payment methods
               Row(
                 children: [
