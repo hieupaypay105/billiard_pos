@@ -104,13 +104,13 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: SizedBox(
-        width: 460,
+        width: 440,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // ── Header ──
             Container(
-              padding: const EdgeInsets.fromLTRB(24, 20, 16, 20),
+              padding: const EdgeInsets.fromLTRB(20, 16, 16, 16),
               decoration: const BoxDecoration(
                 color: AppColors.primary,
                 borderRadius:
@@ -119,7 +119,7 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
               child: Row(
                 children: [
                   const Icon(Icons.receipt_long_rounded,
-                      color: Colors.white, size: 24),
+                      color: Colors.white, size: 22),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -131,7 +131,7 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                             fontFamily: 'Inter',
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
-                            fontSize: 16,
+                            fontSize: 15,
                             letterSpacing: 0.3,
                           ),
                         ),
@@ -140,40 +140,32 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                           style: TextStyle(
                               fontFamily: 'Inter',
                               color: Colors.white.withOpacity(0.8),
-                              fontSize: 13),
+                              fontSize: 12),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
+                    icon: const Icon(Icons.close, color: Colors.white, size: 20),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
               ),
             ),
 
-            // ── Body ──
+            // ── Body (1 Column Compact) ──
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Time info
+                    // Time info combined
                     if (widget.hourlyRate > 0) ...[
                       _InfoRow(
-                          'Giờ vào',
-                          _fmtTime(widget.startTime),
-                          Icons.play_circle_outline),
-                      _InfoRow(
-                          'Giờ ra',
-                          _fmtTime(widget.endTime),
-                          Icons.stop_circle_outlined),
-                      _InfoRow(
-                          'Tổng thời gian',
-                          '${widget.playMinutes} phút',
-                          Icons.timer_outlined),
+                          'Thời gian',
+                          '${_fmtTime(widget.startTime)} - ${_fmtTime(widget.endTime)} (${widget.playMinutes} phút)',
+                          Icons.access_time_rounded),
                       _InfoRow(
                           'Đơn giá',
                           '${_fmtCurrency(widget.hourlyRate)}/giờ',
@@ -190,17 +182,17 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                             : '$cashierName (Mặc định)',
                         Icons.person_outline),
                     if (widget.member != null) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: AppColors.successLight,
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: AppColors.success.withOpacity(0.2)),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.stars, color: AppColors.success, size: 18),
+                            const Icon(Icons.stars, color: AppColors.success, size: 16),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -208,7 +200,7 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                                 style: const TextStyle(
                                   fontFamily: 'Inter',
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 13,
+                                  fontSize: 12,
                                   color: AppColors.success,
                                 ),
                               ),
@@ -218,13 +210,13 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                       ),
                     ],
                     if (widget.hourlyRate > 0) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       // Play amount box
                       Container(
-                        padding: const EdgeInsets.all(14),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
                           color: AppColors.primarySurface,
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
                           children: [
@@ -232,13 +224,13 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                                 style: TextStyle(
                                     fontFamily: 'Inter',
                                     fontWeight: FontWeight.w500,
-                                    fontSize: 14)),
+                                    fontSize: 13)),
                             const Spacer(),
                             Text(_fmtCurrency(widget.playAmount),
                                 style: const TextStyle(
                                     fontFamily: 'Inter',
                                     fontWeight: FontWeight.w700,
-                                    fontSize: 16,
+                                    fontSize: 15,
                                     color: AppColors.primary)),
                           ],
                         ),
@@ -247,60 +239,60 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
 
                     // Products
                     if (widget.products.isNotEmpty) ...[
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
                       Text('Dịch vụ đi kèm:',
-                          style: AppTextStyles.titleMedium),
-                      const SizedBox(height: 8),
+                          style: AppTextStyles.titleMedium.copyWith(fontSize: 13)),
+                      const SizedBox(height: 4),
                       ...widget.products.map((p) => Padding(
                             padding:
-                                const EdgeInsets.symmetric(vertical: 4),
+                                const EdgeInsets.symmetric(vertical: 2),
                             child: Row(children: [
                               Text(
                                   '${p['name']} × ${p['qty']}',
-                                  style: AppTextStyles.bodySmall),
+                                  style: AppTextStyles.bodySmall.copyWith(fontSize: 12)),
                               const Spacer(),
                               Text(
                                 _fmtCurrency(
                                     (p['price'] as double) *
                                         (p['qty'] as int)),
-                                style: AppTextStyles.labelLarge,
+                                style: AppTextStyles.labelLarge.copyWith(fontSize: 12),
                               ),
                             ]),
                           )),
                     ],
 
-                    const Divider(height: 24),
+                    const Divider(height: 16, thickness: 1),
                     if (currentDiscountPercent > 0) ...[
                       Row(children: [
                         const Text('Tạm tính', style: TextStyle(
                             fontFamily: 'Inter',
                             fontWeight: FontWeight.w500,
-                            fontSize: 13,
+                            fontSize: 12,
                             color: AppColors.textSecondary)),
                         const Spacer(),
                         Text(_fmtCurrency(widget.totalAmount),
                             style: const TextStyle(
                                 fontFamily: 'Inter',
                                 fontWeight: FontWeight.w500,
-                                fontSize: 13,
+                                fontSize: 12,
                                 color: AppColors.textSecondary)),
                       ]),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Row(children: [
                         Text('Chiết khấu (${currentDiscountPercent.toInt()}%)', style: const TextStyle(
                             fontFamily: 'Inter',
                             fontWeight: FontWeight.w500,
-                            fontSize: 13,
+                            fontSize: 12,
                             color: AppColors.accent)),
                         const Spacer(),
                         Text('-${_fmtCurrency(currentDiscountAmount)}',
                             style: const TextStyle(
                                 fontFamily: 'Inter',
                                 fontWeight: FontWeight.w500,
-                                fontSize: 13,
+                                fontSize: 12,
                                 color: AppColors.accent)),
                       ]),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                     ],
                     // Total
                     Row(children: [
@@ -308,29 +300,34 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                           style: TextStyle(
                               fontFamily: 'Inter',
                               fontWeight: FontWeight.w700,
-                              fontSize: 14)),
+                              fontSize: 13)),
                       const Spacer(),
                       Text(_fmtCurrency(currentNetTotal),
-                          style: AppTextStyles.currency),
+                          style: AppTextStyles.currency.copyWith(fontSize: 18)),
                     ]),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     // Payment selector
                     Text('Trạng thái hóa đơn:',
-                        style: AppTextStyles.titleMedium),
-                    const SizedBox(height: 10),
+                        style: AppTextStyles.titleMedium.copyWith(fontSize: 13)),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         ('paid', 'Thanh toán', Icons.check_circle_rounded,
                             AppColors.primary),
                         ('unpaid', 'Không thanh toán', Icons.money_off_rounded,
                             AppColors.error),
-                      ].map((m) {
+                      ].asMap().entries.map((entry) {
+                        final idx = entry.key;
+                        final m = entry.value;
                         final (val, label, icon, color) = m;
                         final isSel = _selectedStatus == val;
                         return Expanded(
                           child: Padding(
-                            padding: const EdgeInsets.only(right: 6),
+                            padding: EdgeInsets.only(
+                              left: idx == 0 ? 0 : 6,
+                              right: idx == 1 ? 0 : 6,
+                            ),
                             child: InkWell(
                               onTap: () {
                                 setState(() {
@@ -340,19 +337,19 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                                   }
                                 });
                               },
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(8),
                               child: AnimatedContainer(
                                 duration:
                                     const Duration(milliseconds: 180),
                                 padding:
                                     const EdgeInsets.symmetric(
-                                        vertical: 12),
+                                        vertical: 8, horizontal: 8),
                                 decoration: BoxDecoration(
                                   color: isSel
                                       ? color.withOpacity(0.1)
                                       : AppColors.surfaceVariant,
                                   borderRadius:
-                                      BorderRadius.circular(10),
+                                      BorderRadius.circular(8),
                                   border: Border.all(
                                     color: isSel
                                         ? color
@@ -360,25 +357,28 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                                     width: 2,
                                   ),
                                 ),
-                                child: Column(children: [
-                                  Icon(icon,
-                                      color: isSel
-                                          ? color
-                                          : AppColors.textMuted,
-                                      size: 20),
-                                  const SizedBox(height: 4),
-                                  Text(label,
-                                      style: TextStyle(
-                                          fontFamily: 'Inter',
-                                          fontSize: 12,
-                                          fontWeight: isSel
-                                              ? FontWeight.w600
-                                              : FontWeight.w400,
-                                          color: isSel
-                                              ? color
-                                              : AppColors
-                                                  .textSecondary)),
-                                ]),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(icon,
+                                        color: isSel
+                                            ? color
+                                            : AppColors.textMuted,
+                                        size: 16),
+                                    const SizedBox(width: 6),
+                                    Text(label,
+                                        style: TextStyle(
+                                            fontFamily: 'Inter',
+                                            fontSize: 11,
+                                            fontWeight: isSel
+                                                ? FontWeight.w600
+                                                : FontWeight.w400,
+                                            color: isSel
+                                                ? color
+                                                : AppColors
+                                                    .textSecondary)),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -387,10 +387,10 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                     ),
 
                     if (isUnpaid) ...[
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
                       Text('Lý do không thanh toán:',
-                          style: AppTextStyles.titleMedium),
-                      const SizedBox(height: 8),
+                          style: AppTextStyles.titleMedium.copyWith(fontSize: 13)),
+                      const SizedBox(height: 6),
                       TextField(
                         controller: _reasonController,
                         onChanged: (val) {
@@ -402,16 +402,16 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                         },
                         decoration: InputDecoration(
                           hintText: 'Nhập lý do (khuyến mãi 100% hóa đơn)...',
-                          hintStyle: AppTextStyles.bodySmall,
+                          hintStyle: AppTextStyles.bodySmall.copyWith(fontSize: 12),
                           errorText: _reasonError,
                           errorStyle: const TextStyle(
                             fontFamily: 'Inter',
                             color: AppColors.error,
-                            fontSize: 12,
+                            fontSize: 11,
                           ),
                           filled: true,
                           fillColor: AppColors.surfaceVariant,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
                             borderSide: BorderSide.none,
@@ -426,7 +426,7 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
 
             // ── Footer Buttons ──
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
               child: Row(children: [
                 Expanded(
                   child: OutlinedButton.icon(
@@ -462,17 +462,17 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                         ),
                       );
                     },
-                    icon: const Icon(Icons.print_outlined, size: 16),
+                    icon: const Icon(Icons.print_outlined, size: 15),
                     label: const Text('In hóa đơn'),
                     style: OutlinedButton.styleFrom(
                       padding:
-                          const EdgeInsets.symmetric(vertical: 14),
+                          const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   flex: 2,
                   child: ElevatedButton.icon(
@@ -513,22 +513,22 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                           },
                     icon: _isProcessing
                         ? const SizedBox(
-                            width: 16,
-                            height: 16,
+                            width: 14,
+                            height: 14,
                             child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 color: Colors.white))
                         : const Icon(Icons.check_circle_outlined,
-                            size: 18),
+                            size: 16),
                     label: Text(_isProcessing
                         ? 'Đang xử lý...'
                         : 'Xác nhận thanh toán'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(10)),
                       elevation: 0,
                     ),
                   ),

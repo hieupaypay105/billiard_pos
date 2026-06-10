@@ -1,5 +1,12 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../billing/invoice_template_provider.dart';
 
@@ -140,24 +147,349 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
 
   // ─── Print Logic ─────────────────────────────────────────────────────────────
 
-  void _doPrint(BuildContext context) {
-    Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Row(
-          children: [
-            Icon(Icons.print, color: Colors.white, size: 18),
-            SizedBox(width: 10),
-            Text('Đang gửi lệnh in báo cáo K80...'),
-          ],
+  Future<Uint8List> _generateReportPdf(InvoiceTemplate t) async {
+    final pdf = pw.Document();
+
+    pw.Font fontRegular;
+    pw.Font fontBold;
+    try {
+      final fontDataReg = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
+      fontRegular = pw.Font.ttf(fontDataReg);
+      final fontDataBold = await rootBundle.load('assets/fonts/Roboto-Bold.ttf');
+      fontBold = pw.Font.ttf(fontDataBold);
+    } catch (e) {
+      debugPrint('[ReportPrintPreviewDialog] Error loading local font, fallback to helvetica: $e');
+      fontRegular = pw.Font.helvetica();
+      fontBold = pw.Font.helveticaBold();
+    }
+
+    final bfs = _bodyFs(t.fontSize);
+
+    final mono = pw.TextStyle(
+      font: fontRegular,
+      fontSize: bfs,
+      color: PdfColors.black,
+    );
+    final monoBold = pw.TextStyle(
+      font: fontBold,
+      fontSize: bfs,
+      color: PdfColors.black,
+    );
+
+    pw.MemoryImage? logoImage;
+    if (t.showLogo) {
+      try {
+        final logoBytes = await rootBundle.load('assets/images/logo.png');
+        logoImage = pw.MemoryImage(logoBytes.buffer.asUint8List());
+      } catch (_) {}
+    }
+
+    // Group orders by day
+    final Map<DateTime, double> dailyRevenue = {};
+    for (final o in orders) {
+      final raw = o as Map<String, dynamic>;
+      final dateStr = (raw['end_time'] ?? raw['created_at'] ?? raw['start_time'] ?? '').toString().replaceAll(' ', 'T');
+      if (dateStr.isEmpty) continue;
+      try {
+        final dt = DateTime.parse(dateStr);
+        final dateKey = DateTime(dt.year, dt.month, dt.day);
+        final double amount = _toDouble(raw['total_amount']);
+        dailyRevenue[dateKey] = (dailyRevenue[dateKey] ?? 0.0) + amount;
+      } catch (_) {}
+    }
+    final sortedDays = dailyRevenue.keys.toList()..sort();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat(
+          80 * PdfPageFormat.mm,
+          Platform.isWindows ? 400 * PdfPageFormat.mm : double.infinity,
+          marginAll: 4 * PdfPageFormat.mm,
         ),
-        backgroundColor: AppColors.primary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        duration: const Duration(seconds: 3),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              // Logo
+              if (t.showLogo && logoImage != null) ...[
+                pw.Align(
+                  alignment: t.logoPosition == 'left'
+                      ? pw.Alignment.centerLeft
+                      : t.logoPosition == 'right'
+                          ? pw.Alignment.centerRight
+                          : pw.Alignment.center,
+                  child: pw.Image(
+                    logoImage,
+                    height: t.logoHeight.toDouble().clamp(30.0, 120.0),
+                    width: t.logoWidth.toDouble().clamp(30.0, 300.0),
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+              ],
+
+              // Tên quán
+              if (t.showStoreName) ...[
+                pw.Text(
+                  t.storeName.toUpperCase(),
+                  textAlign: t.alignStoreName == 'left'
+                      ? pw.TextAlign.left
+                      : t.alignStoreName == 'right'
+                          ? pw.TextAlign.right
+                          : pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: _storeNameFs(t.fontSizeStoreName),
+                    lineSpacing: 1.2,
+                  ),
+                ),
+              ],
+
+              // Địa chỉ & SĐT
+              if (t.address != null && t.address!.isNotEmpty) ...[
+                pw.SizedBox(height: 3),
+                pw.Text(
+                  t.address!,
+                  textAlign: t.alignAddress == 'left'
+                      ? pw.TextAlign.left
+                      : t.alignAddress == 'right'
+                          ? pw.TextAlign.right
+                          : pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: fontRegular,
+                    fontSize: bfs - 0.5,
+                  ),
+                ),
+              ],
+              if (t.phone != null && t.phone!.isNotEmpty) ...[
+                pw.SizedBox(height: 2),
+                pw.Text(
+                  'ĐT: ${t.phone}',
+                  textAlign: t.alignPhone == 'left'
+                      ? pw.TextAlign.left
+                      : t.alignPhone == 'right'
+                          ? pw.TextAlign.right
+                          : pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: fontRegular,
+                    fontSize: bfs - 0.5,
+                  ),
+                ),
+              ],
+
+              pw.SizedBox(height: 6),
+              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+
+              // Tiêu đề báo cáo
+              pw.Text(
+                'BÁO CÁO DOANH THU',
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                  font: fontBold,
+                  fontSize: bfs + 3,
+                  lineSpacing: 1.2,
+                ),
+              ),
+              pw.SizedBox(height: 8),
+
+              // Cấu hình lọc
+              _pdfMetaRow('Thời gian:', '${_fmtDate(dateRange.start)} - ${_fmtDate(dateRange.end)}', mono, monoBold),
+              _pdfMetaRow('Trạng thái:', statusFilterLabel, mono, monoBold),
+              _pdfMetaRow('Nhân viên:', cashierFilterLabel, mono, monoBold),
+
+              pw.SizedBox(height: 6),
+              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+
+              // Tổng hợp số liệu
+              _pdfMetaRow('Tổng số hóa đơn:', '$totalInvoices HĐ', mono, monoBold),
+              pw.SizedBox(height: 4),
+              _pdfSummaryRow('Tiền giờ:', _fmtCurrency(totalPlay), mono),
+              _pdfSummaryRow('Tiền dịch vụ:', _fmtCurrency(totalService), mono),
+              _pdfSummaryRow('Chiết khấu:', '-${_fmtCurrency(totalDiscount)}', mono),
+
+              pw.SizedBox(height: 4),
+              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+
+              // Doanh thu theo ngày
+              if (!showInvoiceList && sortedDays.isNotEmpty) ...[
+                pw.Text(
+                  'DOANH THU THEO NGÀY:',
+                  style: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: bfs,
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+                for (final d in sortedDays)
+                  _pdfSummaryRow(
+                    '  ${_fmtDate(d)}:',
+                    _fmtCurrency(dailyRevenue[d]!),
+                    mono,
+                  ),
+                pw.SizedBox(height: 4),
+                pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+              ],
+
+              // Tổng cộng doanh thu
+              _pdfSummaryRow(
+                'TỔNG DOANH THU:',
+                _fmtCurrency(totalAmount),
+                monoBold,
+              ),
+
+              pw.SizedBox(height: 6),
+              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+
+              // Danh sách hoá đơn
+              if (showInvoiceList && orders.isNotEmpty) ...[
+                pw.Text(
+                  'DANH SÁCH HÓA ĐƠN:',
+                  style: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: bfs,
+                  ),
+                ),
+                pw.SizedBox(height: 6),
+                pw.Row(
+                  children: [
+                    pw.Expanded(flex: 12, child: pw.Text('STT', style: monoBold, textAlign: pw.TextAlign.left)),
+                    pw.Expanded(flex: 30, child: pw.Text('Bàn', style: monoBold, textAlign: pw.TextAlign.left)),
+                    pw.Expanded(flex: 20, child: pw.Text('Vào', style: monoBold, textAlign: pw.TextAlign.center)),
+                    pw.Expanded(flex: 20, child: pw.Text('Ra', style: monoBold, textAlign: pw.TextAlign.center)),
+                    pw.Expanded(flex: 30, child: pw.Text('TT', style: monoBold, textAlign: pw.TextAlign.right)),
+                  ],
+                ),
+                pw.SizedBox(height: 2),
+                pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+                pw.SizedBox(height: 4),
+                ...orders.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final o = entry.value as Map<String, dynamic>;
+                  return _pdfInvoiceRow(idx, o, mono);
+                }),
+                pw.SizedBox(height: 6),
+                pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+              ],
+
+              // Footer message
+              pw.Text(
+                'Ngày in báo cáo: ${_fmtDateTime(DateTime.now())}',
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                  font: fontRegular,
+                  fontSize: bfs - 0.5,
+                  fontStyle: pw.FontStyle.italic,
+                ),
+              ),
+              pw.SizedBox(height: 8),
+            ],
+          );
+        },
       ),
     );
+
+    return pdf.save();
+  }
+
+  pw.Widget _pdfMetaRow(String label, String value, pw.TextStyle labelStyle, pw.TextStyle valStyle) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(label, style: labelStyle),
+          pw.SizedBox(width: 8),
+          pw.Expanded(
+            child: pw.Text(
+              value,
+              style: valStyle,
+              textAlign: pw.TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfSummaryRow(String label, String value, pw.TextStyle style) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 2.5),
+      child: pw.Row(
+        children: [
+          pw.Expanded(child: pw.Text(label, style: style)),
+          pw.Text(value, style: style),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfInvoiceRow(int index, Map<String, dynamic> o, pw.TextStyle style) {
+    final startStr = (o['start_time'] ?? '').toString();
+    String startTimeText = '--:--';
+    if (startStr.isNotEmpty) {
+      try {
+        final dt = DateTime.parse(startStr.replaceAll(' ', 'T'));
+        startTimeText = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      } catch (_) {}
+    }
+
+    final endStr = (o['end_time'] ?? '').toString();
+    String endTimeText = '--:--';
+    if (endStr.isNotEmpty) {
+      try {
+        final dt = DateTime.parse(endStr.replaceAll(' ', 'T'));
+        endTimeText = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      } catch (_) {}
+    }
+
+    final tt = _toDouble(o['total_amount']);
+
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 2.5),
+      child: pw.Row(
+        children: [
+          pw.Expanded(
+            flex: 12,
+            child: pw.Text('${index + 1}', style: style, textAlign: pw.TextAlign.left),
+          ),
+          pw.Expanded(
+            flex: 30,
+            child: pw.Text('${o['table_name'] ?? 'N/A'}', style: style, textAlign: pw.TextAlign.left, maxLines: 1),
+          ),
+          pw.Expanded(
+            flex: 20,
+            child: pw.Text(startTimeText, style: style, textAlign: pw.TextAlign.center),
+          ),
+          pw.Expanded(
+            flex: 20,
+            child: pw.Text(endTimeText, style: style, textAlign: pw.TextAlign.center),
+          ),
+          pw.Expanded(
+            flex: 30,
+            child: pw.Text(_fmtCurrency(tt), style: style, textAlign: pw.TextAlign.right),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _doPrint(BuildContext context, InvoiceTemplate t) async {
+    try {
+      final pdfBytes = await _generateReportPdf(t);
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdfBytes,
+        name: 'Bao_cao_doanh_thu',
+      );
+    } catch (e) {
+      debugPrint('[ReportPrintPreviewDialog] print error: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi khi in báo cáo: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   // ─── Build ───────────────────────────────────────────────────────────────────
@@ -172,6 +504,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
       child: templateAsync.when(
         loading: () => _shell(
           context,
+          InvoiceTemplate.defaultTemplate,
           child: const Center(
             child: Padding(
               padding: EdgeInsets.all(48),
@@ -181,16 +514,17 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
         ),
         error: (_, __) => _shell(
           context,
+          InvoiceTemplate.defaultTemplate,
           child: _reportPaper(context, InvoiceTemplate.defaultTemplate),
         ),
-        data: (t) => _shell(context, child: _reportPaper(context, t)),
+        data: (t) => _shell(context, t, child: _reportPaper(context, t)),
       ),
     );
   }
 
   // ─── Dialog Shell ────────────────────────────────────────────────────────────
 
-  Widget _shell(BuildContext context, {required Widget child}) {
+  Widget _shell(BuildContext context, InvoiceTemplate t, {required Widget child}) {
     final screenWidth = MediaQuery.of(context).size.width;
     final dialogWidth = screenWidth > 420 ? 380.0 : screenWidth - 40;
 
@@ -282,7 +616,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
                 Expanded(
                   flex: 2,
                   child: ElevatedButton.icon(
-                    onPressed: () => _doPrint(context),
+                    onPressed: () => _doPrint(context, t),
                     icon: const Icon(Icons.print_rounded, size: 18),
                     label: const Text('In báo cáo'),
                     style: ElevatedButton.styleFrom(
@@ -484,7 +818,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
           ),
         ],
       ),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -504,7 +838,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
                 errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
           ],
 
           // ── TÊN QUÁN ─────────────────────────────────────────────────────
@@ -579,8 +913,8 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
 
           solidDiv(),
 
-          // ── DOANH THU THEO NGÀY ──────────────────────────────────────────
-          if (sortedDays.isNotEmpty) ...[
+          // ── DOANH THU THEO NGÀY (chỉ hiển thị ở tab Tổng hợp) ─────────────
+          if (!showInvoiceList && sortedDays.isNotEmpty) ...[
             Text(
               'DOANH THU THEO NGÀY:',
               style: baseStyle.copyWith(

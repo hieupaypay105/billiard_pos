@@ -43,6 +43,8 @@ dependencies:
   fl_chart: ^0.69.0
   data_table_2: ^2.5.14
   qr_flutter: ^4.1.0
+  printing: ^5.14.3
+  pdf: ^3.12.0
 
   # Receipt Printing (K80) - TODO: integrate when printer hardware confirmed
   # esc_pos_utils_plus: ^2.0.4  # add when ready to integrate
@@ -58,6 +60,8 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/logo.png
+    - assets/fonts/Roboto-Regular.ttf
+    - assets/fonts/Roboto-Bold.ttf
   # fonts:
   #   - family: Inter
   #     fonts:

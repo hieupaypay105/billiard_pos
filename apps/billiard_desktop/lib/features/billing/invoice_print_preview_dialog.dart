@@ -1,11 +1,16 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show md5;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../core/config/env_config.dart';
 import '../../core/constants/app_colors.dart';
@@ -294,26 +299,392 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
 
   // ─── Printing ────────────────────────────────────────────────────────────────
 
-  void _doPrint(BuildContext context) {
-    // TODO: integrate esc_pos_utils_plus for actual K80 ESC/POS printing.
-    Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Row(
-          children: [
-            Icon(Icons.print, color: Colors.white, size: 18),
-            SizedBox(width: 10),
-            Text('Đang gửi lệnh in hóa đơn K80...'),
-          ],
+  Future<Uint8List> _generateInvoicePdf(InvoiceTemplate t) async {
+    final pdf = pw.Document();
+
+    pw.Font fontRegular;
+    pw.Font fontBold;
+    try {
+      final fontDataReg = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
+      fontRegular = pw.Font.ttf(fontDataReg);
+      final fontDataBold = await rootBundle.load('assets/fonts/Roboto-Bold.ttf');
+      fontBold = pw.Font.ttf(fontDataBold);
+    } catch (e) {
+      debugPrint('[InvoicePrintPreviewDialog] Error loading local font, fallback to helvetica: $e');
+      fontRegular = pw.Font.helvetica();
+      fontBold = pw.Font.helveticaBold();
+    }
+
+    final bfs = _bodyFs(t.fontSize);
+    final isUnpaid = status == 'unpaid' || status == 'cancelled';
+    final effectiveDiscount = isUnpaid ? totalAmount : discountAmount;
+    final effectiveDiscountPct = isUnpaid ? 100.0 : discountPercent;
+    final effectiveNet = isUnpaid ? 0.0 : netTotal;
+    final hasDiscount = effectiveDiscount > 0;
+
+    final mono = pw.TextStyle(
+      font: fontRegular,
+      fontSize: bfs,
+      color: PdfColors.black,
+    );
+    final monoBold = pw.TextStyle(
+      font: fontBold,
+      fontSize: bfs,
+      color: PdfColors.black,
+    );
+
+    pw.MemoryImage? logoImage;
+    if (t.showLogo) {
+      try {
+        final logoBytes = await rootBundle.load('assets/images/logo.png');
+        logoImage = pw.MemoryImage(logoBytes.buffer.asUint8List());
+      } catch (_) {}
+    }
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat(
+          80 * PdfPageFormat.mm,
+          Platform.isWindows ? 250 * PdfPageFormat.mm : double.infinity,
+          marginAll: 4 * PdfPageFormat.mm,
         ),
-        backgroundColor: AppColors.primary,
-        behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        duration: const Duration(seconds: 3),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              // Logo
+              if (t.showLogo && logoImage != null) ...[
+                pw.Align(
+                  alignment: t.logoPosition == 'left'
+                      ? pw.Alignment.centerLeft
+                      : t.logoPosition == 'right'
+                          ? pw.Alignment.centerRight
+                          : pw.Alignment.center,
+                  child: pw.Image(
+                    logoImage,
+                    height: t.logoHeight.toDouble().clamp(30.0, 120.0),
+                    width: t.logoWidth.toDouble().clamp(30.0, 300.0),
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+              ],
+
+              // Tên quán
+              if (t.showStoreName) ...[
+                pw.Text(
+                  t.storeName.toUpperCase(),
+                  textAlign: t.alignStoreName == 'left'
+                      ? pw.TextAlign.left
+                      : t.alignStoreName == 'right'
+                          ? pw.TextAlign.right
+                          : pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: _storeNameFs(t.fontSizeStoreName),
+                    lineSpacing: 1.2,
+                  ),
+                ),
+              ],
+
+              // Địa chỉ
+              if (t.address != null && t.address!.isNotEmpty) ...[
+                pw.SizedBox(height: 3),
+                pw.Text(
+                  t.address!,
+                  textAlign: t.alignAddress == 'left'
+                      ? pw.TextAlign.left
+                      : t.alignAddress == 'right'
+                          ? pw.TextAlign.right
+                          : pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: fontRegular,
+                    fontSize: bfs - 0.5,
+                    lineSpacing: 1.3,
+                  ),
+                ),
+              ],
+
+              // SĐT
+              if (t.phone != null && t.phone!.isNotEmpty) ...[
+                pw.SizedBox(height: 2),
+                pw.Text(
+                  'ĐT: ${t.phone}',
+                  textAlign: t.alignPhone == 'left'
+                      ? pw.TextAlign.left
+                      : t.alignPhone == 'right'
+                          ? pw.TextAlign.right
+                          : pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: fontRegular,
+                    fontSize: bfs - 0.5,
+                  ),
+                ),
+              ],
+
+              pw.SizedBox(height: 6),
+              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+
+              // Tiêu đề
+              pw.Text(
+                t.title.toUpperCase(),
+                textAlign: t.alignTitle == 'left'
+                    ? pw.TextAlign.left
+                    : t.alignTitle == 'right'
+                        ? pw.TextAlign.right
+                        : pw.TextAlign.center,
+                style: pw.TextStyle(
+                  font: fontBold,
+                  fontSize: _titleFs(t.fontSizeTitle),
+                  lineSpacing: 1.2,
+                ),
+              ),
+
+              // Meta rows
+              pw.SizedBox(height: 6),
+              _pdfMetaRow('Ngày:', _fmtDateTime(startTime), mono, monoBold),
+              if (t.showCashier) ...[
+                _pdfMetaRow(
+                  'Thu ngân:',
+                  '$cashierName${shiftLabel != null ? ' ($shiftLabel)' : ''}',
+                  mono,
+                  monoBold,
+                ),
+              ],
+              if (t.showTableName) ...[
+                _pdfMetaRow('Bàn:', tableName, mono, monoBold),
+              ],
+              if (t.showCustomer && member != null) ...[
+                _pdfMetaRow(
+                  'Khách hàng:',
+                  '${member!['full_name'] ?? member!['name'] ?? ''}'
+                  '${(member!['tier'] ?? member!['tier_name']) != null ? ' (${member!['tier'] ?? member!['tier_name']})' : ''}',
+                  mono,
+                  monoBold,
+                ),
+              ],
+              if (t.showCheckinCheckout && (hourlyRate > 0 || playMinutes > 0 || playAmount > 0)) ...[
+                _pdfMetaRow(
+                  'Giờ vào / ra:',
+                  '${_fmtTime(startTime)} - ${_fmtTime(endTime)}',
+                  mono,
+                  monoBold,
+                ),
+              ],
+              if (t.showDuration && (hourlyRate > 0 || playMinutes > 0 || playAmount > 0)) ...[
+                _pdfMetaRow('Thời lượng chơi:', _fmtDuration(playMinutes), mono, monoBold),
+              ],
+
+              pw.SizedBox(height: 6),
+              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+
+              // Bảng hàng header
+              _pdfItemRow('Tên hàng', 'SL', 'T.Tiền', monoBold, isHeader: true),
+              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+
+              // Tiền giờ chơi
+              if (hourlyRate > 0 || playAmount > 0) ...[
+                _pdfItemRow(
+                  'Tiền giờ ($tableName)',
+                  _fmtHours(playMinutes),
+                  _fmtCurrency(playAmount),
+                  mono,
+                ),
+              ],
+
+              // Dịch vụ
+              ...products.map((p) {
+                final name = p['name']?.toString() ?? 'Sản phẩm';
+                final qty = (p['qty'] as int?) ?? 0;
+                final price = (p['price'] as double?) ?? 0.0;
+                return _pdfItemRow(name, '$qty', _fmtCurrency(price * qty), mono);
+              }),
+
+              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+
+              // Tổng kết
+              if (hasDiscount) ...[
+                _pdfSummaryRow('Cộng tiền hàng:', _fmtCurrency(totalAmount), mono),
+                _pdfSummaryRow(
+                  effectiveDiscountPct > 0 && effectiveDiscountPct < 100
+                      ? 'Khuyến mãi (${effectiveDiscountPct.toInt()}%):'
+                      : 'Khuyến mãi:',
+                  '-${_fmtCurrency(effectiveDiscount)}',
+                  mono,
+                ),
+                pw.SizedBox(height: 2),
+              ],
+
+              // TỔNG CỘNG
+              _pdfSummaryRow(
+                'TỔNG CỘNG:',
+                _fmtCurrency(effectiveNet),
+                monoBold,
+              ),
+
+              // Lý do / Ghi chú
+              if (note != null && note!.trim().isNotEmpty) ...[
+                pw.SizedBox(height: 6),
+                pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+                pw.Text(
+                  isUnpaid ? 'Lý do:' : 'Ghi chú:',
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: bfs - 0.5,
+                  ),
+                ),
+                pw.SizedBox(height: 2),
+                pw.Text(
+                  note!.trim(),
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: fontRegular,
+                    fontSize: bfs - 0.5,
+                    fontStyle: pw.FontStyle.italic,
+                  ),
+                ),
+              ],
+
+              // QR Thanh toán
+              if (t.showQrPayment && !isUnpaid) ...[
+                pw.SizedBox(height: 6),
+                pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+                pw.Text(
+                  'MÃ QR THANH TOÁN QUÉT NHANH',
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: fontBold,
+                    fontSize: bfs - 0.5,
+                  ),
+                ),
+                pw.SizedBox(height: 8),
+                pw.Center(
+                  child: pw.Container(
+                    width: 100,
+                    height: 100,
+                    child: pw.BarcodeWidget(
+                      barcode: pw.Barcode.qrCode(),
+                      data: _buildVietQrData(
+                        bankId: t.qrBankName ?? '',
+                        accountNumber: t.qrAccountNumber ?? '',
+                        accountName: t.qrAccountName,
+                        amountVnd: effectiveNet.toInt(),
+                        addInfo: 'Thanh toan hoa don $tableName',
+                      ),
+                      width: 100,
+                      height: 100,
+                    ),
+                  ),
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  'Ngân hàng: ${t.qrBankName}\n'
+                  'STK: ${t.qrAccountNumber}'
+                  '${t.qrAccountName != null && t.qrAccountName!.isNotEmpty ? '\nTên: ${t.qrAccountName}' : ''}',
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: fontRegular,
+                    fontSize: bfs - 1,
+                  ),
+                ),
+              ],
+
+              // Footer message
+              if (t.footerMessage != null && t.footerMessage!.isNotEmpty) ...[
+                pw.SizedBox(height: 6),
+                pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+                pw.Text(
+                  t.footerMessage!,
+                  textAlign: t.alignFooter == 'left'
+                      ? pw.TextAlign.left
+                      : t.alignFooter == 'right'
+                          ? pw.TextAlign.right
+                          : pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    font: fontRegular,
+                    fontSize: bfs,
+                    fontStyle: pw.FontStyle.italic,
+                  ),
+                ),
+              ],
+              pw.SizedBox(height: 8),
+            ],
+          );
+        },
       ),
     );
+
+    return pdf.save();
+  }
+
+  pw.Widget _pdfMetaRow(String label, String value, pw.TextStyle labelStyle, pw.TextStyle valStyle) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(label, style: labelStyle),
+          pw.SizedBox(width: 8),
+          pw.Expanded(
+            child: pw.Text(
+              value,
+              style: valStyle,
+              textAlign: pw.TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfItemRow(String name, String qty, String amount, pw.TextStyle style, {bool isHeader = false}) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 2),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Expanded(flex: 6, child: pw.Text(name, style: style)),
+          pw.SizedBox(
+              width: 36,
+              child: pw.Text(qty, style: style, textAlign: pw.TextAlign.right)),
+          pw.SizedBox(
+              width: 72,
+              child: pw.Text(amount, style: style, textAlign: pw.TextAlign.right)),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pdfSummaryRow(String label, String value, pw.TextStyle style) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 2),
+      child: pw.Row(
+        children: [
+          pw.Expanded(child: pw.Text(label, style: style)),
+          pw.Text(value, style: style),
+        ],
+      ),
+    );
+  }
+
+  void _doPrint(BuildContext context, InvoiceTemplate t) async {
+    try {
+      final pdfBytes = await _generateInvoicePdf(t);
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdfBytes,
+        name: 'Hoa_don_${tableName.replaceAll(' ', '_')}',
+      );
+    } catch (e) {
+      debugPrint('[InvoicePrintPreviewDialog] print error: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi khi in hóa đơn: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   // ─── Build ───────────────────────────────────────────────────────────────────
@@ -328,6 +699,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
       child: templateAsync.when(
         loading: () => _shell(
           context,
+          InvoiceTemplate.defaultTemplate,
           child: const Center(
             child: Padding(
               padding: EdgeInsets.all(48),
@@ -337,16 +709,17 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
         ),
         error: (_, __) => _shell(
           context,
+          InvoiceTemplate.defaultTemplate,
           child: _receipt(context, InvoiceTemplate.defaultTemplate),
         ),
-        data: (t) => _shell(context, child: _receipt(context, t)),
+        data: (t) => _shell(context, t, child: _receipt(context, t)),
       ),
     );
   }
 
   // ─── Outer shell ─────────────────────────────────────────────────────────────
 
-  Widget _shell(BuildContext context, {required Widget child}) {
+  Widget _shell(BuildContext context, InvoiceTemplate t, {required Widget child}) {
     final screenWidth = MediaQuery.of(context).size.width;
     final dialogWidth = screenWidth > 420 ? 380.0 : screenWidth - 40;
     return Container(
@@ -419,9 +792,9 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
           // Footer buttons
           Container(
             padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F1923),
-              borderRadius: const BorderRadius.vertical(
+            decoration: const BoxDecoration(
+              color: Color(0xFF0F1923),
+              borderRadius: BorderRadius.vertical(
                   bottom: Radius.circular(20)),
             ),
             child: Row(
@@ -443,7 +816,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                 Expanded(
                   flex: 2,
                   child: ElevatedButton.icon(
-                    onPressed: () => _doPrint(context),
+                    onPressed: () => _doPrint(context, t),
                     icon: const Icon(Icons.print_rounded, size: 18),
                     label: const Text('In hóa đơn'),
                     style: ElevatedButton.styleFrom(
@@ -789,7 +1162,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
           ),
         ],
       ),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -803,7 +1176,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                       : Alignment.center,
               child: logoWidget(),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
           ],
 
           // ── TÊN QUÁN ─────────────────────────────────────────────────────

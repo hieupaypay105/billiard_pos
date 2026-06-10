@@ -14,6 +14,7 @@ class _ReportRow {
   final int count;
   final double play;
   final double service;
+  final double discount;
   final double total;
 
   const _ReportRow({
@@ -21,6 +22,7 @@ class _ReportRow {
     required this.count,
     required this.play,
     required this.service,
+    required this.discount,
     required this.total,
   });
 }
@@ -1014,10 +1016,11 @@ class _InvoiceSummaryTab extends StatelessWidget {
 
     final rows = byDay.entries.map((e) {
       final list = e.value;
-      double play = 0, service = 0, total = 0;
+      double play = 0, service = 0, discount = 0, total = 0;
       for (final r in list) {
         play += _toDouble(r['total_play_time_amount']);
         service += _toDouble(r['total_product_amount']);
+        discount += _toDouble(r['discount_amount']);
         total += _toDouble(r['total_amount']);
       }
       return _ReportRow(
@@ -1025,6 +1028,7 @@ class _InvoiceSummaryTab extends StatelessWidget {
         count: list.length,
         play: play,
         service: service,
+        discount: discount,
         total: total,
       );
     }).toList()..sort((a, b) => b.date.compareTo(a.date));
@@ -1097,6 +1101,7 @@ class _InvoiceSummaryTab extends StatelessWidget {
                         _TH('Số HĐ', flex: 1),
                         _TH('Tiền giờ', flex: 2),
                         _TH('Dịch vụ', flex: 2),
+                        _TH('Chiết khấu', flex: 2),
                         _TH('Tổng', flex: 2),
                       ],
                     ),
@@ -1142,6 +1147,19 @@ class _InvoiceSummaryTab extends StatelessWidget {
                                 child: Text(
                                   _fmtCurrency(r.service),
                                   style: AppTextStyles.bodySmall,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  r.discount > 0
+                                      ? '-${_fmtCurrency(r.discount)}'
+                                      : _fmtCurrency(0),
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: r.discount > 0
+                                        ? AppColors.accent
+                                        : null,
+                                  ),
                                 ),
                               ),
                               Expanded(
