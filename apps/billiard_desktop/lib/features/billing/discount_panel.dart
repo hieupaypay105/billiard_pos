@@ -14,6 +14,7 @@ class DiscountPanel extends ConsumerStatefulWidget {
 
 class _DiscountPanelState extends ConsumerState<DiscountPanel> {
   final _codeCtrl = TextEditingController();
+  final _percentCtrl = TextEditingController();
   double _manualPercent = 0;
   bool _isVerifying = false;
   String? _appliedCode;
@@ -22,8 +23,35 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
   final _presets = [5.0, 10.0, 15.0, 20.0];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final tablesState = ref.read(tablesProvider);
+      double currentDiscount = 0.0;
+      if (tablesState.tableDiscounts.containsKey(widget.tableId)) {
+        currentDiscount = tablesState.tableDiscounts[widget.tableId] ?? 0.0;
+      } else {
+        final invIndex = tablesState.unpaidInvoices.indexWhere((inv) => inv.id == widget.tableId);
+        if (invIndex >= 0) {
+          currentDiscount = tablesState.unpaidInvoices[invIndex].manualDiscountPercent;
+        }
+      }
+      if (currentDiscount > 0) {
+        setState(() {
+          _manualPercent = currentDiscount;
+          _percentCtrl.text = currentDiscount % 1 == 0
+              ? currentDiscount.toInt().toString()
+              : currentDiscount.toString();
+        });
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _codeCtrl.dispose();
+    _percentCtrl.dispose();
     super.dispose();
   }
 
@@ -42,6 +70,17 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final tablesState = ref.watch(tablesProvider);
+    double currentDiscount = 0.0;
+    if (tablesState.tableDiscounts.containsKey(widget.tableId)) {
+      currentDiscount = tablesState.tableDiscounts[widget.tableId] ?? 0.0;
+    } else {
+      final invIndex = tablesState.unpaidInvoices.indexWhere((inv) => inv.id == widget.tableId);
+      if (invIndex >= 0) {
+        currentDiscount = tablesState.unpaidInvoices[invIndex].manualDiscountPercent;
+      }
+    }
+
     return Dialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -56,8 +95,9 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
               Row(children: [
                 const Icon(Icons.local_offer_outlined, color: AppColors.accent, size: 22),
                 const SizedBox(width: 8),
-                Text('Áp dụng khuyến mãi', style: AppTextStyles.headlineSmall),
-                const Spacer(),
+                Expanded(
+                  child: Text('Áp dụng khuyến mãi', style: AppTextStyles.headlineSmall, overflow: TextOverflow.ellipsis),
+                ),
                 IconButton(onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close, size: 20)),
               ]),
@@ -129,7 +169,12 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
                   child: Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: InkWell(
-                      onTap: () => setState(() => _manualPercent = pct),
+                      onTap: () {
+                        setState(() {
+                          _manualPercent = pct;
+                          _percentCtrl.text = pct % 1 == 0 ? pct.toInt().toString() : pct.toString();
+                        });
+                      },
                       borderRadius: BorderRadius.circular(8),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 160),
@@ -140,7 +185,7 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
                           border: Border.all(
                               color: isSel ? AppColors.accent : Colors.transparent, width: 2),
                         ),
-                        child: Text('$pct%',
+                        child: Text('${pct.toInt()}%',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                                 fontFamily: 'Inter',
@@ -152,28 +197,72 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
                   ),
                 );
               }).toList()),
-
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    ref.read(tablesProvider.notifier).applyDiscount(widget.tableId, _manualPercent);
-                    Navigator.of(context).pop();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 0,
-                  ),
-                  child: Text(
-                    _manualPercent > 0
-                        ? 'Xác nhận giảm ${_manualPercent.toInt()}%'
-                        : 'Xác nhận',
+              const SizedBox(height: 12),
+              TextField(
+                controller: _percentCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  hintText: 'Nhập số phần trăm khác...',
+                  hintStyle: AppTextStyles.bodySmall,
+                  suffixText: '%',
+                  filled: true,
+                  fillColor: AppColors.surfaceVariant,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
                   ),
                 ),
+                onChanged: (val) {
+                  final parsed = double.tryParse(val) ?? 0.0;
+                  setState(() {
+                    _manualPercent = parsed.clamp(0.0, 100.0);
+                  });
+                },
+              ),
+
+              const SizedBox(height: 20),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ElevatedButton(
+                    onPressed: () {
+                      ref.read(tablesProvider.notifier).applyDiscount(widget.tableId, _manualPercent);
+                      Navigator.of(context).pop();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      _manualPercent > 0
+                          ? 'Xác nhận giảm ${_manualPercent.toInt()}%'
+                          : 'Xác nhận',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Inter'),
+                    ),
+                  ),
+                  if (currentDiscount > 0) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: () {
+                        ref.read(tablesProvider.notifier).removeDiscount(widget.tableId);
+                        Navigator.of(context).pop();
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.error,
+                        side: const BorderSide(color: AppColors.error, width: 1.5),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text(
+                        'Bỏ chiết khấu',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Inter'),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
