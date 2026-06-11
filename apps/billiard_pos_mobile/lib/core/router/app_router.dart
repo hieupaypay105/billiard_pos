@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/tables/tables_screen.dart';
+import '../../features/billing/billing_screen.dart';
 import '../widgets/app_shell.dart';
 
 // Route name constants
@@ -49,6 +50,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             redirect: (ctx, state) => AppRoutes.tables,
           ),
         ],
+      ),
+      GoRoute(
+        path: '${AppRoutes.billing}/:tableId',
+        builder: (ctx, state) {
+          final tableId = state.pathParameters['tableId']!;
+          return BillingScreen(tableId: tableId);
+        },
       ),
     ],
   );

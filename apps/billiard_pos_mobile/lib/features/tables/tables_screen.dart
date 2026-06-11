@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/router/app_router.dart';
 import 'tables_provider.dart';
 
 class TablesScreen extends ConsumerStatefulWidget {
@@ -44,7 +46,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
 
     return DefaultTabController(
       key: ValueKey(state.tableTypes.length),
-      length: state.tableTypes.length + 1, // +1 for "Tất cả" (All tabs)
+      length: state.tableTypes.length,
       child: Column(
         children: [
           Container(
@@ -56,23 +58,17 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
               labelColor: AppColors.primary,
               unselectedLabelColor: AppColors.textSecondary,
               labelStyle: const TextStyle(fontWeight: FontWeight.bold),
-              tabs: [
-                const Tab(text: 'Tất cả'),
-                ...state.tableTypes.map((type) => Tab(text: type.typeName)),
-              ],
+              tabs: state.tableTypes.map((type) => Tab(text: type.typeName)).toList(),
             ),
           ),
           Expanded(
             child: TabBarView(
-              children: [
-                _buildGrid(context, state.tables, state),
-                ...state.tableTypes.map((type) {
-                  final filteredTables = state.tables
-                      .where((t) => t.tableTypeId == type.id)
-                      .toList();
-                  return _buildGrid(context, filteredTables, state);
-                }),
-              ],
+              children: state.tableTypes.map((type) {
+                final filteredTables = state.tables
+                    .where((t) => t.tableTypeId == type.id)
+                    .toList();
+                return _buildGrid(context, filteredTables, state);
+              }).toList(),
             ),
           ),
         ],
@@ -107,8 +103,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
           
           return InkWell(
             onTap: () {
-              // Navigate to Table detail / order screen
-              // context.push('/table/${table.id}');
+              context.push('${AppRoutes.billing}/${table.id}');
             },
             borderRadius: BorderRadius.circular(16),
             child: Container(
