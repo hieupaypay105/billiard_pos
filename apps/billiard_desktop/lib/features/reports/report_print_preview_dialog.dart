@@ -203,9 +203,12 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat(
-          72 * PdfPageFormat.mm,
+          68 * PdfPageFormat.mm,
           Platform.isWindows ? 400 * PdfPageFormat.mm : double.infinity,
-          marginAll: 3 * PdfPageFormat.mm,
+          marginTop: 2 * PdfPageFormat.mm,
+          marginBottom: 15 * PdfPageFormat.mm,
+          marginLeft: 2 * PdfPageFormat.mm,
+          marginRight: 2 * PdfPageFormat.mm,
         ),
         build: (pw.Context context) {
           return pw.Column(
@@ -278,7 +281,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
               ],
 
               pw.SizedBox(height: 6),
-              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+              pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
 
               // Tiêu đề báo cáo
               pw.Text(
@@ -298,7 +301,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
               _pdfMetaRow('Nhân viên:', cashierFilterLabel, mono, monoBold),
 
               pw.SizedBox(height: 6),
-              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+              pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
 
               // Tổng hợp số liệu
               _pdfMetaRow('Tổng số hóa đơn:', '$totalInvoices HĐ', mono, monoBold),
@@ -308,7 +311,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
               _pdfSummaryRow('Chiết khấu:', '-${_fmtCurrency(totalDiscount)}', mono),
 
               pw.SizedBox(height: 4),
-              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+              pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
 
               // Doanh thu theo ngày
               if (!showInvoiceList && sortedDays.isNotEmpty) ...[
@@ -327,7 +330,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
                     mono,
                   ),
                 pw.SizedBox(height: 4),
-                pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+                pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
               ],
 
               // Tổng cộng doanh thu
@@ -338,7 +341,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
               ),
 
               pw.SizedBox(height: 6),
-              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+              pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
 
               // Danh sách hoá đơn
               if (showInvoiceList && orders.isNotEmpty) ...[
@@ -360,7 +363,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
                   ],
                 ),
                 pw.SizedBox(height: 2),
-                pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+                pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
                 pw.SizedBox(height: 4),
                 ...orders.asMap().entries.map((entry) {
                   final idx = entry.key;
@@ -368,7 +371,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
                   return _pdfInvoiceRow(idx, o, mono);
                 }),
                 pw.SizedBox(height: 6),
-                pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+                pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
               ],
 
               // Footer message
@@ -512,9 +515,12 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
       final defaultPrinterUrl = prefs.getString('default_printer_url');
 
       final targetFormat = PdfPageFormat(
-        72 * PdfPageFormat.mm,
+        68 * PdfPageFormat.mm,
         Platform.isWindows ? 400 * PdfPageFormat.mm : double.infinity,
-        marginAll: 3 * PdfPageFormat.mm,
+        marginTop: 2 * PdfPageFormat.mm,
+        marginBottom: 15 * PdfPageFormat.mm,
+        marginLeft: 2 * PdfPageFormat.mm,
+        marginRight: 2 * PdfPageFormat.mm,
       );
 
       if (defaultPrinterName != null && defaultPrinterUrl != null) {

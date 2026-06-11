@@ -345,9 +345,12 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat(
-          72 * PdfPageFormat.mm,
+          68 * PdfPageFormat.mm,
           Platform.isWindows ? 250 * PdfPageFormat.mm : double.infinity,
-          marginAll: 3 * PdfPageFormat.mm,
+          marginTop: 2 * PdfPageFormat.mm,
+          marginBottom: 15 * PdfPageFormat.mm,
+          marginLeft: 2 * PdfPageFormat.mm,
+          marginRight: 2 * PdfPageFormat.mm,
         ),
         build: (pw.Context context) {
           return pw.Column(
@@ -423,7 +426,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               ],
 
               pw.SizedBox(height: 6),
-              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+              pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
 
               // Tiêu đề
               pw.Text(
@@ -476,11 +479,11 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               ],
 
               pw.SizedBox(height: 6),
-              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+              pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
 
               // Bảng hàng header
               _pdfItemRow('Tên hàng', 'SL', 'T.Tiền', monoBold, isHeader: true),
-              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+              pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
 
               // Tiền giờ chơi
               if (hourlyRate > 0 || playAmount > 0) ...[
@@ -500,7 +503,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                 return _pdfItemRow(name, '$qty', _fmtCurrency(price * qty), mono);
               }),
 
-              pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+              pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
 
               // Tổng kết
               if (hasDiscount) ...[
@@ -525,7 +528,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               // Lý do / Ghi chú
               if (note != null && note!.trim().isNotEmpty) ...[
                 pw.SizedBox(height: 6),
-                pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+                pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
                 pw.Text(
                   isUnpaid ? 'Lý do:' : 'Ghi chú:',
                   textAlign: pw.TextAlign.center,
@@ -549,7 +552,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               // QR Thanh toán
               if (t.showQrPayment && !isUnpaid) ...[
                 pw.SizedBox(height: 6),
-                pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+                pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
                 pw.Text(
                   'MÃ QR THANH TOÁN QUÉT NHANH',
                   textAlign: pw.TextAlign.center,
@@ -593,7 +596,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               // Footer message
               if (t.footerMessage != null && t.footerMessage!.isNotEmpty) ...[
                 pw.SizedBox(height: 6),
-                pw.Text('------------------------------------------', style: mono, textAlign: pw.TextAlign.center),
+                pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
                 pw.Text(
                   t.footerMessage!,
                   textAlign: t.alignFooter == 'left'
@@ -707,9 +710,12 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
       final defaultPrinterUrl = prefs.getString('default_printer_url');
 
       final targetFormat = PdfPageFormat(
-        72 * PdfPageFormat.mm,
+        68 * PdfPageFormat.mm,
         Platform.isWindows ? 250 * PdfPageFormat.mm : double.infinity,
-        marginAll: 3 * PdfPageFormat.mm,
+        marginTop: 2 * PdfPageFormat.mm,
+        marginBottom: 15 * PdfPageFormat.mm,
+        marginLeft: 2 * PdfPageFormat.mm,
+        marginRight: 2 * PdfPageFormat.mm,
       );
 
       if (defaultPrinterName != null && defaultPrinterUrl != null) {
