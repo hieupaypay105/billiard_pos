@@ -676,16 +676,19 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
             ),
             child: Row(
               children: [
-                OutlinedButton(
-                  onPressed: () => _setupDefaultPrinter(context),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.accent,
-                    side: const BorderSide(color: AppColors.accent, width: 1),
-                    padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 10),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                Tooltip(
+                  message: 'Cài máy in mặc định',
+                  child: OutlinedButton(
+                    onPressed: () => _setupDefaultPrinter(context),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.accent,
+                      side: const BorderSide(color: AppColors.accent, width: 1),
+                      padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 10),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Icon(Icons.print_disabled_outlined, size: 20),
                   ),
-                  child: const Icon(Icons.print_disabled_outlined, size: 20, tooltip: 'Cài máy in mặc định'),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
