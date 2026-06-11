@@ -66,8 +66,9 @@ class _CachedNetworkImageState extends State<_CachedNetworkImage> {
       String resolvedUrl = url;
       if (!url.startsWith('http')) {
         final apiUri = Uri.parse(EnvConfig.apiBaseUrl);
-        final host = '${apiUri.scheme}://${apiUri.host}${apiUri.hasPort ? ":${apiUri.port}" : ""}';
-        
+        final host =
+            '${apiUri.scheme}://${apiUri.host}${apiUri.hasPort ? ":${apiUri.port}" : ""}';
+
         // Extract base path (e.g., /billiard_pos_crm) if present in apiBaseUrl
         String basePath = '';
         final apiPath = apiUri.path;
@@ -86,14 +87,16 @@ class _CachedNetworkImageState extends State<_CachedNetworkImage> {
 
         // Ensure url has a leading slash
         final normalizedPath = url.startsWith('/') ? url : '/$url';
-        
+
         // Avoid prepending basePath twice if it's already there
         if (basePath.isNotEmpty && normalizedPath.startsWith(basePath)) {
           resolvedUrl = '$host$normalizedPath';
         } else {
           resolvedUrl = '$host$basePath$normalizedPath';
         }
-        debugPrint('[_CachedNetworkImage] resolved relative URL: $url -> $resolvedUrl');
+        debugPrint(
+          '[_CachedNetworkImage] resolved relative URL: $url -> $resolvedUrl',
+        );
       }
 
       final hash = md5.convert(resolvedUrl.codeUnits).toString();
@@ -117,7 +120,9 @@ class _CachedNetworkImageState extends State<_CachedNetworkImage> {
       }
       throw Exception('Empty data response');
     } catch (e, stack) {
-      debugPrint('[_CachedNetworkImage] error loading logo image: $url -> error: $e\n$stack');
+      debugPrint(
+        '[_CachedNetworkImage] error loading logo image: $url -> error: $e\n$stack',
+      );
       rethrow;
     }
   }
@@ -129,24 +134,20 @@ class _CachedNetworkImageState extends State<_CachedNetworkImage> {
       builder: (ctx, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return SizedBox(
-                height: widget.height,
-                child: const Center(
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 1.5),
-                  ),
-                ),
-              );
+            height: widget.height,
+            child: const Center(
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 1.5),
+              ),
+            ),
+          );
         }
         if (snap.hasError || snap.data == null) {
           return widget.errorWidget?.call() ?? const SizedBox.shrink();
         }
-        return Image.file(
-          snap.data!,
-          height: widget.height,
-          fit: widget.fit,
-        );
+        return Image.file(snap.data!, height: widget.height, fit: widget.fit);
       },
     );
   }
@@ -312,35 +313,63 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     pw.Font fontRegular;
     pw.Font fontBold;
     try {
-      final fontDataReg = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
+      final fontDataReg = await rootBundle.load(
+        'assets/fonts/Roboto-Regular.ttf',
+      );
       fontRegular = pw.Font.ttf(fontDataReg);
-      final fontDataBold = await rootBundle.load('assets/fonts/Roboto-Bold.ttf');
+      final fontDataBold = await rootBundle.load(
+        'assets/fonts/Roboto-Bold.ttf',
+      );
       fontBold = pw.Font.ttf(fontDataBold);
     } catch (e) {
-      debugPrint('[InvoicePrintPreviewDialog] Error loading local font, fallback to helvetica: $e');
+      debugPrint(
+        '[InvoicePrintPreviewDialog] Error loading local font, fallback to helvetica: $e',
+      );
       fontRegular = pw.Font.helvetica();
       fontBold = pw.Font.helveticaBold();
     }
 
     final bfs = _bodyFs(t.fontSize);
     final isUnpaid = status == 'unpaid' || status == 'cancelled';
-    
-    final memberDiscountPercent = member != null ? (member!['discount'] as num).toDouble() : 0.0;
+
+    final memberDiscountPercent = member != null
+        ? (member!['discount'] as num).toDouble()
+        : 0.0;
     final dPlay = isUnpaid ? 0.0 : discountPlayPercent;
     final dService = isUnpaid ? 0.0 : discountServicePercent;
     final dBill = isUnpaid ? 0.0 : discountBillPercent;
     final dMember = isUnpaid ? 0.0 : memberDiscountPercent;
 
-    final productTotal = products.fold(0.0,
-        (sum, p) => sum + ((p['price'] as num?)?.toDouble() ?? 0.0) * ((p['qty'] as num?)?.toInt() ?? 0));
+    final productTotal = products.fold(
+      0.0,
+      (sum, p) =>
+          sum +
+          ((p['price'] as num?)?.toDouble() ?? 0.0) *
+              ((p['qty'] as num?)?.toInt() ?? 0),
+    );
 
     final playDiscountAmount = playAmount * (dPlay / 100.0);
     final serviceDiscountAmount = productTotal * (dService / 100.0);
     final billDiscountPercentTotal = (dBill + dMember).clamp(0.0, 100.0);
-    final billDiscountAmount = (playAmount + productTotal - playDiscountAmount - serviceDiscountAmount) * (billDiscountPercentTotal / 100.0);
+    final billDiscountAmount =
+        (playAmount +
+            productTotal -
+            playDiscountAmount -
+            serviceDiscountAmount) *
+        (billDiscountPercentTotal / 100.0);
 
-    final effectiveDiscount = isUnpaid ? totalAmount : (playDiscountAmount + serviceDiscountAmount + billDiscountAmount);
-    final effectiveNet = isUnpaid ? 0.0 : (playAmount + productTotal - effectiveDiscount);
+    double calculatedDiscount =
+        playDiscountAmount + serviceDiscountAmount + billDiscountAmount;
+    if (calculatedDiscount == 0.0 && discountAmount > 0.0) {
+      calculatedDiscount = discountAmount;
+    }
+
+    final effectiveDiscount = isUnpaid ? totalAmount : calculatedDiscount;
+    final effectiveNet = isUnpaid
+        ? 0.0
+        : (netTotal > 0.0
+              ? netTotal
+              : (playAmount + productTotal - effectiveDiscount));
     final hasDiscount = effectiveDiscount > 0;
 
     final mono = pw.TextStyle(
@@ -382,8 +411,8 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                   alignment: t.logoPosition == 'left'
                       ? pw.Alignment.centerLeft
                       : t.logoPosition == 'right'
-                          ? pw.Alignment.centerRight
-                          : pw.Alignment.center,
+                      ? pw.Alignment.centerRight
+                      : pw.Alignment.center,
                   child: pw.Image(
                     logoImage,
                     height: t.logoHeight.toDouble().clamp(30.0, 120.0),
@@ -400,8 +429,8 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                   textAlign: t.alignStoreName == 'left'
                       ? pw.TextAlign.left
                       : t.alignStoreName == 'right'
-                          ? pw.TextAlign.right
-                          : pw.TextAlign.center,
+                      ? pw.TextAlign.right
+                      : pw.TextAlign.center,
                   style: pw.TextStyle(
                     font: fontBold,
                     fontSize: _storeNameFs(t.fontSizeStoreName),
@@ -418,8 +447,8 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                   textAlign: t.alignAddress == 'left'
                       ? pw.TextAlign.left
                       : t.alignAddress == 'right'
-                          ? pw.TextAlign.right
-                          : pw.TextAlign.center,
+                      ? pw.TextAlign.right
+                      : pw.TextAlign.center,
                   style: pw.TextStyle(
                     font: fontRegular,
                     fontSize: bfs - 0.5,
@@ -436,12 +465,9 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                   textAlign: t.alignPhone == 'left'
                       ? pw.TextAlign.left
                       : t.alignPhone == 'right'
-                          ? pw.TextAlign.right
-                          : pw.TextAlign.center,
-                  style: pw.TextStyle(
-                    font: fontRegular,
-                    fontSize: bfs - 0.5,
-                  ),
+                      ? pw.TextAlign.right
+                      : pw.TextAlign.center,
+                  style: pw.TextStyle(font: fontRegular, fontSize: bfs - 0.5),
                 ),
               ],
 
@@ -454,8 +480,8 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                 textAlign: t.alignTitle == 'left'
                     ? pw.TextAlign.left
                     : t.alignTitle == 'right'
-                        ? pw.TextAlign.right
-                        : pw.TextAlign.center,
+                    ? pw.TextAlign.right
+                    : pw.TextAlign.center,
                 style: pw.TextStyle(
                   font: fontBold,
                   fontSize: _titleFs(t.fontSizeTitle),
@@ -481,12 +507,13 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                 _pdfMetaRow(
                   'Khách hàng:',
                   '${member!['full_name'] ?? member!['name'] ?? ''}'
-                  '${(member!['tier'] ?? member!['tier_name']) != null ? ' (${member!['tier'] ?? member!['tier_name']})' : ''}',
+                      '${(member!['tier'] ?? member!['tier_name']) != null ? ' (${member!['tier'] ?? member!['tier_name']})' : ''}',
                   mono,
                   monoBold,
                 ),
               ],
-              if (t.showCheckinCheckout && (hourlyRate > 0 || playMinutes > 0 || playAmount > 0)) ...[
+              if (t.showCheckinCheckout &&
+                  (hourlyRate > 0 || playMinutes > 0 || playAmount > 0)) ...[
                 _pdfMetaRow(
                   'Giờ vào / ra:',
                   '${_fmtTime(startTime)} - ${_fmtTime(endTime)}',
@@ -494,8 +521,14 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                   monoBold,
                 ),
               ],
-              if (t.showDuration && (hourlyRate > 0 || playMinutes > 0 || playAmount > 0)) ...[
-                _pdfMetaRow('Thời lượng chơi:', _fmtDuration(playMinutes), mono, monoBold),
+              if (t.showDuration &&
+                  (hourlyRate > 0 || playMinutes > 0 || playAmount > 0)) ...[
+                _pdfMetaRow(
+                  'Thời lượng chơi:',
+                  _fmtDuration(playMinutes),
+                  mono,
+                  monoBold,
+                ),
               ],
 
               pw.SizedBox(height: 6),
@@ -520,14 +553,23 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                 final name = p['name']?.toString() ?? 'Sản phẩm';
                 final qty = (p['qty'] as int?) ?? 0;
                 final price = (p['price'] as double?) ?? 0.0;
-                return _pdfItemRow(name, '$qty', _fmtCurrency(price * qty), mono);
+                return _pdfItemRow(
+                  name,
+                  '$qty',
+                  _fmtCurrency(price * qty),
+                  mono,
+                );
               }),
 
               pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
 
               // Tổng kết
               if (isUnpaid) ...[
-                _pdfSummaryRow('Cộng tiền hàng:', _fmtCurrency(totalAmount), mono),
+                _pdfSummaryRow(
+                  'Cộng tiền hàng:',
+                  _fmtCurrency(totalAmount),
+                  mono,
+                ),
                 _pdfSummaryRow(
                   'Chiết khấu không thanh toán (100%):',
                   '-${_fmtCurrency(totalAmount)}',
@@ -535,7 +577,11 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                 ),
                 pw.SizedBox(height: 2),
               ] else if (effectiveDiscount > 0) ...[
-                _pdfSummaryRow('Cộng tiền hàng:', _fmtCurrency(totalAmount), mono),
+                _pdfSummaryRow(
+                  'Cộng tiền hàng:',
+                  _fmtCurrency(totalAmount),
+                  mono,
+                ),
                 if (dPlay > 0)
                   _pdfSummaryRow(
                     'Chiết khấu giờ chơi (${dPlay.toInt()}%):',
@@ -550,8 +596,18 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                   ),
                 if (dBill > 0 || dMember > 0)
                   _pdfSummaryRow(
-                    dMember > 0 ? 'Chiết khấu HĐ & TV (${(dBill + dMember).toInt()}%):' : 'Chiết khấu hóa đơn (${dBill.toInt()}%):',
+                    dMember > 0
+                        ? 'Chiết khấu HĐ & TV (${(dBill + dMember).toInt()}%):'
+                        : 'Chiết khấu hóa đơn (${dBill.toInt()}%):',
                     '-${_fmtCurrency(billDiscountAmount)}',
+                    mono,
+                  ),
+                if (dPlay == 0 && dService == 0 && dBill == 0 && dMember == 0)
+                  _pdfSummaryRow(
+                    discountPercent > 0
+                        ? 'Chiết khấu (${discountPercent.toInt()}%):'
+                        : 'Chiết khấu / Giảm giá:',
+                    '-${_fmtCurrency(effectiveDiscount)}',
                     mono,
                   ),
                 pw.SizedBox(height: 2),
@@ -571,10 +627,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                 pw.Text(
                   isUnpaid ? 'Lý do:' : 'Ghi chú:',
                   textAlign: pw.TextAlign.center,
-                  style: pw.TextStyle(
-                    font: fontBold,
-                    fontSize: bfs - 0.5,
-                  ),
+                  style: pw.TextStyle(font: fontBold, fontSize: bfs - 0.5),
                 ),
                 pw.SizedBox(height: 2),
                 pw.Text(
@@ -595,10 +648,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                 pw.Text(
                   'MÃ QR THANH TOÁN QUÉT NHANH',
                   textAlign: pw.TextAlign.center,
-                  style: pw.TextStyle(
-                    font: fontBold,
-                    fontSize: bfs - 0.5,
-                  ),
+                  style: pw.TextStyle(font: fontBold, fontSize: bfs - 0.5),
                 ),
                 pw.SizedBox(height: 8),
                 pw.Center(
@@ -625,10 +675,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                   'STK: ${t.qrAccountNumber}'
                   '${t.qrAccountName != null && t.qrAccountName!.isNotEmpty ? '\nTên: ${t.qrAccountName}' : ''}',
                   textAlign: pw.TextAlign.center,
-                  style: pw.TextStyle(
-                    font: fontRegular,
-                    fontSize: bfs - 1,
-                  ),
+                  style: pw.TextStyle(font: fontRegular, fontSize: bfs - 1),
                 ),
               ],
 
@@ -641,8 +688,8 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                   textAlign: t.alignFooter == 'left'
                       ? pw.TextAlign.left
                       : t.alignFooter == 'right'
-                          ? pw.TextAlign.right
-                          : pw.TextAlign.center,
+                      ? pw.TextAlign.right
+                      : pw.TextAlign.center,
                   style: pw.TextStyle(
                     font: fontRegular,
                     fontSize: bfs,
@@ -660,7 +707,12 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     return pdf.save();
   }
 
-  pw.Widget _pdfMetaRow(String label, String value, pw.TextStyle labelStyle, pw.TextStyle valStyle) {
+  pw.Widget _pdfMetaRow(
+    String label,
+    String value,
+    pw.TextStyle labelStyle,
+    pw.TextStyle valStyle,
+  ) {
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
       child: pw.Row(
@@ -680,7 +732,13 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     );
   }
 
-  pw.Widget _pdfItemRow(String name, String qty, String amount, pw.TextStyle style, {bool isHeader = false}) {
+  pw.Widget _pdfItemRow(
+    String name,
+    String qty,
+    String amount,
+    pw.TextStyle style, {
+    bool isHeader = false,
+  }) {
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(vertical: 2),
       child: pw.Row(
@@ -688,11 +746,13 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
         children: [
           pw.Expanded(flex: 6, child: pw.Text(name, style: style)),
           pw.SizedBox(
-              width: 36,
-              child: pw.Text(qty, style: style, textAlign: pw.TextAlign.right)),
+            width: 36,
+            child: pw.Text(qty, style: style, textAlign: pw.TextAlign.right),
+          ),
           pw.SizedBox(
-              width: 72,
-              child: pw.Text(amount, style: style, textAlign: pw.TextAlign.right)),
+            width: 72,
+            child: pw.Text(amount, style: style, textAlign: pw.TextAlign.right),
+          ),
         ],
       ),
     );
@@ -717,7 +777,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('default_printer_name', printer.name);
         await prefs.setString('default_printer_url', printer.url);
-        
+
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -778,7 +838,9 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Đã gửi lệnh in trực tiếp đến: $defaultPrinterName'),
+                  content: Text(
+                    'Đã gửi lệnh in trực tiếp đến: $defaultPrinterName',
+                  ),
                   backgroundColor: AppColors.success,
                   duration: const Duration(seconds: 2),
                   behavior: SnackBarBehavior.floating,
@@ -815,8 +877,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     final templateAsync = ref.watch(invoiceTemplateProvider);
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
       child: templateAsync.when(
         loading: () => _shell(
           context,
@@ -840,7 +901,11 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
 
   // ─── Outer shell ─────────────────────────────────────────────────────────────
 
-  Widget _shell(BuildContext context, InvoiceTemplate t, {required Widget child}) {
+  Widget _shell(
+    BuildContext context,
+    InvoiceTemplate t, {
+    required Widget child,
+  }) {
     final screenWidth = MediaQuery.of(context).size.width;
     final dialogWidth = screenWidth > 420 ? 380.0 : screenWidth - 40;
     return Container(
@@ -867,34 +932,44 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(18, 14, 10, 14),
             decoration: BoxDecoration(
               color: AppColors.primary.withValues(alpha: 0.92),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(20)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
             ),
             child: Row(
               children: [
-                const Icon(Icons.receipt_long_rounded,
-                    color: Colors.white, size: 22),
+                const Icon(
+                  Icons.receipt_long_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
                 const SizedBox(width: 10),
                 const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('XEM TRƯỚC HÓA ĐƠN',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 14,
-                            letterSpacing: 0.5,
-                          )),
-                      Text('Mẫu in K80 · 80mm',
-                          style: TextStyle(
-                              color: Colors.white70, fontSize: 11)),
+                      Text(
+                        'XEM TRƯỚC HÓA ĐƠN',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      Text(
+                        'Mẫu in K80 · 80mm',
+                        style: TextStyle(color: Colors.white70, fontSize: 11),
+                      ),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close,
-                      color: Colors.white70, size: 20),
+                  icon: const Icon(
+                    Icons.close,
+                    color: Colors.white70,
+                    size: 20,
+                  ),
                   onPressed: () => Navigator.of(context).pop(),
                   tooltip: 'Đóng',
                 ),
@@ -915,8 +990,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
             decoration: const BoxDecoration(
               color: Color(0xFF0F1923),
-              borderRadius: BorderRadius.vertical(
-                  bottom: Radius.circular(20)),
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
             ),
             child: Row(
               children: [
@@ -927,9 +1001,13 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.accent,
                       side: const BorderSide(color: AppColors.accent, width: 1),
-                      padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 10),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 13,
+                        horizontal: 10,
+                      ),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     child: const Icon(Icons.print_disabled_outlined, size: 20),
                   ),
@@ -943,7 +1021,8 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                       side: const BorderSide(color: Colors.white24),
                       padding: const EdgeInsets.symmetric(vertical: 13),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     child: const Text('Đóng'),
                   ),
@@ -961,7 +1040,8 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(vertical: 13),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
@@ -1002,13 +1082,22 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
           .replaceAll(RegExp(r'[^\w\s\u00C0-\u1EF9]'), '')
           .replaceAll(RegExp(r'\s+'), '');
 
-      if (norm.contains('vietcombank') || norm.contains('vcb') || norm.contains('vietcom')) {
+      if (norm.contains('vietcombank') ||
+          norm.contains('vcb') ||
+          norm.contains('vietcom')) {
         bin = '970436';
-      } else if (norm.contains('vietinbank') || norm.contains('vietin') || norm.contains('icb') || norm.contains('ctg')) {
+      } else if (norm.contains('vietinbank') ||
+          norm.contains('vietin') ||
+          norm.contains('icb') ||
+          norm.contains('ctg')) {
         bin = '970415';
-      } else if (norm.contains('techcombank') || norm.contains('tcb') || norm.contains('techcom')) {
+      } else if (norm.contains('techcombank') ||
+          norm.contains('tcb') ||
+          norm.contains('techcom')) {
         bin = '970407';
-      } else if (norm.contains('agribank') || norm.contains('agri') || norm.contains('vba')) {
+      } else if (norm.contains('agribank') ||
+          norm.contains('agri') ||
+          norm.contains('vba')) {
         bin = '970405';
       } else if (norm.contains('mbbank') || norm.contains('mb')) {
         bin = '970422';
@@ -1020,7 +1109,9 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
         bin = '970432';
       } else if (norm.contains('tpbank') || norm.contains('tpb')) {
         bin = '970423';
-      } else if (norm.contains('sacombank') || norm.contains('stb') || norm.contains('sacom')) {
+      } else if (norm.contains('sacombank') ||
+          norm.contains('stb') ||
+          norm.contains('sacom')) {
         bin = '970403';
       } else if (norm.contains('hdbank') || norm.contains('hdb')) {
         bin = '970437';
@@ -1048,7 +1139,10 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
         bin = '970431';
       } else if (norm.contains('baovietbank') || norm.contains('bvb')) {
         bin = '970438';
-      } else if (norm.contains('lpbank') || norm.contains('lpb') || norm.contains('lienviet') || norm.contains('lienvietpostbank')) {
+      } else if (norm.contains('lpbank') ||
+          norm.contains('lpb') ||
+          norm.contains('lienviet') ||
+          norm.contains('lienvietpostbank')) {
         bin = '970449';
       } else if (norm.contains('kienlong') || norm.contains('klb')) {
         bin = '970452';
@@ -1084,8 +1178,8 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     //   Sub-sub-tag 00: BIN ngân hàng
     //   Sub-sub-tag 01: Số tài khoản
     final bankBinSub = tlv('00', bin);
-    final acctSub    = tlv('01', cleanAcc);
-    final netSub     = tlv('01', '$bankBinSub$acctSub');
+    final acctSub = tlv('01', cleanAcc);
+    final netSub = tlv('01', '$bankBinSub$acctSub');
 
     // Sub-tag 02: Service code cố định
     final serviceSub = tlv('02', 'QRIBFTTA');
@@ -1112,14 +1206,15 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     final pointOfInitiation = amountVnd > 0 ? '010212' : '010211';
 
     // ── Ghép payload (không có CRC value) ─────────────────────────────────────
-    final payload = '000201'     // Payload Format Indicator = 01
-        '$pointOfInitiation'     // Point of Initiation = 12 (dynamic) or 11 (static)
-        '$merchantInfo'          // Tag 38
-        '5303704'                // Currency = 704 (VND)
-        '$amountField'           // Tag 54 (nếu có)
-        '5802VN'                 // Country = VN
-        '$addInfoField'          // Tag 62 (nếu có)
-        '6304';                  // CRC tag prefix (value tính bên dưới)
+    final payload =
+        '000201' // Payload Format Indicator = 01
+        '$pointOfInitiation' // Point of Initiation = 12 (dynamic) or 11 (static)
+        '$merchantInfo' // Tag 38
+        '5303704' // Currency = 704 (VND)
+        '$amountField' // Tag 54 (nếu có)
+        '5802VN' // Country = VN
+        '$addInfoField' // Tag 62 (nếu có)
+        '6304'; // CRC tag prefix (value tính bên dưới)
 
     // ── CRC-16/CCITT-FALSE ─────────────────────────────────────────────────────
     // poly = 0x1021, init = 0xFFFF, no reflection (MSB-first)
@@ -1142,22 +1237,44 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     final isUnpaid = status == 'unpaid' || status == 'cancelled';
 
     // Effective values
-    final memberDiscountPercent = member != null ? (member!['discount'] as num).toDouble() : 0.0;
+    final memberDiscountPercent = member != null
+        ? (member!['discount'] as num).toDouble()
+        : 0.0;
     final dPlay = isUnpaid ? 0.0 : discountPlayPercent;
     final dService = isUnpaid ? 0.0 : discountServicePercent;
     final dBill = isUnpaid ? 0.0 : discountBillPercent;
     final dMember = isUnpaid ? 0.0 : memberDiscountPercent;
 
-    final productTotal = products.fold(0.0,
-        (sum, p) => sum + ((p['price'] as num?)?.toDouble() ?? 0.0) * ((p['qty'] as num?)?.toInt() ?? 0));
+    final productTotal = products.fold(
+      0.0,
+      (sum, p) =>
+          sum +
+          ((p['price'] as num?)?.toDouble() ?? 0.0) *
+              ((p['qty'] as num?)?.toInt() ?? 0),
+    );
 
     final playDiscountAmount = playAmount * (dPlay / 100.0);
     final serviceDiscountAmount = productTotal * (dService / 100.0);
     final billDiscountPercentTotal = (dBill + dMember).clamp(0.0, 100.0);
-    final billDiscountAmount = (playAmount + productTotal - playDiscountAmount - serviceDiscountAmount) * (billDiscountPercentTotal / 100.0);
+    final billDiscountAmount =
+        (playAmount +
+            productTotal -
+            playDiscountAmount -
+            serviceDiscountAmount) *
+        (billDiscountPercentTotal / 100.0);
 
-    final effectiveDiscount = isUnpaid ? totalAmount : (playDiscountAmount + serviceDiscountAmount + billDiscountAmount);
-    final effectiveNet = isUnpaid ? 0.0 : (playAmount + productTotal - effectiveDiscount);
+    double calculatedDiscount =
+        playDiscountAmount + serviceDiscountAmount + billDiscountAmount;
+    if (calculatedDiscount == 0.0 && discountAmount > 0.0) {
+      calculatedDiscount = discountAmount;
+    }
+
+    final effectiveDiscount = isUnpaid ? totalAmount : calculatedDiscount;
+    final effectiveNet = isUnpaid
+        ? 0.0
+        : (netTotal > 0.0
+              ? netTotal
+              : (playAmount + productTotal - effectiveDiscount));
     final hasDiscount = effectiveDiscount > 0;
 
     final mono = TextStyle(
@@ -1174,12 +1291,21 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: mono.copyWith(fontSize: bfs - 0.5, color: const Color(0xFF5A5A5A))),
+            Text(
+              label,
+              style: mono.copyWith(
+                fontSize: bfs - 0.5,
+                color: const Color(0xFF5A5A5A),
+              ),
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 value,
-                style: mono.copyWith(fontSize: bfs - 0.5, color: const Color(0xFF1A1A1A)),
+                style: mono.copyWith(
+                  fontSize: bfs - 0.5,
+                  color: const Color(0xFF1A1A1A),
+                ),
                 textAlign: TextAlign.right,
               ),
             ),
@@ -1189,29 +1315,30 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     }
 
     Widget dashedDiv() => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: CustomPaint(
-            size: const Size(double.infinity, 1),
-            painter: _DashedLinePainter(
-              color: Colors.black26,
-              dashWidth: 4,
-              dashGap: 3,
-            ),
-          ),
-        );
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: CustomPaint(
+        size: const Size(double.infinity, 1),
+        painter: _DashedLinePainter(
+          color: Colors.black26,
+          dashWidth: 4,
+          dashGap: 3,
+        ),
+      ),
+    );
 
     Widget solidDiv() => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child:
-              Divider(height: 1, thickness: 0.8, color: Colors.black26),
-        );
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Divider(height: 1, thickness: 0.8, color: Colors.black26),
+    );
 
     // Table row: Name | Qty | Amount
-    Widget itemRow(String name, String qty, String amount,
-        {bool isHeader = false}) {
-      final s = isHeader
-          ? mono.copyWith(fontWeight: FontWeight.w700)
-          : mono;
+    Widget itemRow(
+      String name,
+      String qty,
+      String amount, {
+      bool isHeader = false,
+    }) {
+      final s = isHeader ? mono.copyWith(fontWeight: FontWeight.w700) : mono;
       return Padding(
         padding: EdgeInsets.symmetric(vertical: isHeader ? 2 : lh),
         child: Row(
@@ -1219,26 +1346,31 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
           children: [
             Expanded(flex: 6, child: Text(name, style: s)),
             SizedBox(
-                width: 36,
-                child:
-                    Text(qty, style: s, textAlign: TextAlign.right)),
+              width: 36,
+              child: Text(qty, style: s, textAlign: TextAlign.right),
+            ),
             SizedBox(
-                width: 72,
-                child: Text(amount,
-                    style: s, textAlign: TextAlign.right)),
+              width: 72,
+              child: Text(amount, style: s, textAlign: TextAlign.right),
+            ),
           ],
         ),
       );
     }
 
     // Summary row (totals area)
-    Widget summaryRow(String label, String value,
-        {bool bold = false, Color? color}) {
+    Widget summaryRow(
+      String label,
+      String value, {
+      bool bold = false,
+      Color? color,
+    }) {
       final s = bold
           ? mono.copyWith(
               fontWeight: FontWeight.w900,
               fontSize: bfs + 1,
-              color: color ?? Colors.black)
+              color: color ?? Colors.black,
+            )
           : mono.copyWith(color: color ?? Colors.black87);
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
@@ -1253,21 +1385,23 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
 
     // ── Asset logo image ─────────────────────────────────────────────────────
     Widget logoWidget() => Image.asset(
-          'assets/images/logo.png',
-          height: t.logoHeight.toDouble().clamp(30.0, 120.0),
-          width: t.logoWidth.toDouble().clamp(30.0, 300.0),
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
-        );
+      'assets/images/logo.png',
+      height: t.logoHeight.toDouble().clamp(30.0, 120.0),
+      width: t.logoWidth.toDouble().clamp(30.0, 300.0),
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+    );
 
     // ── Cached QR static image ────────────────────────────────────────────────
     Widget qrStaticWidget() => _CachedNetworkImage(
-          url: t.qrStaticUrl!,
-          height: 120,
-          fit: BoxFit.contain,
-          errorWidget: () => Text('[QR không tải được]',
-              style: mono.copyWith(color: Colors.black38)),
-        );
+      url: t.qrStaticUrl!,
+      height: 120,
+      fit: BoxFit.contain,
+      errorWidget: () => Text(
+        '[QR không tải được]',
+        style: mono.copyWith(color: Colors.black38),
+      ),
+    );
 
     // Dynamic VietQR — vẽ offline bằng qr_flutter (không cần internet)
     Widget qrDynamicWidget() {
@@ -1321,8 +1455,8 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               alignment: t.logoPosition == 'left'
                   ? Alignment.centerLeft
                   : t.logoPosition == 'right'
-                      ? Alignment.centerRight
-                      : Alignment.center,
+                  ? Alignment.centerRight
+                  : Alignment.center,
               child: logoWidget(),
             ),
             const SizedBox(height: 4),
@@ -1348,9 +1482,10 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               t.address!,
               textAlign: _toTextAlign(t.alignAddress),
               style: mono.copyWith(
-                  fontSize: bfs - 0.5,
-                  color: const Color(0xFF3A3A3A),
-                  height: 1.3),
+                fontSize: bfs - 0.5,
+                color: const Color(0xFF3A3A3A),
+                height: 1.3,
+              ),
             ),
           ],
 
@@ -1361,7 +1496,9 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               'ĐT: ${t.phone}',
               textAlign: _toTextAlign(t.alignPhone),
               style: mono.copyWith(
-                  fontSize: bfs - 0.5, color: const Color(0xFF3A3A3A)),
+                fontSize: bfs - 0.5,
+                color: const Color(0xFF3A3A3A),
+              ),
             ),
           ],
 
@@ -1388,23 +1525,23 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               '$cashierName${shiftLabel != null ? ' ($shiftLabel)' : ''}',
             ),
           ],
-          if (t.showTableName) ...[
-            metaRow('Bàn:', tableName),
-          ],
+          if (t.showTableName) ...[metaRow('Bàn:', tableName)],
           if (t.showCustomer && member != null) ...[
             metaRow(
               'Khách hàng:',
               '${member!['full_name'] ?? member!['name'] ?? ''}'
-              '${(member!['tier'] ?? member!['tier_name']) != null ? ' (${member!['tier'] ?? member!['tier_name']})' : ''}',
+                  '${(member!['tier'] ?? member!['tier_name']) != null ? ' (${member!['tier'] ?? member!['tier_name']})' : ''}',
             ),
           ],
-          if (t.showCheckinCheckout && (hourlyRate > 0 || playMinutes > 0 || playAmount > 0)) ...[
+          if (t.showCheckinCheckout &&
+              (hourlyRate > 0 || playMinutes > 0 || playAmount > 0)) ...[
             metaRow(
               'Giờ vào / ra:',
               '${_fmtTime(startTime)} - ${_fmtTime(endTime)}',
             ),
           ],
-          if (t.showDuration && (hourlyRate > 0 || playMinutes > 0 || playAmount > 0)) ...[
+          if (t.showDuration &&
+              (hourlyRate > 0 || playMinutes > 0 || playAmount > 0)) ...[
             metaRow('Thời lượng chơi:', _fmtDuration(playMinutes)),
           ],
 
@@ -1457,8 +1594,18 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               ),
             if (dBill > 0 || dMember > 0)
               summaryRow(
-                dMember > 0 ? 'Chiết khấu HĐ & TV (${(dBill + dMember).toInt()}%):' : 'Chiết khấu hóa đơn (${dBill.toInt()}%):',
+                dMember > 0
+                    ? 'Chiết khấu HĐ & TV (${(dBill + dMember).toInt()}%):'
+                    : 'Chiết khấu hóa đơn (${dBill.toInt()}%):',
                 '-${_fmtCurrency(billDiscountAmount)}',
+                color: const Color(0xFFD97706),
+              ),
+            if (dPlay == 0 && dService == 0 && dBill == 0 && dMember == 0)
+              summaryRow(
+                discountPercent > 0
+                    ? 'Chiết khấu (${discountPercent.toInt()}%):'
+                    : 'Chiết khấu / Giảm giá:',
+                '-${_fmtCurrency(effectiveDiscount)}',
                 color: const Color(0xFFD97706),
               ),
             const SizedBox(height: 2),
@@ -1469,9 +1616,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
             'TỔNG CỘNG:',
             _fmtCurrency(effectiveNet),
             bold: true,
-            color: isUnpaid
-                ? const Color(0xFFDC2626)
-                : const Color(0xFF2E4F4F),
+            color: isUnpaid ? const Color(0xFFDC2626) : const Color(0xFF2E4F4F),
           ),
 
           // ── GHI CHÚ / LÝ DO (không có badge trạng thái) ─────────────────
@@ -1481,18 +1626,20 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               isUnpaid ? 'Lý do:' : 'Ghi chú:',
               textAlign: TextAlign.center,
               style: mono.copyWith(
-                  fontSize: bfs - 0.5,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF3A3A3A)),
+                fontSize: bfs - 0.5,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF3A3A3A),
+              ),
             ),
             const SizedBox(height: 2),
             Text(
               note!.trim(),
               textAlign: TextAlign.center,
               style: mono.copyWith(
-                  fontSize: bfs - 0.5,
-                  color: const Color(0xFF3A3A3A),
-                  fontStyle: FontStyle.italic),
+                fontSize: bfs - 0.5,
+                color: const Color(0xFF3A3A3A),
+                fontStyle: FontStyle.italic,
+              ),
             ),
           ],
 
@@ -1503,7 +1650,9 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               'MÃ QR THANH TOÁN QUÉT NHANH',
               textAlign: TextAlign.center,
               style: mono.copyWith(
-                  fontSize: bfs - 0.5, fontWeight: FontWeight.w700),
+                fontSize: bfs - 0.5,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 8),
 
@@ -1523,7 +1672,9 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                 '${t.qrAccountName != null && t.qrAccountName!.isNotEmpty ? '\nTên: ${t.qrAccountName}' : ''}',
                 textAlign: TextAlign.center,
                 style: mono.copyWith(
-                    fontSize: bfs - 1, color: const Color(0xFF3A3A3A)),
+                  fontSize: bfs - 1,
+                  color: const Color(0xFF3A3A3A),
+                ),
               ),
             ],
           ],
@@ -1535,9 +1686,10 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               t.footerMessage!,
               textAlign: _toTextAlign(t.alignFooter),
               style: mono.copyWith(
-                  fontSize: bfs,
-                  color: const Color(0xFF3A3A3A),
-                  fontStyle: FontStyle.italic),
+                fontSize: bfs,
+                color: const Color(0xFF3A3A3A),
+                fontStyle: FontStyle.italic,
+              ),
             ),
           ],
 
