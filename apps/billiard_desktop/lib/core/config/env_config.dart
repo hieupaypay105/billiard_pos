@@ -155,7 +155,7 @@ class EnvConfig {
     defaultValue: '/invoice/template',
   );
 
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '1.0.1';
 
   static const String appCheckUpdate = String.fromEnvironment(
     'APP_CHECK_UPDATE',
