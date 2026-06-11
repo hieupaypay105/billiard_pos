@@ -86,14 +86,23 @@ void main() {
 
     test('applyDiscount and removeDiscount updates state', () {
       final notifier = container.read(tablesProvider.notifier);
-      notifier.applyDiscount('t-1', 15.0);
+      notifier.applyDiscount(
+        't-1',
+        playPercent: 10.0,
+        servicePercent: 12.0,
+        billPercent: 15.0,
+      );
 
       var state = container.read(tablesProvider);
-      expect(state.tableDiscounts['t-1'], 15.0);
+      expect(state.tablePlayDiscounts['t-1'], 10.0);
+      expect(state.tableServiceDiscounts['t-1'], 12.0);
+      expect(state.tableBillDiscounts['t-1'], 15.0);
 
       notifier.removeDiscount('t-1');
       state = container.read(tablesProvider);
-      expect(state.tableDiscounts.containsKey('t-1'), isFalse);
+      expect(state.tablePlayDiscounts.containsKey('t-1'), isFalse);
+      expect(state.tableServiceDiscounts.containsKey('t-1'), isFalse);
+      expect(state.tableBillDiscounts.containsKey('t-1'), isFalse);
     });
 
     test('applyMember and removeMember updates state', () {
@@ -128,15 +137,20 @@ void main() {
       });
 
       // Setup manual discount of 15.0%
-      notifier.applyDiscount('t-1', 15.0);
+      notifier.applyDiscount(
+        't-1',
+        playPercent: 0.0,
+        servicePercent: 0.0,
+        billPercent: 15.0,
+      );
 
       final state = container.read(tablesProvider);
       final member = state.tableMembers['t-1'];
       final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
-      final manualDiscountPercent = state.tableDiscounts['t-1'] ?? 0.0;
+      final discountBillPercent = state.tableBillDiscounts['t-1'] ?? 0.0;
       
       // Calculate stacked discount percentage (clamped to 100)
-      final discountPercent = (memberDiscountPercent + manualDiscountPercent).clamp(0.0, 100.0);
+      final discountPercent = (memberDiscountPercent + discountBillPercent).clamp(0.0, 100.0);
       expect(discountPercent, 20.0); // 5.0 + 15.0
     });
   });

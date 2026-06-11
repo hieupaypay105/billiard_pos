@@ -14,13 +14,17 @@ class DiscountPanel extends ConsumerStatefulWidget {
 
 class _DiscountPanelState extends ConsumerState<DiscountPanel> {
   final _codeCtrl = TextEditingController();
-  final _percentCtrl = TextEditingController();
-  double _manualPercent = 0;
+  final _playCtrl = TextEditingController();
+  final _serviceCtrl = TextEditingController();
+  final _billCtrl = TextEditingController();
+  
+  double _playPercent = 0.0;
+  double _servicePercent = 0.0;
+  double _billPercent = 0.0;
+  
   bool _isVerifying = false;
   String? _appliedCode;
   String? _errorMsg;
-
-  final _presets = [5.0, 10.0, 15.0, 20.0];
 
   @override
   void initState() {
@@ -28,30 +32,42 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final tablesState = ref.read(tablesProvider);
-      double currentDiscount = 0.0;
-      if (tablesState.tableDiscounts.containsKey(widget.tableId)) {
-        currentDiscount = tablesState.tableDiscounts[widget.tableId] ?? 0.0;
+      double playD = 0.0;
+      double serviceD = 0.0;
+      double billD = 0.0;
+      
+      if (tablesState.tablePlayDiscounts.containsKey(widget.tableId)) {
+        playD = tablesState.tablePlayDiscounts[widget.tableId] ?? 0.0;
+        serviceD = tablesState.tableServiceDiscounts[widget.tableId] ?? 0.0;
+        billD = tablesState.tableBillDiscounts[widget.tableId] ?? 0.0;
       } else {
         final invIndex = tablesState.unpaidInvoices.indexWhere((inv) => inv.id == widget.tableId);
         if (invIndex >= 0) {
-          currentDiscount = tablesState.unpaidInvoices[invIndex].manualDiscountPercent;
+          final inv = tablesState.unpaidInvoices[invIndex];
+          playD = inv.discountPlayPercent;
+          serviceD = inv.discountServicePercent;
+          billD = inv.discountBillPercent;
         }
       }
-      if (currentDiscount > 0) {
-        setState(() {
-          _manualPercent = currentDiscount;
-          _percentCtrl.text = currentDiscount % 1 == 0
-              ? currentDiscount.toInt().toString()
-              : currentDiscount.toString();
-        });
-      }
+      
+      setState(() {
+        _playPercent = playD;
+        _servicePercent = serviceD;
+        _billPercent = billD;
+        
+        _playCtrl.text = playD > 0 ? (playD % 1 == 0 ? playD.toInt().toString() : playD.toString()) : '';
+        _serviceCtrl.text = serviceD > 0 ? (serviceD % 1 == 0 ? serviceD.toInt().toString() : serviceD.toString()) : '';
+        _billCtrl.text = billD > 0 ? (billD % 1 == 0 ? billD.toInt().toString() : billD.toString()) : '';
+      });
     });
   }
 
   @override
   void dispose() {
     _codeCtrl.dispose();
-    _percentCtrl.dispose();
+    _playCtrl.dispose();
+    _serviceCtrl.dispose();
+    _billCtrl.dispose();
     super.dispose();
   }
 
@@ -59,9 +75,13 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
     if (_codeCtrl.text.trim().isEmpty) return;
     setState(() { _isVerifying = true; _errorMsg = null; });
     await Future.delayed(const Duration(milliseconds: 500));
-    // Mock: BIDA10 = 10% off
+    // Mock: BIDA10 = 10% off total bill
     if (_codeCtrl.text.trim().toUpperCase() == 'BIDA10') {
-      setState(() { _appliedCode = 'BIDA10 (−10%)'; _manualPercent = 10; });
+      setState(() { 
+        _appliedCode = 'BIDA10 (−10% hóa đơn)'; 
+        _billPercent = 10; 
+        _billCtrl.text = '10';
+      });
     } else {
       setState(() => _errorMsg = 'Mã khuyến mãi không hợp lệ');
     }
@@ -71,15 +91,25 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
   @override
   Widget build(BuildContext context) {
     final tablesState = ref.watch(tablesProvider);
-    double currentDiscount = 0.0;
-    if (tablesState.tableDiscounts.containsKey(widget.tableId)) {
-      currentDiscount = tablesState.tableDiscounts[widget.tableId] ?? 0.0;
+    double currentDiscountPlay = 0.0;
+    double currentDiscountService = 0.0;
+    double currentDiscountBill = 0.0;
+    
+    if (tablesState.tablePlayDiscounts.containsKey(widget.tableId)) {
+      currentDiscountPlay = tablesState.tablePlayDiscounts[widget.tableId] ?? 0.0;
+      currentDiscountService = tablesState.tableServiceDiscounts[widget.tableId] ?? 0.0;
+      currentDiscountBill = tablesState.tableBillDiscounts[widget.tableId] ?? 0.0;
     } else {
       final invIndex = tablesState.unpaidInvoices.indexWhere((inv) => inv.id == widget.tableId);
       if (invIndex >= 0) {
-        currentDiscount = tablesState.unpaidInvoices[invIndex].manualDiscountPercent;
+        final inv = tablesState.unpaidInvoices[invIndex];
+        currentDiscountPlay = inv.discountPlayPercent;
+        currentDiscountService = inv.discountServicePercent;
+        currentDiscountBill = inv.discountBillPercent;
       }
     }
+
+    final hasActiveDiscount = currentDiscountPlay > 0 || currentDiscountService > 0 || currentDiscountBill > 0;
 
     return Dialog(
       backgroundColor: Colors.white,
@@ -87,7 +117,7 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: SizedBox(
-          width: 360,
+          width: 380,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -101,7 +131,7 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
                 IconButton(onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close, size: 20)),
               ]),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
               // Promo Code
               Text('Mã khuyến mãi', style: AppTextStyles.labelLarge),
@@ -156,53 +186,19 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
                 ),
               ],
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 12),
 
-              // Manual discount
-              Text('Giảm giá thủ công (%)', style: AppTextStyles.labelLarge),
-              const SizedBox(height: 10),
-              Row(children: _presets.map((pct) {
-                final isSel = _manualPercent == pct;
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: InkWell(
-                      onTap: () {
-                        setState(() {
-                          _manualPercent = pct;
-                          _percentCtrl.text = pct % 1 == 0 ? pct.toInt().toString() : pct.toString();
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(8),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 160),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: isSel ? AppColors.accent.withOpacity(0.1) : AppColors.surfaceVariant,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: isSel ? AppColors.accent : Colors.transparent, width: 2),
-                        ),
-                        child: Text('${pct.toInt()}%',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                fontFamily: 'Inter',
-                                fontSize: 14,
-                                fontWeight: isSel ? FontWeight.w700 : FontWeight.w400,
-                                color: isSel ? AppColors.accent : AppColors.textSecondary)),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList()),
-              const SizedBox(height: 12),
+              // Manual discounts
+              // 1. Play discount
+              Text('Chiết khấu tiền giờ chơi (%)', style: AppTextStyles.labelLarge),
+              const SizedBox(height: 8),
               TextField(
-                controller: _percentCtrl,
+                controller: _playCtrl,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: InputDecoration(
-                  hintText: 'Nhập số phần trăm khác...',
+                  hintText: 'Nhập % giảm tiền giờ...',
                   hintStyle: AppTextStyles.bodySmall,
                   suffixText: '%',
                   filled: true,
@@ -215,18 +211,75 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
                 onChanged: (val) {
                   final parsed = double.tryParse(val) ?? 0.0;
                   setState(() {
-                    _manualPercent = parsed.clamp(0.0, 100.0);
+                    _playPercent = parsed.clamp(0.0, 100.0);
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+
+              // 2. Service discount
+              Text('Chiết khấu dịch vụ (%)', style: AppTextStyles.labelLarge),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _serviceCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  hintText: 'Nhập % giảm tiền dịch vụ...',
+                  hintStyle: AppTextStyles.bodySmall,
+                  suffixText: '%',
+                  filled: true,
+                  fillColor: AppColors.surfaceVariant,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                onChanged: (val) {
+                  final parsed = double.tryParse(val) ?? 0.0;
+                  setState(() {
+                    _servicePercent = parsed.clamp(0.0, 100.0);
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+
+              // 3. Bill discount
+              Text('Chiết khấu tổng hóa đơn (%)', style: AppTextStyles.labelLarge),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _billCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  hintText: 'Nhập % giảm tổng hóa đơn...',
+                  hintStyle: AppTextStyles.bodySmall,
+                  suffixText: '%',
+                  filled: true,
+                  fillColor: AppColors.surfaceVariant,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                onChanged: (val) {
+                  final parsed = double.tryParse(val) ?? 0.0;
+                  setState(() {
+                    _billPercent = parsed.clamp(0.0, 100.0);
                   });
                 },
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   ElevatedButton(
                     onPressed: () {
-                      ref.read(tablesProvider.notifier).applyDiscount(widget.tableId, _manualPercent);
+                      ref.read(tablesProvider.notifier).applyDiscount(
+                        widget.tableId,
+                        playPercent: _playPercent,
+                        servicePercent: _servicePercent,
+                        billPercent: _billPercent,
+                      );
                       Navigator.of(context).pop();
                     },
                     style: ElevatedButton.styleFrom(
@@ -236,14 +289,12 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       elevation: 0,
                     ),
-                    child: Text(
-                      _manualPercent > 0
-                          ? 'Xác nhận giảm ${_manualPercent.toInt()}%'
-                          : 'Xác nhận',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Inter'),
+                    child: const Text(
+                      'Xác nhận',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Inter'),
                     ),
                   ),
-                  if (currentDiscount > 0) ...[
+                  if (hasActiveDiscount) ...[
                     const SizedBox(height: 12),
                     OutlinedButton(
                       onPressed: () {

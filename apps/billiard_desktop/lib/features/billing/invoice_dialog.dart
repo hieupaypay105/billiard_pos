@@ -15,7 +15,10 @@ class InvoiceDialog extends ConsumerStatefulWidget {
   final double hourlyRate;
   final List<Map<String, dynamic>> products;
   final double totalAmount;
-  final double discountPercent;
+  final double discountPlayPercent;
+  final double discountServicePercent;
+  final double discountBillPercent;
+  final double discountPercent; // Deprecated fallback
   final double discountAmount;
   final double netTotal;
   final Map<String, dynamic>? member;
@@ -39,7 +42,10 @@ class InvoiceDialog extends ConsumerStatefulWidget {
     required this.hourlyRate,
     required this.products,
     required this.totalAmount,
-    required this.discountPercent,
+    required this.discountPlayPercent,
+    required this.discountServicePercent,
+    required this.discountBillPercent,
+    this.discountPercent = 0.0,
     required this.discountAmount,
     required this.netTotal,
     this.member,
@@ -95,10 +101,35 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
     final shiftState = ref.watch(shiftProvider);
     final activeShift = shiftState.activeShift;
 
+    final member = widget.member;
+    final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
+
     final isUnpaid = _selectedStatus == 'unpaid';
-    final currentDiscountPercent = isUnpaid ? 100.0 : widget.discountPercent;
-    final currentDiscountAmount = isUnpaid ? widget.totalAmount : widget.discountAmount;
-    final currentNetTotal = isUnpaid ? 0.0 : widget.netTotal;
+
+    final dPlay = isUnpaid ? 0.0 : widget.discountPlayPercent;
+    final dService = isUnpaid ? 0.0 : widget.discountServicePercent;
+    final dBill = isUnpaid ? 0.0 : widget.discountBillPercent;
+    final dMember = isUnpaid ? 0.0 : memberDiscountPercent;
+
+    final playAmount = widget.playAmount;
+    final productTotal = widget.products.fold(0.0,
+        (sum, p) => sum + (p['price'] as double) * (p['qty'] as int));
+
+    final playDiscountAmount = playAmount * (dPlay / 100.0);
+    final serviceDiscountAmount = productTotal * (dService / 100.0);
+    final billDiscountPercentTotal = (dBill + dMember).clamp(0.0, 100.0);
+    final billDiscountAmount = (playAmount + productTotal - playDiscountAmount - serviceDiscountAmount) * (billDiscountPercentTotal / 100.0);
+
+    final currentDiscountAmount = isUnpaid 
+        ? widget.totalAmount 
+        : (playDiscountAmount + serviceDiscountAmount + billDiscountAmount);
+
+    final currentNetTotal = isUnpaid ? 0.0 : (playAmount + productTotal - currentDiscountAmount);
+    final hasAnyDiscount = isUnpaid || dPlay > 0 || dService > 0 || dBill > 0 || dMember > 0;
+    final totalPct = (dBill + dMember).toInt();
+    final billDiscountLabel = dMember > 0 
+        ? 'Chiết khấu HĐ & TV ($totalPct%)' 
+        : 'Chiết khấu hóa đơn ($totalPct%)';
 
     return Dialog(
       backgroundColor: Colors.white,
@@ -262,7 +293,7 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                     ],
 
                     const Divider(height: 16, thickness: 1),
-                    if (currentDiscountPercent > 0) ...[
+                    if (hasAnyDiscount) ...[
                       Row(children: [
                         const Text('Tạm tính', style: TextStyle(
                             fontFamily: 'Inter',
@@ -277,22 +308,76 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                                 fontSize: 12,
                                 color: AppColors.textSecondary)),
                       ]),
-                      const SizedBox(height: 4),
-                      Row(children: [
-                        Text('Chiết khấu (${currentDiscountPercent.toInt()}%)', style: const TextStyle(
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.w500,
-                            fontSize: 12,
-                            color: AppColors.accent)),
-                        const Spacer(),
-                        Text('-${_fmtCurrency(currentDiscountAmount)}',
-                            style: const TextStyle(
+                      const SizedBox(height: 6),
+                      if (isUnpaid) ...[
+                        Row(children: [
+                          const Text('Chiết khấu không thanh toán (100%)', style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontWeight: FontWeight.w500,
+                              fontSize: 12,
+                              color: AppColors.accent)),
+                          const Spacer(),
+                          Text('-${_fmtCurrency(widget.totalAmount)}',
+                              style: const TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12,
+                                  color: AppColors.accent)),
+                        ]),
+                        const SizedBox(height: 6),
+                      ] else ...[
+                        if (dPlay > 0) ...[
+                          Row(children: [
+                            Text('Chiết khấu giờ chơi (${dPlay.toInt()}%)', style: const TextStyle(
                                 fontFamily: 'Inter',
                                 fontWeight: FontWeight.w500,
                                 fontSize: 12,
                                 color: AppColors.accent)),
-                      ]),
-                      const SizedBox(height: 6),
+                            const Spacer(),
+                            Text('-${_fmtCurrency(playDiscountAmount)}',
+                                style: const TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
+                                    color: AppColors.accent)),
+                          ]),
+                          const SizedBox(height: 4),
+                        ],
+                        if (dService > 0) ...[
+                          Row(children: [
+                            Text('Chiết khấu dịch vụ (${dService.toInt()}%)', style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontWeight: FontWeight.w500,
+                                fontSize: 12,
+                                color: AppColors.accent)),
+                            const Spacer(),
+                            Text('-${_fmtCurrency(serviceDiscountAmount)}',
+                                style: const TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
+                                    color: AppColors.accent)),
+                          ]),
+                          const SizedBox(height: 4),
+                        ],
+                        if (dBill > 0 || dMember > 0) ...[
+                          Row(children: [
+                            Text(billDiscountLabel, style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontWeight: FontWeight.w500,
+                                fontSize: 12,
+                                color: AppColors.accent)),
+                            const Spacer(),
+                            Text('-${_fmtCurrency(billDiscountAmount)}',
+                                style: const TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
+                                    color: AppColors.accent)),
+                          ]),
+                          const SizedBox(height: 6),
+                        ],
+                      ],
                     ],
                     // Total
                     Row(children: [
@@ -445,7 +530,10 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                             hourlyRate: widget.hourlyRate,
                             products: widget.products,
                             totalAmount: widget.totalAmount,
-                            discountPercent: currentDiscountPercent,
+                            discountPlayPercent: isUnpaid ? 0.0 : widget.discountPlayPercent,
+                            discountServicePercent: isUnpaid ? 0.0 : widget.discountServicePercent,
+                            discountBillPercent: isUnpaid ? 0.0 : widget.discountBillPercent,
+                            discountPercent: isUnpaid ? 100.0 : widget.discountBillPercent,
                             discountAmount: currentDiscountAmount,
                             netTotal: currentNetTotal,
                             member: widget.member,

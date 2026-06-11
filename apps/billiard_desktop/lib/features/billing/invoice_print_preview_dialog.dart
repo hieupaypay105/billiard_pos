@@ -170,9 +170,12 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
   final double hourlyRate;
   final List<Map<String, dynamic>> products;
   final double totalAmount;
-  final double discountPercent;
+  final double discountPercent; // Deprecated fallback
   final double discountAmount;
   final double netTotal;
+  final double discountPlayPercent;
+  final double discountServicePercent;
+  final double discountBillPercent;
   final Map<String, dynamic>? member;
   final String cashierName;
   final String? shiftLabel;
@@ -189,9 +192,12 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     required this.hourlyRate,
     required this.products,
     required this.totalAmount,
-    required this.discountPercent,
+    this.discountPercent = 0.0,
     required this.discountAmount,
     required this.netTotal,
+    this.discountPlayPercent = 0.0,
+    this.discountServicePercent = 0.0,
+    this.discountBillPercent = 0.0,
     this.member,
     required this.cashierName,
     this.shiftLabel,
@@ -318,9 +324,23 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
 
     final bfs = _bodyFs(t.fontSize);
     final isUnpaid = status == 'unpaid' || status == 'cancelled';
-    final effectiveDiscount = isUnpaid ? totalAmount : discountAmount;
-    final effectiveDiscountPct = isUnpaid ? 100.0 : discountPercent;
-    final effectiveNet = isUnpaid ? 0.0 : netTotal;
+    
+    final memberDiscountPercent = member != null ? (member!['discount'] as num).toDouble() : 0.0;
+    final dPlay = isUnpaid ? 0.0 : discountPlayPercent;
+    final dService = isUnpaid ? 0.0 : discountServicePercent;
+    final dBill = isUnpaid ? 0.0 : discountBillPercent;
+    final dMember = isUnpaid ? 0.0 : memberDiscountPercent;
+
+    final productTotal = products.fold(0.0,
+        (sum, p) => sum + ((p['price'] as num?)?.toDouble() ?? 0.0) * ((p['qty'] as num?)?.toInt() ?? 0));
+
+    final playDiscountAmount = playAmount * (dPlay / 100.0);
+    final serviceDiscountAmount = productTotal * (dService / 100.0);
+    final billDiscountPercentTotal = (dBill + dMember).clamp(0.0, 100.0);
+    final billDiscountAmount = (playAmount + productTotal - playDiscountAmount - serviceDiscountAmount) * (billDiscountPercentTotal / 100.0);
+
+    final effectiveDiscount = isUnpaid ? totalAmount : (playDiscountAmount + serviceDiscountAmount + billDiscountAmount);
+    final effectiveNet = isUnpaid ? 0.0 : (playAmount + productTotal - effectiveDiscount);
     final hasDiscount = effectiveDiscount > 0;
 
     final mono = pw.TextStyle(
@@ -506,15 +526,34 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
               pw.Divider(height: 8, thickness: 0.8, color: PdfColors.black),
 
               // Tổng kết
-              if (hasDiscount) ...[
+              if (isUnpaid) ...[
                 _pdfSummaryRow('Cộng tiền hàng:', _fmtCurrency(totalAmount), mono),
                 _pdfSummaryRow(
-                  effectiveDiscountPct > 0 && effectiveDiscountPct < 100
-                      ? 'Khuyến mãi (${effectiveDiscountPct.toInt()}%):'
-                      : 'Khuyến mãi:',
-                  '-${_fmtCurrency(effectiveDiscount)}',
+                  'Chiết khấu không thanh toán (100%):',
+                  '-${_fmtCurrency(totalAmount)}',
                   mono,
                 ),
+                pw.SizedBox(height: 2),
+              ] else if (effectiveDiscount > 0) ...[
+                _pdfSummaryRow('Cộng tiền hàng:', _fmtCurrency(totalAmount), mono),
+                if (dPlay > 0)
+                  _pdfSummaryRow(
+                    'Chiết khấu giờ chơi (${dPlay.toInt()}%):',
+                    '-${_fmtCurrency(playDiscountAmount)}',
+                    mono,
+                  ),
+                if (dService > 0)
+                  _pdfSummaryRow(
+                    'Chiết khấu dịch vụ (${dService.toInt()}%):',
+                    '-${_fmtCurrency(serviceDiscountAmount)}',
+                    mono,
+                  ),
+                if (dBill > 0 || dMember > 0)
+                  _pdfSummaryRow(
+                    dMember > 0 ? 'Chiết khấu HĐ & TV (${(dBill + dMember).toInt()}%):' : 'Chiết khấu hóa đơn (${dBill.toInt()}%):',
+                    '-${_fmtCurrency(billDiscountAmount)}',
+                    mono,
+                  ),
                 pw.SizedBox(height: 2),
               ],
 
@@ -1103,9 +1142,22 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     final isUnpaid = status == 'unpaid' || status == 'cancelled';
 
     // Effective values
-    final effectiveDiscount = isUnpaid ? totalAmount : discountAmount;
-    final effectiveDiscountPct = isUnpaid ? 100.0 : discountPercent;
-    final effectiveNet = isUnpaid ? 0.0 : netTotal;
+    final memberDiscountPercent = member != null ? (member!['discount'] as num).toDouble() : 0.0;
+    final dPlay = isUnpaid ? 0.0 : discountPlayPercent;
+    final dService = isUnpaid ? 0.0 : discountServicePercent;
+    final dBill = isUnpaid ? 0.0 : discountBillPercent;
+    final dMember = isUnpaid ? 0.0 : memberDiscountPercent;
+
+    final productTotal = products.fold(0.0,
+        (sum, p) => sum + ((p['price'] as num?)?.toDouble() ?? 0.0) * ((p['qty'] as num?)?.toInt() ?? 0));
+
+    final playDiscountAmount = playAmount * (dPlay / 100.0);
+    final serviceDiscountAmount = productTotal * (dService / 100.0);
+    final billDiscountPercentTotal = (dBill + dMember).clamp(0.0, 100.0);
+    final billDiscountAmount = (playAmount + productTotal - playDiscountAmount - serviceDiscountAmount) * (billDiscountPercentTotal / 100.0);
+
+    final effectiveDiscount = isUnpaid ? totalAmount : (playDiscountAmount + serviceDiscountAmount + billDiscountAmount);
+    final effectiveNet = isUnpaid ? 0.0 : (playAmount + productTotal - effectiveDiscount);
     final hasDiscount = effectiveDiscount > 0;
 
     final mono = TextStyle(
@@ -1381,18 +1433,34 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
           solidDiv(),
 
           // ── TỔNG KẾT ─────────────────────────────────────────────────────
-          // Cộng tiền hàng (chỉ khi có khuyến mãi)
-          if (hasDiscount) ...[
+          if (isUnpaid) ...[
             summaryRow('Cộng tiền hàng:', _fmtCurrency(totalAmount)),
-
-            // Khuyến mãi / Chiết khấu
             summaryRow(
-              effectiveDiscountPct > 0 && effectiveDiscountPct < 100
-                  ? 'Khuyến mãi (${effectiveDiscountPct.toInt()}%):'
-                  : 'Khuyến mãi:',
-              '-${_fmtCurrency(effectiveDiscount)}',
+              'Chiết khấu không thanh toán (100%):',
+              '-${_fmtCurrency(totalAmount)}',
               color: const Color(0xFFD97706),
             ),
+            const SizedBox(height: 2),
+          ] else if (effectiveDiscount > 0) ...[
+            summaryRow('Cộng tiền hàng:', _fmtCurrency(totalAmount)),
+            if (dPlay > 0)
+              summaryRow(
+                'Chiết khấu giờ chơi (${dPlay.toInt()}%):',
+                '-${_fmtCurrency(playDiscountAmount)}',
+                color: const Color(0xFFD97706),
+              ),
+            if (dService > 0)
+              summaryRow(
+                'Chiết khấu dịch vụ (${dService.toInt()}%):',
+                '-${_fmtCurrency(serviceDiscountAmount)}',
+                color: const Color(0xFFD97706),
+              ),
+            if (dBill > 0 || dMember > 0)
+              summaryRow(
+                dMember > 0 ? 'Chiết khấu HĐ & TV (${(dBill + dMember).toInt()}%):' : 'Chiết khấu hóa đơn (${dBill.toInt()}%):',
+                '-${_fmtCurrency(billDiscountAmount)}',
+                color: const Color(0xFFD97706),
+              ),
             const SizedBox(height: 2),
           ],
 

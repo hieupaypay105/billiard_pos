@@ -23,7 +23,10 @@ class UnpaidInvoice {
   final double playAmount;
   final double hourlyRate;
   final List<Map<String, dynamic>> products;
-  final double manualDiscountPercent;
+  final double manualDiscountPercent; // Deprecated fallback
+  final double discountPlayPercent;
+  final double discountServicePercent;
+  final double discountBillPercent;
   final Map<String, dynamic>? member;
   final String? note;
 
@@ -38,6 +41,9 @@ class UnpaidInvoice {
     required this.hourlyRate,
     required this.products,
     this.manualDiscountPercent = 0.0,
+    this.discountPlayPercent = 0.0,
+    this.discountServicePercent = 0.0,
+    this.discountBillPercent = 0.0,
     this.member,
     this.note,
   });
@@ -53,6 +59,9 @@ class UnpaidInvoice {
     double? hourlyRate,
     List<Map<String, dynamic>>? products,
     double? manualDiscountPercent,
+    double? discountPlayPercent,
+    double? discountServicePercent,
+    double? discountBillPercent,
     Map<String, dynamic>? member,
     bool clearMember = false,
     String? note,
@@ -69,6 +78,10 @@ class UnpaidInvoice {
       products: products ?? this.products,
       manualDiscountPercent:
           manualDiscountPercent ?? this.manualDiscountPercent,
+      discountPlayPercent: discountPlayPercent ?? this.discountPlayPercent,
+      discountServicePercent:
+          discountServicePercent ?? this.discountServicePercent,
+      discountBillPercent: discountBillPercent ?? this.discountBillPercent,
       member: clearMember ? null : (member ?? this.member),
       note: note ?? this.note,
     );
@@ -86,12 +99,20 @@ class UnpaidInvoice {
       'hourlyRate': hourlyRate,
       'products': products,
       'manualDiscountPercent': manualDiscountPercent,
+      'discountPlayPercent': discountPlayPercent,
+      'discountServicePercent': discountServicePercent,
+      'discountBillPercent': discountBillPercent,
       'member': member,
       'note': note,
     };
   }
 
   factory UnpaidInvoice.fromJson(Map<String, dynamic> json) {
+    final double playPct = (json['discountPlayPercent'] as num?)?.toDouble() ?? 0.0;
+    final double svcPct = (json['discountServicePercent'] as num?)?.toDouble() ?? 0.0;
+    final double fallbackManual = (json['manualDiscountPercent'] as num?)?.toDouble() ?? 0.0;
+    final double billPct = (json['discountBillPercent'] as num?)?.toDouble() ?? fallbackManual;
+    
     return UnpaidInvoice(
       id: json['id'] as String,
       tableId: json['tableId'] as String,
@@ -102,8 +123,10 @@ class UnpaidInvoice {
       playAmount: (json['playAmount'] as num).toDouble(),
       hourlyRate: (json['hourlyRate'] as num).toDouble(),
       products: List<Map<String, dynamic>>.from(json['products'] as List),
-      manualDiscountPercent:
-          (json['manualDiscountPercent'] as num?)?.toDouble() ?? 0.0,
+      manualDiscountPercent: fallbackManual,
+      discountPlayPercent: playPct,
+      discountServicePercent: svcPct,
+      discountBillPercent: billPct,
       member: json['member'] as Map<String, dynamic>?,
       note: json['note'] as String?,
     );
@@ -118,7 +141,10 @@ class TablesState {
   final String? selectedTableId;
   final Map<String, DateTime> tableStartTimes;
   final Map<String, List<Map<String, dynamic>>> tableOrders;
-  final Map<String, double> tableDiscounts;
+  final Map<String, double> tableDiscounts; // Deprecated fallback
+  final Map<String, double> tablePlayDiscounts;
+  final Map<String, double> tableServiceDiscounts;
+  final Map<String, double> tableBillDiscounts;
   final Map<String, Map<String, dynamic>> tableMembers;
   final bool isLoading;
   final String? error;
@@ -146,6 +172,9 @@ class TablesState {
     this.tableStartTimes = const {},
     this.tableOrders = const {},
     this.tableDiscounts = const {},
+    this.tablePlayDiscounts = const {},
+    this.tableServiceDiscounts = const {},
+    this.tableBillDiscounts = const {},
     this.tableMembers = const {},
     this.isLoading = false,
     this.error,
@@ -176,6 +205,9 @@ class TablesState {
     Map<String, DateTime>? tableStartTimes,
     Map<String, List<Map<String, dynamic>>>? tableOrders,
     Map<String, double>? tableDiscounts,
+    Map<String, double>? tablePlayDiscounts,
+    Map<String, double>? tableServiceDiscounts,
+    Map<String, double>? tableBillDiscounts,
     Map<String, Map<String, dynamic>>? tableMembers,
     bool? isLoading,
     String? error,
@@ -200,6 +232,10 @@ class TablesState {
       tableStartTimes: tableStartTimes ?? this.tableStartTimes,
       tableOrders: tableOrders ?? this.tableOrders,
       tableDiscounts: tableDiscounts ?? this.tableDiscounts,
+      tablePlayDiscounts: tablePlayDiscounts ?? this.tablePlayDiscounts,
+      tableServiceDiscounts:
+          tableServiceDiscounts ?? this.tableServiceDiscounts,
+      tableBillDiscounts: tableBillDiscounts ?? this.tableBillDiscounts,
       tableMembers: tableMembers ?? this.tableMembers,
       isLoading: isLoading ?? this.isLoading,
       error: error,
@@ -391,6 +427,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
             }
           }
 
+          if (!mounted) return;
           state = state.copyWith(
             tables: loadedTables,
             selectedTableId: loadedTables.first.id,
@@ -420,6 +457,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
           }
         }
       } catch (e) {
+        if (!mounted) return;
         state = state.copyWith(error: e.toString(), isLoading: false);
         return;
       }
@@ -429,6 +467,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
 
     await _restoreSessionState();
+    if (!mounted) return;
     state = state.copyWith(isLoading: false);
   }
 
@@ -441,6 +480,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
         ),
         'tableOrders': state.tableOrders,
         'tableDiscounts': state.tableDiscounts,
+        'tablePlayDiscounts': state.tablePlayDiscounts,
+        'tableServiceDiscounts': state.tableServiceDiscounts,
+        'tableBillDiscounts': state.tableBillDiscounts,
         'tableMembers': state.tableMembers,
         'tableStatuses': {
           for (final t in state.tables)
@@ -490,6 +532,32 @@ class TablesNotifier extends StateNotifier<TablesState> {
         if (data['tableDiscounts'] != null) {
           (data['tableDiscounts'] as Map<String, dynamic>).forEach((k, v) {
             restoredDiscounts[k] = double.tryParse(v.toString()) ?? 0.0;
+          });
+        }
+
+        final restoredPlayDiscounts = <String, double>{};
+        if (data['tablePlayDiscounts'] != null) {
+          (data['tablePlayDiscounts'] as Map<String, dynamic>).forEach((k, v) {
+            restoredPlayDiscounts[k] = double.tryParse(v.toString()) ?? 0.0;
+          });
+        }
+
+        final restoredServiceDiscounts = <String, double>{};
+        if (data['tableServiceDiscounts'] != null) {
+          (data['tableServiceDiscounts'] as Map<String, dynamic>).forEach((k, v) {
+            restoredServiceDiscounts[k] = double.tryParse(v.toString()) ?? 0.0;
+          });
+        }
+
+        final restoredBillDiscounts = <String, double>{};
+        if (data['tableBillDiscounts'] != null) {
+          (data['tableBillDiscounts'] as Map<String, dynamic>).forEach((k, v) {
+            restoredBillDiscounts[k] = double.tryParse(v.toString()) ?? 0.0;
+          });
+        } else {
+          // Fallback from tableDiscounts if new fields are not stored
+          restoredDiscounts.forEach((k, v) {
+            restoredBillDiscounts[k] = v;
           });
         }
 
@@ -563,6 +631,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
           tableStartTimes: restoredStartTimes,
           tableOrders: restoredOrders,
           tableDiscounts: restoredDiscounts,
+          tablePlayDiscounts: restoredPlayDiscounts,
+          tableServiceDiscounts: restoredServiceDiscounts,
+          tableBillDiscounts: restoredBillDiscounts,
           tableMembers: restoredMembers,
           unpaidInvoices: restoredUnpaid,
           tableExtraPlayAmounts: restoredExtraAmounts,
@@ -810,6 +881,15 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final updatedDiscounts = Map<String, double>.from(state.tableDiscounts);
     updatedDiscounts.remove(tableId);
 
+    final updatedPlayDiscounts = Map<String, double>.from(state.tablePlayDiscounts);
+    updatedPlayDiscounts.remove(tableId);
+
+    final updatedServiceDiscounts = Map<String, double>.from(state.tableServiceDiscounts);
+    updatedServiceDiscounts.remove(tableId);
+
+    final updatedBillDiscounts = Map<String, double>.from(state.tableBillDiscounts);
+    updatedBillDiscounts.remove(tableId);
+
     final updatedMembers = Map<String, Map<String, dynamic>>.from(
       state.tableMembers,
     );
@@ -829,6 +909,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
       tableDiscounts: updatedDiscounts,
+      tablePlayDiscounts: updatedPlayDiscounts,
+      tableServiceDiscounts: updatedServiceDiscounts,
+      tableBillDiscounts: updatedBillDiscounts,
       tableMembers: updatedMembers,
       tableExtraPlayAmounts: updatedExtraAmounts,
       tableExtraPlayMinutes: updatedExtraMinutes,
@@ -866,7 +949,12 @@ class TablesNotifier extends StateNotifier<TablesState> {
         (state.tableExtraPlayAmounts[tableId] ?? 0.0);
 
     final products = state.tableOrders[tableId] ?? [];
+    
+    final discountPlay = state.tablePlayDiscounts[tableId] ?? 0.0;
+    final discountService = state.tableServiceDiscounts[tableId] ?? 0.0;
+    final discountBill = state.tableBillDiscounts[tableId] ?? 0.0;
     final discount = state.tableDiscounts[tableId] ?? 0.0;
+    
     final member = state.tableMembers[tableId];
     final note = state.tableNotes[tableId];
     final orderId =
@@ -891,7 +979,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
       playAmount: playAmount,
       hourlyRate: rate,
       products: List<Map<String, dynamic>>.from(products),
-      manualDiscountPercent: discount,
+      manualDiscountPercent: discountBill,
+      discountPlayPercent: discountPlay,
+      discountServicePercent: discountService,
+      discountBillPercent: discountBill,
       member: member,
       note: note,
     );
@@ -907,8 +998,16 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final updatedOrders = Map<String, List<Map<String, dynamic>>>.from(
       state.tableOrders,
     )..remove(tableId);
+    
     final updatedDiscounts = Map<String, double>.from(state.tableDiscounts)
       ..remove(tableId);
+    final updatedPlayDiscounts = Map<String, double>.from(state.tablePlayDiscounts)
+      ..remove(tableId);
+    final updatedServiceDiscounts = Map<String, double>.from(state.tableServiceDiscounts)
+      ..remove(tableId);
+    final updatedBillDiscounts = Map<String, double>.from(state.tableBillDiscounts)
+      ..remove(tableId);
+      
     final updatedMembers = Map<String, Map<String, dynamic>>.from(
       state.tableMembers,
     )..remove(tableId);
@@ -929,6 +1028,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
       tableDiscounts: updatedDiscounts,
+      tablePlayDiscounts: updatedPlayDiscounts,
+      tableServiceDiscounts: updatedServiceDiscounts,
+      tableBillDiscounts: updatedBillDiscounts,
       tableMembers: updatedMembers,
       unpaidInvoices: updatedUnpaidInvoices,
       selectedUnpaidInvoiceId: unpaidInvoice.id,
@@ -947,6 +1049,14 @@ class TablesNotifier extends StateNotifier<TablesState> {
               (double.tryParse(p['price']?.toString() ?? '') ?? 0.0) *
                   (int.tryParse(p['qty']?.toString() ?? '') ?? 1),
         );
+        
+        final playDiscountAmount = playAmount * (discountPlay / 100.0);
+        final serviceDiscountAmount = productTotal * (discountService / 100.0);
+        final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
+        final billDiscountPercentTotal = (discountBill + memberDiscountPercent).clamp(0.0, 100.0);
+        final billDiscountAmount = (playAmount + productTotal - playDiscountAmount - serviceDiscountAmount) * (billDiscountPercentTotal / 100.0);
+        final totalDiscountAmount = playDiscountAmount + serviceDiscountAmount + billDiscountAmount;
+        
         final orderModel = OrderModel(
           id: orderId,
           tableId: tableId,
@@ -958,9 +1068,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
           totalPlayTimeMinutes: playMinutes,
           totalPlayTimeAmount: playAmount,
           totalProductAmount: productTotal,
-          discountAmount: discount,
+          discountAmount: totalDiscountAmount,
           taxAmount: 0.0,
-          totalAmount: playAmount + productTotal - discount,
+          totalAmount: playAmount + productTotal - totalDiscountAmount,
           paymentMethod: null,
           createdBy: 'system',
           closedBy: null,
@@ -1005,23 +1115,44 @@ class TablesNotifier extends StateNotifier<TablesState> {
     return true;
   }
 
-  void applyDiscount(String targetId, double percent) {
+  void applyDiscount(
+    String targetId, {
+    required double playPercent,
+    required double servicePercent,
+    required double billPercent,
+  }) {
     final invoiceIndex = state.unpaidInvoices.indexWhere(
       (inv) => inv.id == targetId,
     );
     if (invoiceIndex >= 0) {
       final updated = List<UnpaidInvoice>.from(state.unpaidInvoices);
       updated[invoiceIndex] = updated[invoiceIndex].copyWith(
-        manualDiscountPercent: percent,
+        discountPlayPercent: playPercent,
+        discountServicePercent: servicePercent,
+        discountBillPercent: billPercent,
+        manualDiscountPercent: billPercent,
       );
       state = state.copyWith(unpaidInvoices: updated);
       _saveSessionState();
       return;
     }
 
-    final updated = Map<String, double>.from(state.tableDiscounts);
-    updated[targetId] = percent;
-    state = state.copyWith(tableDiscounts: updated);
+    final updatedPlay = Map<String, double>.from(state.tablePlayDiscounts);
+    final updatedService = Map<String, double>.from(state.tableServiceDiscounts);
+    final updatedBill = Map<String, double>.from(state.tableBillDiscounts);
+    final updatedManual = Map<String, double>.from(state.tableDiscounts);
+
+    updatedPlay[targetId] = playPercent;
+    updatedService[targetId] = servicePercent;
+    updatedBill[targetId] = billPercent;
+    updatedManual[targetId] = billPercent;
+
+    state = state.copyWith(
+      tablePlayDiscounts: updatedPlay,
+      tableServiceDiscounts: updatedService,
+      tableBillDiscounts: updatedBill,
+      tableDiscounts: updatedManual,
+    );
     _saveSessionState();
   }
 
@@ -1032,6 +1163,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
     if (invoiceIndex >= 0) {
       final updated = List<UnpaidInvoice>.from(state.unpaidInvoices);
       updated[invoiceIndex] = updated[invoiceIndex].copyWith(
+        discountPlayPercent: 0.0,
+        discountServicePercent: 0.0,
+        discountBillPercent: 0.0,
         manualDiscountPercent: 0.0,
       );
       state = state.copyWith(unpaidInvoices: updated);
@@ -1039,9 +1173,17 @@ class TablesNotifier extends StateNotifier<TablesState> {
       return;
     }
 
-    final updated = Map<String, double>.from(state.tableDiscounts);
-    updated.remove(targetId);
-    state = state.copyWith(tableDiscounts: updated);
+    final updatedPlay = Map<String, double>.from(state.tablePlayDiscounts)..remove(targetId);
+    final updatedService = Map<String, double>.from(state.tableServiceDiscounts)..remove(targetId);
+    final updatedBill = Map<String, double>.from(state.tableBillDiscounts)..remove(targetId);
+    final updatedManual = Map<String, double>.from(state.tableDiscounts)..remove(targetId);
+
+    state = state.copyWith(
+      tablePlayDiscounts: updatedPlay,
+      tableServiceDiscounts: updatedService,
+      tableBillDiscounts: updatedBill,
+      tableDiscounts: updatedManual,
+    );
     _saveSessionState();
   }
 
@@ -1158,6 +1300,24 @@ class TablesNotifier extends StateNotifier<TablesState> {
       updatedDiscounts[targetTableId] = discount;
     }
 
+    final updatedPlayDiscounts = Map<String, double>.from(state.tablePlayDiscounts);
+    final playDiscount = updatedPlayDiscounts.remove(sourceTableId);
+    if (playDiscount != null) {
+      updatedPlayDiscounts[targetTableId] = playDiscount;
+    }
+
+    final updatedServiceDiscounts = Map<String, double>.from(state.tableServiceDiscounts);
+    final serviceDiscount = updatedServiceDiscounts.remove(sourceTableId);
+    if (serviceDiscount != null) {
+      updatedServiceDiscounts[targetTableId] = serviceDiscount;
+    }
+
+    final updatedBillDiscounts = Map<String, double>.from(state.tableBillDiscounts);
+    final billDiscount = updatedBillDiscounts.remove(sourceTableId);
+    if (billDiscount != null) {
+      updatedBillDiscounts[targetTableId] = billDiscount;
+    }
+
     final updatedMembers = Map<String, Map<String, dynamic>>.from(
       state.tableMembers,
     );
@@ -1193,6 +1353,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
       tableDiscounts: updatedDiscounts,
+      tablePlayDiscounts: updatedPlayDiscounts,
+      tableServiceDiscounts: updatedServiceDiscounts,
+      tableBillDiscounts: updatedBillDiscounts,
       tableMembers: updatedMembers,
       tableExtraPlayAmounts: updatedExtraAmounts,
       tableExtraPlayMinutes: updatedExtraMinutes,
@@ -1277,6 +1440,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final updatedDiscounts = Map<String, double>.from(state.tableDiscounts);
     updatedDiscounts.remove(sourceTableId);
 
+    final updatedPlayDiscounts = Map<String, double>.from(state.tablePlayDiscounts)..remove(sourceTableId);
+    final updatedServiceDiscounts = Map<String, double>.from(state.tableServiceDiscounts)..remove(sourceTableId);
+    final updatedBillDiscounts = Map<String, double>.from(state.tableBillDiscounts)..remove(sourceTableId);
+
     final updatedMembers = Map<String, Map<String, dynamic>>.from(
       state.tableMembers,
     );
@@ -1316,6 +1483,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
       tableDiscounts: updatedDiscounts,
+      tablePlayDiscounts: updatedPlayDiscounts,
+      tableServiceDiscounts: updatedServiceDiscounts,
+      tableBillDiscounts: updatedBillDiscounts,
       tableMembers: updatedMembers,
       tableExtraPlayAmounts: updatedExtraAmounts,
       tableExtraPlayMinutes: updatedExtraMinutes,
@@ -1413,7 +1583,16 @@ class TablesNotifier extends StateNotifier<TablesState> {
     );
 
     final updatedDiscounts = Map<String, double>.from(state.tableDiscounts);
-    updatedDiscounts[targetTableId] = invoice.manualDiscountPercent;
+    updatedDiscounts[targetTableId] = invoice.discountBillPercent;
+
+    final updatedPlayDiscounts = Map<String, double>.from(state.tablePlayDiscounts);
+    updatedPlayDiscounts[targetTableId] = invoice.discountPlayPercent;
+
+    final updatedServiceDiscounts = Map<String, double>.from(state.tableServiceDiscounts);
+    updatedServiceDiscounts[targetTableId] = invoice.discountServicePercent;
+
+    final updatedBillDiscounts = Map<String, double>.from(state.tableBillDiscounts);
+    updatedBillDiscounts[targetTableId] = invoice.discountBillPercent;
 
     final updatedMembers = Map<String, Map<String, dynamic>>.from(
       state.tableMembers,
@@ -1435,6 +1614,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
       tableDiscounts: updatedDiscounts,
+      tablePlayDiscounts: updatedPlayDiscounts,
+      tableServiceDiscounts: updatedServiceDiscounts,
+      tableBillDiscounts: updatedBillDiscounts,
       tableMembers: updatedMembers,
       unpaidInvoices: updatedUnpaid,
       selectedUnpaidInvoiceId: null,

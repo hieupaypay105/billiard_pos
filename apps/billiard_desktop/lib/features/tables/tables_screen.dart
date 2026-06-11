@@ -903,7 +903,10 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                       final totalAmt = inv.playAmount + prodTotal;
                       
                       return InkWell(
-                        onTap: () async {
+                        onTap: () {
+                          ref.read(tablesProvider.notifier).selectUnpaidInvoice(inv.id);
+                        },
+                        onDoubleTap: () async {
                           ref.read(tablesProvider.notifier).selectUnpaidInvoice(inv.id);
                           
                           final currentUser = ref.read(currentUserProvider);
@@ -921,11 +924,16 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                           
                           final member = inv.member;
                           final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
-                          final manualDiscountPercent = inv.manualDiscountPercent;
-                          final discountPercent = (memberDiscountPercent + manualDiscountPercent).clamp(0.0, 100.0);
+                          final discountPlayPercent = inv.discountPlayPercent;
+                          final discountServicePercent = inv.discountServicePercent;
+                          final discountBillPercent = inv.discountBillPercent;
                           
-                          final discountAmount = (inv.playAmount + prodTotal) * (discountPercent / 100.0);
-                          final netTotal = (inv.playAmount + prodTotal) - discountAmount;
+                          final playDiscountAmount = playAmount * (discountPlayPercent / 100.0);
+                          final serviceDiscountAmount = prodTotal * (discountServicePercent / 100.0);
+                          final billDiscountPercentTotal = (discountBillPercent + memberDiscountPercent).clamp(0.0, 100.0);
+                          final billDiscountAmount = (playAmount + prodTotal - playDiscountAmount - serviceDiscountAmount) * (billDiscountPercentTotal / 100.0);
+                          final discountAmount = playDiscountAmount + serviceDiscountAmount + billDiscountAmount;
+                          final netTotal = playAmount + prodTotal - discountAmount;
 
                           await _checkoutUnpaidInvoice(
                             context: context,
@@ -938,7 +946,9 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                             initialStatus: 'paid',
                             playAmount: playAmount,
                             productTotal: prodTotal,
-                            discountPercent: discountPercent,
+                            discountPlayPercent: discountPlayPercent,
+                            discountServicePercent: discountServicePercent,
+                            discountBillPercent: discountBillPercent,
                             discountAmount: discountAmount,
                             netTotal: netTotal,
                             startTime: startTime,
@@ -1318,10 +1328,16 @@ class _InvoicePanel extends ConsumerWidget {
 
     final member = tablesState.tableMembers[table.id];
     final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
-    final manualDiscountPercent = tablesState.tableDiscounts[table.id] ?? 0.0;
-    final discountPercent = (memberDiscountPercent + manualDiscountPercent).clamp(0.0, 100.0);
     
-    final discountAmount = (playAmount + productTotal) * (discountPercent / 100.0);
+    final discountPlayPercent = tablesState.tablePlayDiscounts[table.id] ?? 0.0;
+    final discountServicePercent = tablesState.tableServiceDiscounts[table.id] ?? 0.0;
+    final discountBillPercent = tablesState.tableBillDiscounts[table.id] ?? 0.0;
+    
+    final playDiscountAmount = playAmount * (discountPlayPercent / 100.0);
+    final serviceDiscountAmount = productTotal * (discountServicePercent / 100.0);
+    final billDiscountPercentTotal = (discountBillPercent + memberDiscountPercent).clamp(0.0, 100.0);
+    final billDiscountAmount = (playAmount + productTotal - playDiscountAmount - serviceDiscountAmount) * (billDiscountPercentTotal / 100.0);
+    final discountAmount = playDiscountAmount + serviceDiscountAmount + billDiscountAmount;
     final netTotal = (playAmount + productTotal) - discountAmount;
 
     return Column(
@@ -1387,7 +1403,7 @@ class _InvoicePanel extends ConsumerWidget {
         ),
 
         // ── Active Member/Discount Badge ──
-        if (member != null || manualDiscountPercent > 0)
+        if (member != null || discountPlayPercent > 0 || discountServicePercent > 0 || discountBillPercent > 0)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Column(
@@ -1424,7 +1440,69 @@ class _InvoicePanel extends ConsumerWidget {
                       ],
                     ),
                   ),
-                if (manualDiscountPercent > 0)
+                if (discountPlayPercent > 0)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.accent.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.local_offer, size: 16, color: AppColors.accent),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'KM tiền giờ: -${discountPlayPercent.toInt()}%',
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.accent,
+                            ),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => ref.read(tablesProvider.notifier).removeDiscount(table.id),
+                          child: const Icon(Icons.cancel, size: 16, color: AppColors.accent),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (discountServicePercent > 0)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.accent.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.local_offer, size: 16, color: AppColors.accent),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'KM dịch vụ: -${discountServicePercent.toInt()}%',
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.accent,
+                            ),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => ref.read(tablesProvider.notifier).removeDiscount(table.id),
+                          child: const Icon(Icons.cancel, size: 16, color: AppColors.accent),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (discountBillPercent > 0)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
@@ -1438,7 +1516,7 @@ class _InvoicePanel extends ConsumerWidget {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            'Giảm giá KM: -${manualDiscountPercent.toInt()}%',
+                            'KM hóa đơn: -${discountBillPercent.toInt()}%',
                             style: const TextStyle(
                               fontFamily: 'Inter',
                               fontSize: 12,
@@ -1547,10 +1625,22 @@ class _InvoicePanel extends ConsumerWidget {
               if (rate > 0)
                 _SummaryRow('Tiền giờ chơi', _fmtCurrency(playAmount)),
               _SummaryRow('Dịch vụ', _fmtCurrency(productTotal)),
-              if (discountPercent > 0)
+              if (discountPlayPercent > 0)
                 _SummaryRow(
-                  'Chiết khấu (${discountPercent.toInt()}%)',
-                  '-${_fmtCurrency(discountAmount)}',
+                  'Chiết khấu giờ chơi (${discountPlayPercent.toInt()}%)',
+                  '-${_fmtCurrency(playDiscountAmount)}',
+                ),
+              if (discountServicePercent > 0)
+                _SummaryRow(
+                  'Chiết khấu dịch vụ (${discountServicePercent.toInt()}%)',
+                  '-${_fmtCurrency(serviceDiscountAmount)}',
+                ),
+              if (discountBillPercent > 0 || memberDiscountPercent > 0)
+                _SummaryRow(
+                  memberDiscountPercent > 0
+                      ? 'Chiết khấu HĐ & TV (${(discountBillPercent + memberDiscountPercent).toInt()}%)'
+                      : 'Chiết khấu hóa đơn (${discountBillPercent.toInt()}%)',
+                  '-${_fmtCurrency(billDiscountAmount)}',
                 ),
               const Divider(height: 12),
               Row(
@@ -1581,7 +1671,9 @@ class _InvoicePanel extends ConsumerWidget {
                       'paid',
                       playAmount,
                       productTotal,
-                      discountPercent,
+                      discountPlayPercent,
+                      discountServicePercent,
+                      discountBillPercent,
                       discountAmount,
                       netTotal,
                       startTime,
@@ -1601,7 +1693,9 @@ class _InvoicePanel extends ConsumerWidget {
                       'unpaid',
                       playAmount,
                       productTotal,
-                      discountPercent,
+                      discountPlayPercent,
+                      discountServicePercent,
+                      discountBillPercent,
                       discountAmount,
                       netTotal,
                       startTime,
@@ -1625,7 +1719,9 @@ class _InvoicePanel extends ConsumerWidget {
     String initialStatus,
     double playAmount,
     double productTotal,
-    double discountPercent,
+    double discountPlayPercent,
+    double discountServicePercent,
+    double discountBillPercent,
     double discountAmount,
     double netTotal,
     DateTime startTime,
@@ -1681,10 +1777,15 @@ class _InvoicePanel extends ConsumerWidget {
           (sum, p) => sum + (p['price'] as double) * (p['qty'] as int));
 
       final invMemberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
-      final invManualDiscountPercent = tablesState.tableDiscounts[table.id] ?? 0.0;
-      final invDiscountPercent = (invMemberDiscountPercent + invManualDiscountPercent).clamp(0.0, 100.0);
+      final invPlayPercent = tablesState.tablePlayDiscounts[table.id] ?? 0.0;
+      final invServicePercent = tablesState.tableServiceDiscounts[table.id] ?? 0.0;
+      final invBillPercent = tablesState.tableBillDiscounts[table.id] ?? 0.0;
       
-      final invDiscountAmount = (calcPlayAmount + invProductTotal) * (invDiscountPercent / 100.0);
+      final invPlayDiscountAmount = calcPlayAmount * (invPlayPercent / 100.0);
+      final invServiceDiscountAmount = invProductTotal * (invServicePercent / 100.0);
+      final invBillDiscountPercentTotal = (invBillPercent + invMemberDiscountPercent).clamp(0.0, 100.0);
+      final invBillDiscountAmount = (calcPlayAmount + invProductTotal - invPlayDiscountAmount - invServiceDiscountAmount) * (invBillDiscountPercentTotal / 100.0);
+      final invDiscountAmount = invPlayDiscountAmount + invServiceDiscountAmount + invBillDiscountAmount;
       final invNetTotal = (calcPlayAmount + invProductTotal) - invDiscountAmount;
       final orderId = table.currentOrderId ?? 'ord-${DateTime.now().millisecondsSinceEpoch}';
 
@@ -1701,7 +1802,10 @@ class _InvoicePanel extends ConsumerWidget {
           playAmount: calcPlayAmount,
           hourlyRate: rate,
           products: List<Map<String, dynamic>>.from(products),
-          manualDiscountPercent: invManualDiscountPercent,
+          discountPlayPercent: invPlayPercent,
+          discountServicePercent: invServicePercent,
+          discountBillPercent: invBillPercent,
+          manualDiscountPercent: invBillPercent,
           member: member,
           note: initialNote,
         );
@@ -1720,7 +1824,9 @@ class _InvoicePanel extends ConsumerWidget {
             initialStatus: initialStatus,
             playAmount: calcPlayAmount,
             productTotal: invProductTotal,
-            discountPercent: invDiscountPercent,
+            discountPlayPercent: invPlayPercent,
+            discountServicePercent: invServicePercent,
+            discountBillPercent: invBillPercent,
             discountAmount: invDiscountAmount,
             netTotal: invNetTotal,
             startTime: newInvoice.startTime,
@@ -1739,7 +1845,9 @@ class _InvoicePanel extends ConsumerWidget {
           initialStatus,
           playAmount,
           productTotal,
-          discountPercent,
+          discountPlayPercent,
+          discountServicePercent,
+          discountBillPercent,
           discountAmount,
           netTotal,
           startTime,
@@ -1757,7 +1865,9 @@ class _InvoicePanel extends ConsumerWidget {
     String initialStatus,
     double playAmount,
     double productTotal,
-    double discountPercent,
+    double discountPlayPercent,
+    double discountServicePercent,
+    double discountBillPercent,
     double discountAmount,
     double netTotal,
     DateTime startTime,
@@ -1771,7 +1881,12 @@ class _InvoicePanel extends ConsumerWidget {
     final finalProductTotal =
         products.fold(0.0, (s, p) => s + (p['price'] as double) * (p['qty'] as int));
     
-    final finalDiscountAmount = (finalPlayAmount + finalProductTotal) * (discountPercent / 100.0);
+    final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
+    final playDiscountAmount = finalPlayAmount * (discountPlayPercent / 100.0);
+    final serviceDiscountAmount = finalProductTotal * (discountServicePercent / 100.0);
+    final billDiscountPercentTotal = (discountBillPercent + memberDiscountPercent).clamp(0.0, 100.0);
+    final billDiscountAmount = (finalPlayAmount + finalProductTotal - playDiscountAmount - serviceDiscountAmount) * (billDiscountPercentTotal / 100.0);
+    final finalDiscountAmount = playDiscountAmount + serviceDiscountAmount + billDiscountAmount;
     final finalNetTotal = (finalPlayAmount + finalProductTotal) - finalDiscountAmount;
 
     // Resolve Riverpod values and dependencies before await/dialog to prevent disposal issues
@@ -1795,7 +1910,9 @@ class _InvoicePanel extends ConsumerWidget {
         playAmount: finalPlayAmount,
         hourlyRate: rate,
         products: products,
-        discountPercent: discountPercent,
+        discountPlayPercent: discountPlayPercent,
+        discountServicePercent: discountServicePercent,
+        discountBillPercent: discountBillPercent,
         discountAmount: finalDiscountAmount,
         netTotal: finalNetTotal,
         totalAmount: finalPlayAmount + finalProductTotal,
@@ -1904,10 +2021,16 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
 
     final member = invoice.member;
     final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
-    final manualDiscountPercent = invoice.manualDiscountPercent;
-    final discountPercent = (memberDiscountPercent + manualDiscountPercent).clamp(0.0, 100.0);
     
-    final discountAmount = (playAmount + productTotal) * (discountPercent / 100.0);
+    final discountPlayPercent = invoice.discountPlayPercent;
+    final discountServicePercent = invoice.discountServicePercent;
+    final discountBillPercent = invoice.discountBillPercent;
+    
+    final playDiscountAmount = playAmount * (discountPlayPercent / 100.0);
+    final serviceDiscountAmount = productTotal * (discountServicePercent / 100.0);
+    final billDiscountPercentTotal = (discountBillPercent + memberDiscountPercent).clamp(0.0, 100.0);
+    final billDiscountAmount = (playAmount + productTotal - playDiscountAmount - serviceDiscountAmount) * (billDiscountPercentTotal / 100.0);
+    final discountAmount = playDiscountAmount + serviceDiscountAmount + billDiscountAmount;
     final netTotal = (playAmount + productTotal) - discountAmount;
 
     return Column(
@@ -1975,7 +2098,7 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
           ),
         ),
         // ── Active Member/Discount Badge ──
-        if (member != null || manualDiscountPercent > 0)
+        if (member != null || discountPlayPercent > 0 || discountServicePercent > 0 || discountBillPercent > 0)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Column(
@@ -2012,7 +2135,69 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
                       ],
                     ),
                   ),
-                if (manualDiscountPercent > 0)
+                if (discountPlayPercent > 0)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.accent.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.local_offer, size: 16, color: AppColors.accent),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'KM tiền giờ: -${discountPlayPercent.toInt()}%',
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.accent,
+                            ),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => ref.read(tablesProvider.notifier).removeDiscount(invoice.id),
+                          child: const Icon(Icons.cancel, size: 16, color: AppColors.accent),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (discountServicePercent > 0)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.accent.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.local_offer, size: 16, color: AppColors.accent),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'KM dịch vụ: -${discountServicePercent.toInt()}%',
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.accent,
+                            ),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => ref.read(tablesProvider.notifier).removeDiscount(invoice.id),
+                          child: const Icon(Icons.cancel, size: 16, color: AppColors.accent),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (discountBillPercent > 0)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
@@ -2026,7 +2211,7 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            'Giảm giá KM: -${manualDiscountPercent.toInt()}%',
+                            'KM hóa đơn: -${discountBillPercent.toInt()}%',
                             style: const TextStyle(
                               fontFamily: 'Inter',
                               fontSize: 12,
@@ -2135,10 +2320,22 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
               if (rate > 0)
                 _SummaryRow('Tiền giờ chơi', _fmtCurrency(playAmount)),
               _SummaryRow('Dịch vụ', _fmtCurrency(productTotal)),
-              if (discountPercent > 0)
+              if (discountPlayPercent > 0)
                 _SummaryRow(
-                  'Chiết khấu (${discountPercent.toInt()}%)',
-                  '-${_fmtCurrency(discountAmount)}',
+                  'Chiết khấu giờ chơi (${discountPlayPercent.toInt()}%)',
+                  '-${_fmtCurrency(playDiscountAmount)}',
+                ),
+              if (discountServicePercent > 0)
+                _SummaryRow(
+                  'Chiết khấu dịch vụ (${discountServicePercent.toInt()}%)',
+                  '-${_fmtCurrency(serviceDiscountAmount)}',
+                ),
+              if (discountBillPercent > 0 || memberDiscountPercent > 0)
+                _SummaryRow(
+                  memberDiscountPercent > 0
+                      ? 'Chiết khấu HĐ & TV (${(discountBillPercent + memberDiscountPercent).toInt()}%)'
+                      : 'Chiết khấu hóa đơn (${discountBillPercent.toInt()}%)',
+                  '-${_fmtCurrency(billDiscountAmount)}',
                 ),
               const Divider(height: 12),
               Row(
@@ -2169,7 +2366,9 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
                       'paid',
                       playAmount,
                       productTotal,
-                      discountPercent,
+                      discountPlayPercent,
+                      discountServicePercent,
+                      discountBillPercent,
                       discountAmount,
                       netTotal,
                       startTime,
@@ -2190,7 +2389,9 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
                       'unpaid',
                       playAmount,
                       productTotal,
-                      discountPercent,
+                      discountPlayPercent,
+                      discountServicePercent,
+                      discountBillPercent,
                       discountAmount,
                       netTotal,
                       startTime,
@@ -2215,7 +2416,9 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
     String initialStatus,
     double playAmount,
     double productTotal,
-    double discountPercent,
+    double discountPlayPercent,
+    double discountServicePercent,
+    double discountBillPercent,
     double discountAmount,
     double netTotal,
     DateTime startTime,
@@ -2242,7 +2445,9 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
       initialStatus: initialStatus,
       playAmount: playAmount,
       productTotal: productTotal,
-      discountPercent: discountPercent,
+      discountPlayPercent: discountPlayPercent,
+      discountServicePercent: discountServicePercent,
+      discountBillPercent: discountBillPercent,
       discountAmount: discountAmount,
       netTotal: netTotal,
       startTime: startTime,
@@ -2265,7 +2470,9 @@ Future<void> _checkoutUnpaidInvoice({
   required String initialStatus,
   required double playAmount,
   required double productTotal,
-  required double discountPercent,
+  required double discountPlayPercent,
+  required double discountServicePercent,
+  required double discountBillPercent,
   required double discountAmount,
   required double netTotal,
   required DateTime startTime,
@@ -2291,7 +2498,9 @@ Future<void> _checkoutUnpaidInvoice({
       playAmount: finalPlayAmount,
       hourlyRate: rate,
       products: products,
-      discountPercent: discountPercent,
+      discountPlayPercent: discountPlayPercent,
+      discountServicePercent: discountServicePercent,
+      discountBillPercent: discountBillPercent,
       discountAmount: finalDiscountAmount,
       netTotal: finalNetTotal,
       totalAmount: finalPlayAmount + finalProductTotal,

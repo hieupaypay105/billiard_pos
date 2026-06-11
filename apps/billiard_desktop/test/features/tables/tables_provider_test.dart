@@ -205,7 +205,12 @@ void main() {
         'price': 15000.0,
         'qty': 2,
       });
-      notifier.applyDiscount('t-1', 10.0);
+      notifier.applyDiscount(
+        't-1',
+        playPercent: 0.0,
+        servicePercent: 0.0,
+        billPercent: 10.0,
+      );
       notifier.applyMember('t-1', {
         'id': 'm-1',
         'full_name': 'Nguyễn Văn Hùng',
@@ -306,7 +311,12 @@ void main() {
         'price': 15000.0,
         'qty': 2,
       });
-      notifier.applyDiscount('t-1', 10.0);
+      notifier.applyDiscount(
+        't-1',
+        playPercent: 0.0,
+        servicePercent: 0.0,
+        billPercent: 10.0,
+      );
       notifier.applyMember('t-1', {
         'id': 'm-1',
         'full_name': 'Nguyễn Văn Hùng',
@@ -339,7 +349,12 @@ void main() {
         'price': 15000.0,
         'qty': 2,
       });
-      notifier.applyDiscount('t-1', 10.0);
+      notifier.applyDiscount(
+        't-1',
+        playPercent: 0.0,
+        servicePercent: 0.0,
+        billPercent: 10.0,
+      );
       await notifier.deactivateTableAndFreezeInvoice('t-1');
 
       final stateBefore = container.read(tablesProvider);
