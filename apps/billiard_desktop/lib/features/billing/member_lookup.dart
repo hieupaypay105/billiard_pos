@@ -19,6 +19,53 @@ class _MemberLookupDialogState extends ConsumerState<MemberLookupDialog> {
   bool _isSearching = false;
   Map<String, dynamic>? _foundMember;
   String? _notFoundMsg;
+  List<Map<String, dynamic>> _suggestions = [];
+
+  void _onPhoneChanged(String val) async {
+    final text = val.trim();
+    if (text.length < 3) {
+      setState(() {
+        _suggestions = [];
+      });
+      return;
+    }
+
+    try {
+      final localDb = ref.read(localDbServiceProvider);
+      final matches = await localDb.searchMembers(text);
+      if (mounted) {
+        setState(() {
+          _suggestions = matches;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error searching suggestions: $e');
+    }
+  }
+
+  void _selectSuggestion(Map<String, dynamic> rawMember) {
+    final id = rawMember['id']?.toString() ?? '';
+    final fullName = rawMember['full_name']?.toString() ?? '';
+    final phoneNumber = rawMember['phone_number']?.toString() ?? '';
+    final tier = rawMember['tier_name']?.toString() ?? rawMember['tier']?.toString() ?? 'Normal';
+    final discount = double.tryParse(rawMember['discount_percentage']?.toString() ?? '') ?? 
+                     double.tryParse(rawMember['discount']?.toString() ?? '') ?? 0.0;
+    final totalPoints = int.tryParse(rawMember['total_points']?.toString() ?? '') ?? 0;
+
+    setState(() {
+      _phoneCtrl.text = phoneNumber;
+      _suggestions = [];
+      _foundMember = {
+        'id': id,
+        'full_name': fullName,
+        'phone_number': phoneNumber,
+        'tier': tier,
+        'total_points': totalPoints,
+        'discount': discount,
+      };
+      _notFoundMsg = null;
+    });
+  }
 
   @override
   void dispose() {
@@ -33,6 +80,7 @@ class _MemberLookupDialogState extends ConsumerState<MemberLookupDialog> {
       _isSearching = true;
       _foundMember = null;
       _notFoundMsg = null;
+      _suggestions = [];
     });
 
     try {
@@ -112,6 +160,7 @@ class _MemberLookupDialogState extends ConsumerState<MemberLookupDialog> {
                   child: TextField(
                     controller: _phoneCtrl,
                     keyboardType: TextInputType.phone,
+                    onChanged: _onPhoneChanged,
                     decoration: InputDecoration(
                       hintText: 'Nhập số điện thoại...',
                       prefixIcon: const Icon(Icons.phone_outlined, size: 18),
@@ -145,6 +194,44 @@ class _MemberLookupDialogState extends ConsumerState<MemberLookupDialog> {
                       : const Icon(Icons.search, size: 20),
                 ),
               ]),
+              
+              // Suggestions autocomplete container
+              if (_suggestions.isNotEmpty && _foundMember == null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 180),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.border),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemCount: _suggestions.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, idx) {
+                      final m = _suggestions[idx];
+                      final name = m['full_name']?.toString() ?? '';
+                      final phone = m['phone_number']?.toString() ?? '';
+                      return ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.person_outline, size: 16, color: AppColors.primary),
+                        title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Inter')),
+                        subtitle: Text(phone, style: const TextStyle(fontSize: 11, fontFamily: 'Inter')),
+                        onTap: () => _selectSuggestion(m),
+                      );
+                    },
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               // Results
               if (_foundMember != null) ...[

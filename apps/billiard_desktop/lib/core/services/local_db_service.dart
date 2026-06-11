@@ -378,6 +378,19 @@ class LocalDbService {
     return jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
   }
 
+  Future<List<Map<String, dynamic>>> searchMembers(String query) async {
+    final db = await database;
+    final rows = await db.query(
+      'cached_members',
+      where: 'phone_number LIKE ?',
+      whereArgs: ['%$query%'],
+      limit: 10,
+    );
+    return rows
+        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+        .toList();
+  }
+
   // ─── Cache IoT Configs ────────────────────────────────────────────────────────
 
   Future<void> cacheIotConfigs(List<Map<String, dynamic>> configs) async {
