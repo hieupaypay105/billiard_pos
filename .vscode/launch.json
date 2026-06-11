@@ -56,6 +56,12 @@
             "type": "dart"
         },
         {
+            "name": "billiard_pos_mobile (Flutter Pixel 7)",
+            "cwd": "apps/billiard_pos_mobile",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
             "name": "billiard_pos_mobile (profile mode)",
             "cwd": "apps/billiard_pos_mobile",
             "request": "launch",
