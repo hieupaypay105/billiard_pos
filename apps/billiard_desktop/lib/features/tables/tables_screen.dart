@@ -18,6 +18,8 @@ import 'shift_provider.dart';
 import '../../core/services/local_db_service.dart';
 import '../../core/services/sync_service.dart';
 import 'package:flutter/services.dart';
+import '../update/update_service.dart';
+import '../update/update_dialog.dart';
 import 'package:uuid/uuid.dart';
 
 
@@ -31,6 +33,7 @@ class TablesScreen extends ConsumerStatefulWidget {
 class _TablesScreenState extends ConsumerState<TablesScreen> {
   Timer? _ticker;
   int? _selectedTableTypeId;
+  static bool _hasCheckedUpdate = false;
 
   // Quick product search suggest variables
   final FocusNode _searchFocusNode = FocusNode();
@@ -46,6 +49,27 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
       if (mounted) setState(() {});
     });
     _loadProducts();
+    _checkAppUpdate();
+  }
+
+  void _checkAppUpdate() {
+    if (_hasCheckedUpdate) return;
+    _hasCheckedUpdate = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final updateInfo = await ref.read(updateCheckProvider.future);
+        if (updateInfo.hasUpdate && mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => UpdateDialog(updateInfo: updateInfo),
+          );
+        }
+      } catch (e) {
+        debugPrint('[TablesScreen] Auto-update check error: $e');
+      }
+    });
   }
 
   @override
