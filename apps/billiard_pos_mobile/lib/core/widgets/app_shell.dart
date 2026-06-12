@@ -27,6 +27,12 @@ const _navItems = [
     label: 'Bàn',
   ),
   _NavItem(
+    route: AppRoutes.reports,
+    icon: Icons.bar_chart_outlined,
+    activeIcon: Icons.bar_chart_rounded,
+    label: 'Báo cáo',
+  ),
+  _NavItem(
     route: '/profile', // Placeholder route for account/logout
     icon: Icons.person_outline,
     activeIcon: Icons.person,
@@ -53,6 +59,8 @@ class AppShell extends ConsumerWidget {
           if (index == 0) {
             context.go(AppRoutes.tables);
           } else if (index == 1) {
+            context.go(AppRoutes.reports);
+          } else if (index == 2) {
             // Context.go to profile or show a logout dialog
             showDialog(
               context: context,

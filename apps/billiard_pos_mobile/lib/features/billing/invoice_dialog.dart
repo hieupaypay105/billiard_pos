@@ -89,7 +89,7 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
   }
 
   String _fmtTime(DateTime dt) =>
-      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}:${dt.second.toString().padLeft(2, '0')}';
+      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 
   String _fmtDateTime(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
@@ -102,7 +102,7 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
     final activeShift = shiftState.activeShift;
 
     final member = widget.member;
-    final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
+    final memberDiscountPercent = member != null ? (double.tryParse(member['discount']?.toString() ?? '') ?? 0.0) : 0.0;
 
     final isUnpaid = _selectedStatus == 'unpaid';
 
@@ -551,7 +551,7 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                       );
                     },
                     icon: const Icon(Icons.print_outlined, size: 15),
-                    label: const Text('In hóa đơn'),
+                    label: const Text('IN'),
                     style: OutlinedButton.styleFrom(
                       padding:
                           const EdgeInsets.symmetric(vertical: 12),
@@ -610,7 +610,7 @@ class _InvoiceDialogState extends ConsumerState<InvoiceDialog> {
                             size: 16),
                     label: Text(_isProcessing
                         ? 'Đang xử lý...'
-                        : 'Xác nhận thanh toán'),
+                        : 'Thanh toán'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,

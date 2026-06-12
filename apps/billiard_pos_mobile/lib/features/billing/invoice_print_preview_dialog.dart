@@ -333,7 +333,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
     final isUnpaid = status == 'unpaid' || status == 'cancelled';
 
     final memberDiscountPercent = member != null
-        ? (member!['discount'] as num).toDouble()
+        ? (double.tryParse(member!['discount']?.toString() ?? '') ?? 0.0)
         : 0.0;
     final dPlay = isUnpaid ? 0.0 : discountPlayPercent;
     final dService = isUnpaid ? 0.0 : discountServicePercent;
@@ -1238,7 +1238,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
 
     // Effective values
     final memberDiscountPercent = member != null
-        ? (member!['discount'] as num).toDouble()
+        ? (double.tryParse(member!['discount']?.toString() ?? '') ?? 0.0)
         : 0.0;
     final dPlay = isUnpaid ? 0.0 : discountPlayPercent;
     final dService = isUnpaid ? 0.0 : discountServicePercent;

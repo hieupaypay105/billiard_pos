@@ -289,7 +289,7 @@ class _AddProductPanelState extends ConsumerState<AddProductPanel> {
                           maxCrossAxisExtent: 160,
                           crossAxisSpacing: 12,
                           mainAxisSpacing: 12,
-                          childAspectRatio: 0.95,
+                          childAspectRatio: 0.78,
                         ),
                         itemBuilder: (ctx, i) {
                           final product = _filteredProducts[i];
@@ -327,7 +327,11 @@ class _AddProductPanelState extends ConsumerState<AddProductPanel> {
                                   backgroundColor: AppColors.success,
                                   width: 280,
                                 ));
-                                _searchFocus.requestFocus();
+                                setState(() {
+                                  _searchQuery = '';
+                                  _searchCtrl.clear();
+                                });
+                                _searchFocus.unfocus();
                               }
                             },
                           );

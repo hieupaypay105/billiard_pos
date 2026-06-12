@@ -4,6 +4,7 @@ import '../../features/auth/auth_provider.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/tables/tables_screen.dart';
 import '../../features/billing/billing_screen.dart';
+import '../../features/reports/reports_screen.dart';
 import '../widgets/app_shell.dart';
 
 // Route name constants
@@ -11,6 +12,7 @@ class AppRoutes {
   static const login = '/login';
   static const tables = '/tables';
   static const billing = '/billing';
+  static const reports = '/reports';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -42,6 +44,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: AppRoutes.tables,
             pageBuilder: (ctx, state) => NoTransitionPage(
               child: const TablesScreen(),
+              key: state.pageKey,
+            ),
+          ),
+          GoRoute(
+            path: AppRoutes.reports,
+            pageBuilder: (ctx, state) => NoTransitionPage(
+              child: const ReportsScreen(),
               key: state.pageKey,
             ),
           ),

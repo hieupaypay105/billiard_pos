@@ -131,6 +131,18 @@ class _MemberLookupDialogState extends ConsumerState<MemberLookupDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final tablesState = ref.watch(tablesProvider);
+    Map<String, dynamic>? currentAppliedMember;
+    final isTable = tablesState.tables.any((t) => t.id == widget.tableId);
+    if (isTable) {
+      currentAppliedMember = tablesState.tableMembers[widget.tableId];
+    } else {
+      final invIndex = tablesState.unpaidInvoices.indexWhere((inv) => inv.id == widget.tableId);
+      if (invIndex >= 0) {
+        currentAppliedMember = tablesState.unpaidInvoices[invIndex].member;
+      }
+    }
+
     return Dialog(
       backgroundColor: Colors.white,
       shape:
@@ -316,6 +328,102 @@ class _MemberLookupDialogState extends ConsumerState<MemberLookupDialog> {
                             elevation: 0,
                           ),
                           child: const Text('Áp dụng thành viên'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (currentAppliedMember != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySurface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Thành viên đang áp dụng:',
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        CircleAvatar(
+                          backgroundColor: AppColors.primary,
+                          radius: 20,
+                          child: Text(
+                            (currentAppliedMember['full_name'] as String).trim().isNotEmpty
+                                ? (currentAppliedMember['full_name'] as String).trim()[0].toUpperCase()
+                                : '?',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(currentAppliedMember['full_name'] as String,
+                                style: AppTextStyles.titleLarge),
+                            Text(currentAppliedMember['phone_number'] as String,
+                                style: AppTextStyles.bodySmall),
+                          ],
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppColors.accent,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            (currentAppliedMember['tier'] ?? 'Normal').toString(),
+                            style: const TextStyle(
+                                fontFamily: 'Inter',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white),
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 12),
+                      Row(children: [
+                        _MemberStat('Điểm tích lũy',
+                            '${currentAppliedMember['total_points'] ?? 0}'),
+                        const SizedBox(width: 16),
+                        _MemberStat('Chiết khấu',
+                            '${currentAppliedMember['discount'] ?? 0.0}%'),
+                      ]),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            ref.read(tablesProvider.notifier).removeMember(widget.tableId);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Đã huỷ áp dụng thành viên'),
+                                backgroundColor: AppColors.error,
+                              ),
+                            );
+                            Navigator.of(context).pop();
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.error,
+                            side: const BorderSide(color: AppColors.error, width: 1.5),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: const Text('Bỏ thành viên', style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
                       ),
                     ],

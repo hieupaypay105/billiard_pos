@@ -247,13 +247,14 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     if (action == 'deactivate') {
       final endTime = DateTime.now();
       final baseMinutes = endTime.difference(startTime).inMinutes + 1;
-      final playMinutes = baseMinutes + (tablesState.tableExtraPlayMinutes[table.id] ?? 0);
-      final calcPlayAmount = (baseMinutes / 60.0) * rate + (tablesState.tableExtraPlayAmounts[table.id] ?? 0.0);
+      final billedMinutes = ((baseMinutes + 4) ~/ 5) * 5;
+      final playMinutes = billedMinutes + (tablesState.tableExtraPlayMinutes[table.id] ?? 0);
+      final calcPlayAmount = (billedMinutes / 60.0) * rate + (tablesState.tableExtraPlayAmounts[table.id] ?? 0.0);
       
       final invProductTotal = products.fold(0.0,
           (sum, p) => sum + (p['price'] as double) * (p['qty'] as int));
 
-      final invMemberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
+      final invMemberDiscountPercent = member != null ? (double.tryParse(member['discount']?.toString() ?? '') ?? 0.0) : 0.0;
       final invPlayPercent = tablesState.tablePlayDiscounts[table.id] ?? 0.0;
       final invServicePercent = tablesState.tableServiceDiscounts[table.id] ?? 0.0;
       final invBillPercent = tablesState.tableBillDiscounts[table.id] ?? 0.0;
@@ -352,12 +353,14 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     Map<String, dynamic>? member,
   ) async {
     final endTime = DateTime.now();
-    final playMinutes = endTime.difference(startTime).inMinutes + 1;
-    final finalPlayAmount = (playMinutes / 60.0) * rate;
+    final baseMinutes = endTime.difference(startTime).inMinutes + 1;
+    final billedMinutes = ((baseMinutes + 4) ~/ 5) * 5;
+    final playMinutes = billedMinutes + (ref.read(tablesProvider).tableExtraPlayMinutes[table.id] ?? 0);
+    final finalPlayAmount = (billedMinutes / 60.0) * rate;
     final finalProductTotal =
         products.fold(0.0, (s, p) => s + (p['price'] as double) * (p['qty'] as int));
     
-    final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
+    final memberDiscountPercent = member != null ? (double.tryParse(member['discount']?.toString() ?? '') ?? 0.0) : 0.0;
     final playDiscountAmount = finalPlayAmount * (discountPlayPercent / 100.0);
     final serviceDiscountAmount = finalProductTotal * (discountServicePercent / 100.0);
     final billDiscountPercentTotal = (discountBillPercent + memberDiscountPercent).clamp(0.0, 100.0);
@@ -753,13 +756,14 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final rate = state.getTableHourlyRate(table, startTime);
 
     final baseMinutes = endTime.difference(startTime).inMinutes + 1;
-    final playMinutes = baseMinutes + (state.tableExtraPlayMinutes[table.id] ?? 0);
-    final playAmount = (baseMinutes / 60.0) * rate + (state.tableExtraPlayAmounts[table.id] ?? 0.0);
+    final billedMinutes = ((baseMinutes + 4) ~/ 5) * 5;
+    final playMinutes = billedMinutes + (state.tableExtraPlayMinutes[table.id] ?? 0);
+    final playAmount = (billedMinutes / 60.0) * rate + (state.tableExtraPlayAmounts[table.id] ?? 0.0);
     final productTotal = products.fold(0.0,
         (sum, p) => sum + (p['price'] as double) * (p['qty'] as int));
 
     final member = state.tableMembers[table.id];
-    final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
+    final memberDiscountPercent = member != null ? (double.tryParse(member['discount']?.toString() ?? '') ?? 0.0) : 0.0;
     
     final discountPlayPercent = state.tablePlayDiscounts[table.id] ?? 0.0;
     final discountServicePercent = state.tableServiceDiscounts[table.id] ?? 0.0;
@@ -788,72 +792,67 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       ),
       body: Column(
         children: [
-          // ── Timer Ticking Section ──
+          // ── Timer Ticking Section (Compact Layout) ──
           Container(
             width: double.infinity,
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.primary.withOpacity(0.15)),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
                 )
               ]
             ),
-            child: Column(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.play_circle_fill, color: AppColors.success, size: 18),
-                        const SizedBox(width: 6),
-                        Text('Đang chơi', style: AppTextStyles.titleMedium.copyWith(color: AppColors.success, fontWeight: FontWeight.bold)),
+                        const Icon(Icons.play_circle_fill, color: AppColors.success, size: 14),
+                        const SizedBox(width: 4),
+                        Text('Đang chơi', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.success, fontFamily: 'Inter')),
                       ],
                     ),
-                    Text(_fmtTime(startTime), style: AppTextStyles.bodySmall),
+                    const SizedBox(height: 4),
+                    Text('Giờ vào: ${_fmtTime(startTime)} · ${_fmtCurrency(rate)}/h', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontFamily: 'Inter')),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  _fmtDuration(elapsed),
-                  style: const TextStyle(
-                    fontFamily: 'Courier',
-                    fontSize: 36,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                ),
-                Text(
-                  '$playMinutes phút',
-                  style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600, color: AppColors.textSecondary),
-                ),
-                const Divider(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('Đơn giá', style: AppTextStyles.bodySmall),
-                    Text('${_fmtCurrency(rate)} / giờ', style: AppTextStyles.labelLarge),
+                    Text(
+                      _fmtDuration(elapsed),
+                      style: const TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    Text('$playMinutes phút', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary, fontFamily: 'Inter')),
                   ],
                 ),
-                if (member != null) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Thành viên', style: AppTextStyles.bodySmall),
-                      Text('${member['full_name']} (${member['tier']} -${member['discount']}%)', style: AppTextStyles.labelLarge.copyWith(color: AppColors.success)),
-                    ],
-                  ),
-                ],
               ],
             ),
+          ),
+
+          // Member & Discounts Badges
+          _buildAppliedMemberAndDiscounts(
+            context: context,
+            targetId: table.id,
+            member: member,
+            discountPlayPercent: discountPlayPercent,
+            discountServicePercent: discountServicePercent,
+            discountBillPercent: discountBillPercent,
           ),
 
           // ── Segment Section: Service list ──
@@ -943,14 +942,14 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
           // ── Quick Operations Grid ──
           Container(
             color: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
             child: GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               crossAxisCount: 3,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-              childAspectRatio: 2.2,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 3.2,
               children: [
                 _buildQuickActionBtn(
                   icon: Icons.person_add_alt_1_outlined,
@@ -1044,7 +1043,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
           // ── Summary & Payment Buttons (Sticky Bottom) ──
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border(top: BorderSide(color: Colors.grey.shade200)),
@@ -1055,6 +1054,30 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (rate > 0)
+                    _buildSummaryRow('Tiền giờ chơi', _fmtCurrency(playAmount)),
+                  _buildSummaryRow('Dịch vụ', _fmtCurrency(productTotal)),
+                  if (discountPlayPercent > 0)
+                    _buildSummaryRow(
+                      'Chiết khấu giờ chơi (${discountPlayPercent.toInt()}%)',
+                      '-${_fmtCurrency(playDiscountAmount)}',
+                      isDiscount: true,
+                    ),
+                  if (discountServicePercent > 0)
+                    _buildSummaryRow(
+                      'Chiết khấu dịch vụ (${discountServicePercent.toInt()}%)',
+                      '-${_fmtCurrency(serviceDiscountAmount)}',
+                      isDiscount: true,
+                    ),
+                  if (discountBillPercent > 0 || memberDiscountPercent > 0)
+                    _buildSummaryRow(
+                      memberDiscountPercent > 0
+                          ? 'Chiết khấu HĐ & TV (${(discountBillPercent + memberDiscountPercent).toInt()}%)'
+                          : 'Chiết khấu hóa đơn (${discountBillPercent.toInt()}%)',
+                      '-${_fmtCurrency(billDiscountAmount)}',
+                      isDiscount: true,
+                    ),
+                  const Divider(height: 10),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -1062,7 +1085,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       Text(_fmtCurrency(netTotal), style: AppTextStyles.currency.copyWith(fontSize: 22)),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
                       Expanded(
@@ -1086,10 +1109,10 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(color: AppColors.error, width: 1.5),
                             foregroundColor: AppColors.error,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
-                          child: const Text('Không thanh toán', style: TextStyle(fontWeight: FontWeight.bold)),
+                          child: const Text('Không thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -1114,11 +1137,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             elevation: 0,
                           ),
-                          child: const Text('Thanh toán', style: TextStyle(fontWeight: FontWeight.bold)),
+                          child: const Text('Thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                         ),
                       ),
                     ],
@@ -1268,7 +1291,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         (sum, p) => sum + (p['price'] as double) * (p['qty'] as int));
 
     final member = invoice.member;
-    final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
+    final memberDiscountPercent = member != null ? (double.tryParse(member['discount']?.toString() ?? '') ?? 0.0) : 0.0;
     
     final discountPlayPercent = invoice.discountPlayPercent;
     final discountServicePercent = invoice.discountServicePercent;
@@ -1296,60 +1319,58 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       ),
       body: Column(
         children: [
-          // Header Summary Card
+          // Header Summary Card (Compact Layout)
           Container(
             width: double.infinity,
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.accent.withOpacity(0.25)),
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))
+                BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))
               ]
             ),
-            child: Column(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.pause_circle_filled, color: AppColors.accent, size: 18),
-                        const SizedBox(width: 6),
-                        Text('Tạm dừng / Đang chờ', style: AppTextStyles.titleMedium.copyWith(color: AppColors.accent, fontWeight: FontWeight.bold)),
+                        const Icon(Icons.pause_circle_filled, color: AppColors.accent, size: 14),
+                        const SizedBox(width: 4),
+                        Text('Tạm dừng / Đang chờ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.accent, fontFamily: 'Inter')),
                       ],
                     ),
-                    Text('${_fmtTime(startTime)} - ${_fmtTime(endTime)}', style: AppTextStyles.bodySmall),
+                    const SizedBox(height: 4),
+                    Text('${_fmtTime(startTime)} - ${_fmtTime(endTime)} · ${_fmtCurrency(rate)}/h', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontFamily: 'Inter')),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  '${invoice.playMinutes} phút',
-                  style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: AppColors.primary),
-                ),
-                Text('Tiền giờ: ${_fmtCurrency(playAmount)}', style: AppTextStyles.bodySmall),
-                const Divider(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('Đơn giá giờ chơi', style: AppTextStyles.bodySmall),
-                    Text('${_fmtCurrency(rate)} / giờ', style: AppTextStyles.labelLarge),
+                    Text(
+                      '${invoice.playMinutes} phút',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primary),
+                    ),
+                    Text('Giờ: ${_fmtCurrency(playAmount)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary, fontFamily: 'Inter')),
                   ],
                 ),
-                if (member != null) ...[
-                  const SizedBox(height: 6),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Thành viên', style: AppTextStyles.bodySmall),
-                      Text('${member['full_name']} (${member['tier']} -${member['discount']}%)', style: AppTextStyles.labelLarge.copyWith(color: AppColors.success)),
-                    ],
-                  ),
-                ],
               ],
             ),
+          ),
+
+          // Member & Discounts Badges
+          _buildAppliedMemberAndDiscounts(
+            context: context,
+            targetId: invoice.id,
+            member: member,
+            discountPlayPercent: discountPlayPercent,
+            discountServicePercent: discountServicePercent,
+            discountBillPercent: discountBillPercent,
           ),
 
           // Product List
@@ -1439,14 +1460,14 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
           // Quick Operations Grid
           Container(
             color: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
             child: GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               crossAxisCount: 3,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-              childAspectRatio: 2.2,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 3.2,
               children: [
                 _buildQuickActionBtn(
                   icon: Icons.person_add_alt_1_outlined,
@@ -1544,7 +1565,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
           // Summary and Payment
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.white,
               border: Border(top: BorderSide(color: Colors.grey.shade200)),
@@ -1555,6 +1576,30 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (rate > 0)
+                    _buildSummaryRow('Tiền giờ chơi', _fmtCurrency(playAmount)),
+                  _buildSummaryRow('Dịch vụ', _fmtCurrency(productTotal)),
+                  if (discountPlayPercent > 0)
+                    _buildSummaryRow(
+                      'Chiết khấu giờ chơi (${discountPlayPercent.toInt()}%)',
+                      '-${_fmtCurrency(playDiscountAmount)}',
+                      isDiscount: true,
+                    ),
+                  if (discountServicePercent > 0)
+                    _buildSummaryRow(
+                      'Chiết khấu dịch vụ (${discountServicePercent.toInt()}%)',
+                      '-${_fmtCurrency(serviceDiscountAmount)}',
+                      isDiscount: true,
+                    ),
+                  if (discountBillPercent > 0 || memberDiscountPercent > 0)
+                    _buildSummaryRow(
+                      memberDiscountPercent > 0
+                          ? 'Chiết khấu HĐ & TV (${(discountBillPercent + memberDiscountPercent).toInt()}%)'
+                          : 'Chiết khấu hóa đơn (${discountBillPercent.toInt()}%)',
+                      '-${_fmtCurrency(billDiscountAmount)}',
+                      isDiscount: true,
+                    ),
+                  const Divider(height: 10),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -1562,7 +1607,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       Text(_fmtCurrency(netTotal), style: AppTextStyles.currency.copyWith(fontSize: 22)),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
                       Expanded(
@@ -1587,10 +1632,10 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(color: AppColors.error, width: 1.5),
                             foregroundColor: AppColors.error,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
-                          child: const Text('Không thanh toán', style: TextStyle(fontWeight: FontWeight.bold)),
+                          child: const Text('Không thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -1616,11 +1661,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             elevation: 0,
                           ),
-                          child: const Text('Thanh toán', style: TextStyle(fontWeight: FontWeight.bold)),
+                          child: const Text('Thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                         ),
                       ),
                     ],
@@ -1655,13 +1700,13 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 18, color: color),
-              const SizedBox(height: 3),
+              Icon(icon, size: 14, color: color),
+              const SizedBox(height: 2),
               Text(
                 label,
                 style: TextStyle(
                   fontFamily: 'Inter',
-                  fontSize: 11,
+                  fontSize: 9.5,
                   fontWeight: FontWeight.w600,
                   color: color,
                 ),
@@ -1669,6 +1714,221 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // Widget to build applied member and discounts badges with removal actions
+  Widget _buildAppliedMemberAndDiscounts({
+    required BuildContext context,
+    required String targetId,
+    required Map<String, dynamic>? member,
+    required double discountPlayPercent,
+    required double discountServicePercent,
+    required double discountBillPercent,
+  }) {
+    if (member == null && discountPlayPercent <= 0 && discountServicePercent <= 0 && discountBillPercent <= 0) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Column(
+        children: [
+          if (member != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.successLight,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.success.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.person, size: 16, color: AppColors.success),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Thành viên: ${member['full_name']} (${member['tier']} -${member['discount']}%)',
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.success,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      ref.read(tablesProvider.notifier).removeMember(targetId);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Đã bỏ thành viên'),
+                        behavior: SnackBarBehavior.floating,
+                        duration: Duration(seconds: 1),
+                      ));
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: Icon(Icons.cancel, size: 20, color: AppColors.success),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (discountPlayPercent > 0)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.accent.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.accent.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.local_offer, size: 16, color: AppColors.accent),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'KM tiền giờ: -${discountPlayPercent.toInt()}%',
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      ref.read(tablesProvider.notifier).removeDiscount(targetId);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Đã bỏ khuyến mãi giờ chơi'),
+                        behavior: SnackBarBehavior.floating,
+                        duration: Duration(seconds: 1),
+                      ));
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: Icon(Icons.cancel, size: 20, color: AppColors.accent),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (discountServicePercent > 0)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.accent.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.accent.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.local_offer, size: 16, color: AppColors.accent),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'KM dịch vụ: -${discountServicePercent.toInt()}%',
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      ref.read(tablesProvider.notifier).removeDiscount(targetId);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Đã bỏ khuyến mãi dịch vụ'),
+                        behavior: SnackBarBehavior.floating,
+                        duration: Duration(seconds: 1),
+                      ));
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: Icon(Icons.cancel, size: 20, color: AppColors.accent),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (discountBillPercent > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.accent.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.accent.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.local_offer, size: 16, color: AppColors.accent),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'KM hóa đơn: -${discountBillPercent.toInt()}%',
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      ref.read(tablesProvider.notifier).removeDiscount(targetId);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Đã bỏ khuyến mãi hóa đơn'),
+                        behavior: SnackBarBehavior.floating,
+                        duration: Duration(seconds: 1),
+                      ));
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      child: Icon(Icons.cancel, size: 20, color: AppColors.accent),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // Summary Row Helper Widget
+  Widget _buildSummaryRow(String label, String value, {bool isDiscount = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 12,
+              color: isDiscount ? AppColors.accent : AppColors.textSecondary,
+              fontWeight: isDiscount ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 12,
+              color: isDiscount ? AppColors.accent : AppColors.textPrimary,
+              fontWeight: isDiscount ? FontWeight.bold : FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -942,10 +942,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final rate = state.getTableHourlyRate(table, startTime);
 
     final baseMinutes = endTime.difference(startTime).inMinutes + 1;
+    final billedMinutes = ((baseMinutes + 4) ~/ 5) * 5;
     final playMinutes =
-        baseMinutes + (state.tableExtraPlayMinutes[tableId] ?? 0);
+        billedMinutes + (state.tableExtraPlayMinutes[tableId] ?? 0);
     final playAmount =
-        (baseMinutes / 60.0) * rate +
+        (billedMinutes / 60.0) * rate +
         (state.tableExtraPlayAmounts[tableId] ?? 0.0);
 
     final products = state.tableOrders[tableId] ?? [];
@@ -1052,7 +1053,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
         
         final playDiscountAmount = playAmount * (discountPlay / 100.0);
         final serviceDiscountAmount = productTotal * (discountService / 100.0);
-        final memberDiscountPercent = member != null ? (member['discount'] as num).toDouble() : 0.0;
+        final memberDiscountPercent = member != null ? (double.tryParse(member['discount']?.toString() ?? '') ?? 0.0) : 0.0;
         final billDiscountPercentTotal = (discountBill + memberDiscountPercent).clamp(0.0, 100.0);
         final billDiscountAmount = (playAmount + productTotal - playDiscountAmount - serviceDiscountAmount) * (billDiscountPercentTotal / 100.0);
         final totalDiscountAmount = playDiscountAmount + serviceDiscountAmount + billDiscountAmount;
