@@ -1770,8 +1770,9 @@ class _InvoicePanel extends ConsumerWidget {
       // Pre-calculate values exactly like deactivateTableAndFreezeInvoice does to construct the local invoice
       final endTime = DateTime.now();
       final baseMinutes = endTime.difference(startTime).inMinutes + 1;
-      final playMinutes = baseMinutes + (tablesState.tableExtraPlayMinutes[table.id] ?? 0);
-      final calcPlayAmount = (baseMinutes / 60.0) * rate + (tablesState.tableExtraPlayAmounts[table.id] ?? 0.0);
+      final billedMinutes = ((baseMinutes + 4) ~/ 5) * 5;
+      final playMinutes = billedMinutes + (tablesState.tableExtraPlayMinutes[table.id] ?? 0);
+      final calcPlayAmount = (billedMinutes / 60.0) * rate + (tablesState.tableExtraPlayAmounts[table.id] ?? 0.0);
       
       final invProductTotal = products.fold(0.0,
           (sum, p) => sum + (p['price'] as double) * (p['qty'] as int));
@@ -1876,8 +1877,10 @@ class _InvoicePanel extends ConsumerWidget {
     Map<String, dynamic>? member,
   ) async {
     final endTime = DateTime.now();
-    final playMinutes = endTime.difference(startTime).inMinutes + 1;
-    final finalPlayAmount = (playMinutes / 60.0) * rate;
+    final baseMinutes = endTime.difference(startTime).inMinutes + 1;
+    final billedMinutes = ((baseMinutes + 4) ~/ 5) * 5;
+    final playMinutes = billedMinutes + (ref.read(tablesProvider).tableExtraPlayMinutes[table.id] ?? 0);
+    final finalPlayAmount = (billedMinutes / 60.0) * rate + (ref.read(tablesProvider).tableExtraPlayAmounts[table.id] ?? 0.0);
     final finalProductTotal =
         products.fold(0.0, (s, p) => s + (p['price'] as double) * (p['qty'] as int));
     

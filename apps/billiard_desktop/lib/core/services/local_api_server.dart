@@ -10,6 +10,7 @@ class LocalApiServer {
   final LocalDbService _localDb;
   HttpServer? _server;
   bool _isRunning = false;
+  final List<WebSocket> _clients = [];
 
   LocalApiServer(this._ref, this._localDb);
 
@@ -23,6 +24,27 @@ class LocalApiServer {
       print("Local API Server running on port 8085");
       
       _server!.listen((HttpRequest request) async {
+        final path = request.uri.path;
+        if (path == '/ws') {
+          if (WebSocketTransformer.isUpgradeRequest(request)) {
+            try {
+              final socket = await WebSocketTransformer.upgrade(request);
+              _clients.add(socket);
+              print("Mobile client connected via WebSocket");
+              socket.listen((msg) {}, onDone: () {
+                _clients.remove(socket);
+                print("Mobile client disconnected");
+              }, onError: (e) {
+                _clients.remove(socket);
+                print("Mobile client connection error: $e");
+              });
+            } catch (e) {
+              print("Lỗi nâng cấp WebSocket: $e");
+            }
+            return;
+          }
+        }
+
         // Enable CORS
         request.response.headers.add('Access-Control-Allow-Origin', '*');
         request.response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -124,6 +146,17 @@ class LocalApiServer {
       });
     } catch (e) {
       print("Error starting Local API Server: $e");
+    }
+  }
+
+  void notifyClients() {
+    print("Broadcasting session update to ${_clients.length} clients...");
+    for (final client in _clients) {
+      try {
+        client.add(jsonEncode({'event': 'session_updated'}));
+      } catch (e) {
+        print("Lỗi gửi tin nhắn cho client: $e");
+      }
     }
   }
 

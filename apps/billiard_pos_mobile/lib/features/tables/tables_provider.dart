@@ -354,6 +354,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
   final SyncService? _syncService;
   final SharedPreferences? _prefs;
   Timer? _syncTimer;
+  WebSocket? _ws;
+  Timer? _reconnectTimer;
+  String? _connectedIp;
 
   bool get _isOnline => _syncService?.isOnline ?? true;
 
@@ -369,6 +372,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
        super(const TablesState()) {
     loadTables();
     _startSyncTimer();
+    _connectWebSocket();
   }
 
   void _startSyncTimer() {
@@ -382,6 +386,53 @@ class TablesNotifier extends StateNotifier<TablesState> {
     });
   }
 
+  void _connectWebSocket() {
+    _ws?.close();
+    _reconnectTimer?.cancel();
+
+    final prefs = _prefs;
+    final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
+    if (desktopIp.isEmpty) return;
+
+    try {
+      WebSocket.connect('ws://$desktopIp:8085/ws').then((socket) {
+        _ws = socket;
+        print("Đã kết nối WebSocket tới Desktop Server");
+        
+        socket.listen((message) {
+          try {
+            final data = jsonDecode(message as String) as Map<String, dynamic>;
+            if (data['event'] == 'session_updated') {
+              print("Nhận sự kiện session_updated từ Desktop: Reloading...");
+              loadTables(preventAutoPull: true, isSilent: true);
+            }
+          } catch (e) {
+            print("Lỗi xử lý tin nhắn WebSocket: $e");
+          }
+        }, onDone: () {
+          print("Mất kết nối WebSocket tới Desktop, đang kết nối lại...");
+          _scheduleReconnect();
+        }, onError: (e) {
+          print("Lỗi kết nối WebSocket: $e, đang kết nối lại...");
+          _scheduleReconnect();
+        });
+      }).catchError((e) {
+        print("Lỗi kết nối WebSocket tới Desktop: $e");
+        _scheduleReconnect();
+      });
+    } catch (e) {
+      print("Lỗi khởi tạo kết nối WebSocket: $e");
+      _scheduleReconnect();
+    }
+  }
+
+  void _scheduleReconnect() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 5), () {
+      _connectWebSocket();
+    });
+  }
+
   Future<void> loadTables({bool preventAutoPull = false, bool isSilent = false}) async {
     if (!isSilent) {
       state = state.copyWith(isLoading: true);
@@ -390,6 +441,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
     // ── Check if connected to Desktop Server ──────────────────────────────────
     final prefs = _prefs;
     final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
+    if (desktopIp != _connectedIp) {
+      _connectedIp = desktopIp;
+      _connectWebSocket();
+    }
     if (desktopIp.isNotEmpty) {
       try {
         final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
@@ -522,10 +577,17 @@ class TablesNotifier extends StateNotifier<TablesState> {
           }
 
           final currentSelectedTableId = state.selectedTableId;
-          final newSelectedTableId = (currentSelectedTableId != null &&
-                  loadedTables.any((t) => t.id == currentSelectedTableId))
-              ? currentSelectedTableId
-              : (loadedTables.isNotEmpty ? loadedTables.first.id : null);
+          final currentSelectedUnpaidInvoiceId = state.selectedUnpaidInvoiceId;
+
+          String? newSelectedTableId;
+          if (currentSelectedUnpaidInvoiceId != null) {
+            newSelectedTableId = null;
+          } else {
+            newSelectedTableId = (currentSelectedTableId != null &&
+                    loadedTables.any((t) => t.id == currentSelectedTableId))
+                ? currentSelectedTableId
+                : (loadedTables.isNotEmpty ? loadedTables.first.id : null);
+          }
 
           if (!mounted) return;
           state = state.copyWith(
@@ -745,6 +807,16 @@ class TablesNotifier extends StateNotifier<TablesState> {
           });
         }
 
+        final currentSelectedUnpaidId = state.selectedUnpaidInvoiceId;
+        String? newSelectedUnpaidId = currentSelectedUnpaidId;
+        String? newSelectedTableId = state.selectedTableId;
+
+        if (currentSelectedUnpaidId != null &&
+            !restoredUnpaid.any((inv) => inv.id == currentSelectedUnpaidId)) {
+          newSelectedUnpaidId = null;
+          newSelectedTableId = restoredTables.isNotEmpty ? restoredTables.first.id : null;
+        }
+
         state = state.copyWith(
           tables: restoredTables,
           tableStartTimes: restoredStartTimes,
@@ -758,6 +830,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
           tableExtraPlayAmounts: restoredExtraAmounts,
           tableExtraPlayMinutes: restoredExtraMinutes,
           tableNotes: restoredNotes,
+          selectedUnpaidInvoiceId: newSelectedUnpaidId,
+          selectedTableId: newSelectedTableId,
         );
       }
     } catch (e) {
@@ -2088,6 +2162,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
   @override
   void dispose() {
     _syncTimer?.cancel();
+    _reconnectTimer?.cancel();
+    _ws?.close();
     for (final c in _controllers.values) {
       c.disconnect();
     }

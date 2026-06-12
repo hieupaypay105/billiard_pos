@@ -338,7 +338,13 @@ class TablesState {
       orElse: () => tables.first,
     );
     final rate = getTableHourlyRate(table);
-    final baseCost = (playDuration(tableId).inSeconds / 3600.0) * rate;
+    final duration = playDuration(tableId);
+    if (duration == Duration.zero) {
+      return (tableExtraPlayAmounts[tableId] ?? 0.0);
+    }
+    final baseMinutes = duration.inMinutes + 1;
+    final billedMinutes = ((baseMinutes + 4) ~/ 5) * 5;
+    final baseCost = (billedMinutes / 60.0) * rate;
     return baseCost + (tableExtraPlayAmounts[tableId] ?? 0.0);
   }
 }
@@ -350,6 +356,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
   final LocalDbService? _localDb;
   final ApiClient? _apiClient;
   final SyncService? _syncService;
+  final Ref? _ref;
 
   bool get _isOnline => _syncService?.isOnline ?? true;
 
@@ -357,9 +364,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
     LocalDbService? localDb,
     ApiClient? apiClient,
     SyncService? syncService,
+    Ref? ref,
   }) : _localDb = localDb,
        _apiClient = apiClient,
        _syncService = syncService,
+       _ref = ref,
        super(const TablesState()) {
     loadTables();
   }
@@ -427,10 +436,23 @@ class TablesNotifier extends StateNotifier<TablesState> {
             }
           }
 
+          final currentSelectedTableId = state.selectedTableId;
+          final currentSelectedUnpaidInvoiceId = state.selectedUnpaidInvoiceId;
+
+          String? newSelectedTableId;
+          if (currentSelectedUnpaidInvoiceId != null) {
+            newSelectedTableId = null;
+          } else {
+            newSelectedTableId = (currentSelectedTableId != null &&
+                    loadedTables.any((t) => t.id == currentSelectedTableId))
+                ? currentSelectedTableId
+                : (loadedTables.isNotEmpty ? loadedTables.first.id : null);
+          }
+
           if (!mounted) return;
           state = state.copyWith(
             tables: loadedTables,
-            selectedTableId: loadedTables.first.id,
+            selectedTableId: newSelectedTableId,
             iotConfigs: loadedIotConfigs.isNotEmpty
                 ? loadedIotConfigs
                 : state.iotConfigs,
@@ -496,6 +518,13 @@ class TablesNotifier extends StateNotifier<TablesState> {
         'tableNotes': state.tableNotes,
       };
       await _localDb!.setSetting('billiard_active_session', jsonEncode(data));
+      if (_ref != null) {
+        try {
+          _ref!.read(localApiServerProvider).notifyClients();
+        } catch (e) {
+          print("Lỗi notify clients: $e");
+        }
+      }
     } catch (e) {
       print("Lỗi lưu session: $e");
     }
@@ -626,6 +655,16 @@ class TablesNotifier extends StateNotifier<TablesState> {
           });
         }
 
+        final currentSelectedUnpaidId = state.selectedUnpaidInvoiceId;
+        String? newSelectedUnpaidId = currentSelectedUnpaidId;
+        String? newSelectedTableId = state.selectedTableId;
+
+        if (currentSelectedUnpaidId != null &&
+            !restoredUnpaid.any((inv) => inv.id == currentSelectedUnpaidId)) {
+          newSelectedUnpaidId = null;
+          newSelectedTableId = restoredTables.isNotEmpty ? restoredTables.first.id : null;
+        }
+
         state = state.copyWith(
           tables: restoredTables,
           tableStartTimes: restoredStartTimes,
@@ -639,6 +678,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
           tableExtraPlayAmounts: restoredExtraAmounts,
           tableExtraPlayMinutes: restoredExtraMinutes,
           tableNotes: restoredNotes,
+          selectedUnpaidInvoiceId: newSelectedUnpaidId,
+          selectedTableId: newSelectedTableId,
         );
       }
     } catch (e) {
@@ -942,10 +983,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final rate = state.getTableHourlyRate(table, startTime);
 
     final baseMinutes = endTime.difference(startTime).inMinutes + 1;
+    final billedMinutes = ((baseMinutes + 4) ~/ 5) * 5;
     final playMinutes =
-        baseMinutes + (state.tableExtraPlayMinutes[tableId] ?? 0);
+        billedMinutes + (state.tableExtraPlayMinutes[tableId] ?? 0);
     final playAmount =
-        (baseMinutes / 60.0) * rate +
+        (billedMinutes / 60.0) * rate +
         (state.tableExtraPlayAmounts[tableId] ?? 0.0);
 
     final products = state.tableOrders[tableId] ?? [];
@@ -1391,7 +1433,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
       return false;
 
     final sourcePlayCost = state.playCost(sourceTableId);
-    final sourcePlayMinutes = state.playDuration(sourceTableId).inMinutes + 1;
+    final sourcePlayMinutesRaw = state.playDuration(sourceTableId).inMinutes + 1;
+    final sourcePlayMinutes = ((sourcePlayMinutesRaw + 4) ~/ 5) * 5;
 
     final sourceController = _controllers[sourceTableId];
     if (sourceController != null) {
@@ -1986,6 +2029,7 @@ final tablesProvider = StateNotifierProvider<TablesNotifier, TablesState>((
     localDb: localDb,
     apiClient: apiClient,
     syncService: syncService,
+    ref: ref,
   );
 
   // Tự động reload bàn khi sync hoàn tất hoặc cache bị xóa
