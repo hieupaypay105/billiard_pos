@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/env_config.dart';
@@ -93,14 +94,55 @@ class ApiClient {
 
   // ─── Auth ────────────────────────────────────────────────────────────────────
 
+  Map<String, String> _getDeviceInfo(String defaultType) {
+    String osName = 'Unknown';
+    if (Platform.isAndroid) {
+      osName = 'Android';
+    } else if (Platform.isIOS) {
+      osName = 'iOS';
+    } else if (Platform.isMacOS) {
+      osName = 'macOS';
+    } else if (Platform.isWindows) {
+      osName = 'Windows';
+    } else if (Platform.isLinux) {
+      osName = 'Linux';
+    }
+ 
+    String deviceName = Platform.localHostname;
+    if (deviceName == 'localhost' || deviceName.isEmpty) {
+      if (Platform.isIOS) {
+        deviceName = 'iPhone';
+      } else if (Platform.isAndroid) {
+        deviceName = 'Android Device';
+      } else {
+        deviceName = 'Device';
+      }
+    }
+ 
+    final version = Platform.operatingSystemVersion;
+    if (version.isNotEmpty) {
+      deviceName = '$deviceName ($version)';
+    }
+ 
+    return {
+      'device_name': deviceName,
+      'device_type': defaultType,
+      'os': osName,
+    };
+  }
+ 
   /// Đăng nhập, trả về user data + lưu token vào SharedPreferences.
   Future<Map<String, dynamic>> login({
     required String username,
     required String password,
   }) async {
+    final devInfo = _getDeviceInfo('desktop');
     final response = await _dio.post(_loginEndpoint, data: {
       'username': username,
       'password': password,
+      'device_name': devInfo['device_name'],
+      'device_type': devInfo['device_type'],
+      'os': devInfo['os'],
     });
     final data = response.data as Map<String, dynamic>;
 

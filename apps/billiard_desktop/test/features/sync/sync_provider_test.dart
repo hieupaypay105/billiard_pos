@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:billiard_desktop/features/sync/sync_provider.dart';
 import 'package:billiard_desktop/core/services/sync_service.dart';
 import 'package:billiard_desktop/core/services/local_db_service.dart';
@@ -78,10 +79,13 @@ class FakeSyncService extends SyncService {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('SyncNotifier (Mock Mode)', () {
     late ProviderContainer container;
 
     setUp(() {
+      SharedPreferences.setMockInitialValues({});
       container = ProviderContainer(
         overrides: [
           syncNotifierServiceProvider.overrideWithValue(null),
@@ -129,6 +133,7 @@ void main() {
     late FakeSyncService fakeSyncService;
 
     setUp(() {
+      SharedPreferences.setMockInitialValues({});
       fakeSyncService = FakeSyncService();
       container = ProviderContainer(
         overrides: [

@@ -98,7 +98,7 @@ void main() {
 
     test('login failure sets error message', () async {
       fakeApiClient.shouldThrowLoginError = true;
-      fakeApiClient.loginErrorMsg = 'Exception: 401 Unauthorized';
+      fakeApiClient.loginErrorMsg = 'Exception: Sai tên đăng nhập hoặc mật khẩu.';
 
       final notifier = container.read(authProvider.notifier);
       final success = await notifier.login(username: 'admin', password: 'wrong_password');

@@ -27,7 +27,7 @@ class UserModel extends Equatable {
     return UserModel(
       id: json['id'] as String,
       username: json['username'] as String,
-      passwordHash: json['password_hash'] as String,
+      passwordHash: (json['password_hash'] ?? '') as String,
       displayName: json['display_name'] as String,
       role: json['role'] as String,
       phoneNumber: json['phone_number'] as String?,
