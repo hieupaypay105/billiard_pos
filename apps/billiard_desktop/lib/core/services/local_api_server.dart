@@ -291,10 +291,13 @@ class LocalApiServer {
         await _localDb.clearActiveShift();
         return null;
       case 'setSetting':
-        await _localDb.setSetting(
-          args['key'] as String,
-          args['value'] as String,
-        );
+        final key = args['key'] as String;
+        final value = args['value'] as String;
+        await _localDb.setSetting(key, value);
+        if (key == 'billiard_active_session') {
+          _ref.read(tablesProvider.notifier).loadTables();
+          notifyClients();
+        }
         return null;
       case 'getSetting':
         return await _localDb.getSetting(args['key'] as String);

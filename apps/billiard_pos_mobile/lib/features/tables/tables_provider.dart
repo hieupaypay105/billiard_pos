@@ -454,53 +454,55 @@ class TablesNotifier extends StateNotifier<TablesState> {
           final body = await utf8.decodeStream(response);
           final res = jsonDecode(body) as Map<String, dynamic>;
           if (res['status'] == 1 && _localDb != null) {
-            // Write caches to local storage
-            if (res['tables'] != null) {
-              await _localDb!.clearCachedTables();
-              for (final t in res['tables'] as List) {
-                final tableMap = Map<String, dynamic>.from(t as Map);
-                await _localDb!.cacheTable(tableMap['id'].toString(), tableMap);
+            // Write caches to local storage only during explicit/initial reload to avoid UI freeze/stutter
+            if (!isSilent) {
+              if (res['tables'] != null) {
+                await _localDb!.clearCachedTables();
+                for (final t in res['tables'] as List) {
+                  final tableMap = Map<String, dynamic>.from(t as Map);
+                  await _localDb!.cacheTable(tableMap['id'].toString(), tableMap);
+                }
               }
-            }
-            if (res['products'] != null) {
-              await _localDb!.clearCachedProducts();
-              await _localDb!.cacheProducts(List<Map<String, dynamic>>.from(
-                (res['products'] as List).map((e) => Map<String, dynamic>.from(e as Map))
-              ));
-            }
-            if (res['categories'] != null) {
-              await _localDb!.clearCachedProductCategories();
-              await _localDb!.cacheProductCategories(List<Map<String, dynamic>>.from(
-                (res['categories'] as List).map((e) => Map<String, dynamic>.from(e as Map))
-              ));
-            }
-            if (res['members'] != null) {
-              await _localDb!.clearCachedMembers();
-              await _localDb!.cacheMembers(List<Map<String, dynamic>>.from(
-                (res['members'] as List).map((e) => Map<String, dynamic>.from(e as Map))
-              ));
-            }
-            if (res['prices'] != null) {
-              await _localDb!.clearCachedTablePrices();
-              await _localDb!.cacheTablePrices(List<Map<String, dynamic>>.from(
-                (res['prices'] as List).map((e) => Map<String, dynamic>.from(e as Map))
-              ));
-            }
-            if (res['types'] != null) {
-              await _localDb!.clearCachedTableTypes();
-              await _localDb!.cacheTableTypes(List<Map<String, dynamic>>.from(
-                (res['types'] as List).map((e) => Map<String, dynamic>.from(e as Map))
-              ));
-            }
-            if (res['tiers'] != null) {
-              await _localDb!.clearCachedMembershipTiers();
-              await _localDb!.cacheMembershipTiers(List<Map<String, dynamic>>.from(
-                (res['tiers'] as List).map((e) => Map<String, dynamic>.from(e as Map))
-              ));
-            }
-            if (res['invoice_template'] != null) {
-              await _localDb!.clearInvoiceTemplate();
-              await _localDb!.saveInvoiceTemplate(Map<String, dynamic>.from(res['invoice_template'] as Map));
+              if (res['products'] != null) {
+                await _localDb!.clearCachedProducts();
+                await _localDb!.cacheProducts(List<Map<String, dynamic>>.from(
+                  (res['products'] as List).map((e) => Map<String, dynamic>.from(e as Map))
+                ));
+              }
+              if (res['categories'] != null) {
+                await _localDb!.clearCachedProductCategories();
+                await _localDb!.cacheProductCategories(List<Map<String, dynamic>>.from(
+                  (res['categories'] as List).map((e) => Map<String, dynamic>.from(e as Map))
+                ));
+              }
+              if (res['members'] != null) {
+                await _localDb!.clearCachedMembers();
+                await _localDb!.cacheMembers(List<Map<String, dynamic>>.from(
+                  (res['members'] as List).map((e) => Map<String, dynamic>.from(e as Map))
+                ));
+              }
+              if (res['prices'] != null) {
+                await _localDb!.clearCachedTablePrices();
+                await _localDb!.cacheTablePrices(List<Map<String, dynamic>>.from(
+                  (res['prices'] as List).map((e) => Map<String, dynamic>.from(e as Map))
+                ));
+              }
+              if (res['types'] != null) {
+                await _localDb!.clearCachedTableTypes();
+                await _localDb!.cacheTableTypes(List<Map<String, dynamic>>.from(
+                  (res['types'] as List).map((e) => Map<String, dynamic>.from(e as Map))
+                ));
+              }
+              if (res['tiers'] != null) {
+                await _localDb!.clearCachedMembershipTiers();
+                await _localDb!.cacheMembershipTiers(List<Map<String, dynamic>>.from(
+                  (res['tiers'] as List).map((e) => Map<String, dynamic>.from(e as Map))
+                ));
+              }
+              if (res['invoice_template'] != null) {
+                await _localDb!.clearInvoiceTemplate();
+                await _localDb!.saveInvoiceTemplate(Map<String, dynamic>.from(res['invoice_template'] as Map));
+              }
             }
             
             final sessionStr = res['session'] as String?;
