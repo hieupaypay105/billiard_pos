@@ -110,7 +110,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               ),
                               const SizedBox(height: 16),
                               const Text(
-                                'Billiard POS',
+                                'New World Waiter',
                                 style: TextStyle(
                                   fontFamily: 'Inter',
                                   fontSize: 28,
@@ -257,7 +257,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 24),
                           child: Text(
-                            '© 2024 Billiard POS',
+                            '© 2024 New World Waiter',
                             style: TextStyle(
                               color: Colors.black38,
                               fontSize: 12,

@@ -116,7 +116,7 @@ class AppShell extends ConsumerWidget {
           const Icon(Icons.table_bar_rounded, color: Colors.white, size: 26),
           const SizedBox(width: 10),
           const Text(
-            'Billiard POS',
+            'New World Waiter',
             style: TextStyle(
               fontFamily: 'Inter',
               fontSize: 18,

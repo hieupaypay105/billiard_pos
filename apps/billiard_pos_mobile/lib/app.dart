@@ -11,7 +11,7 @@ class BilliardPosMobileApp extends ConsumerWidget {
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      title: 'Billiard POS Mobile',
+      title: 'New World Waiter',
       debugShowCheckedModeBanner: false,
       routerConfig: router,
       theme: ThemeData(

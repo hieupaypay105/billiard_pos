@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Bảng màu chính của Billiard POS – Scandinavian Minimalism
+/// Bảng màu chính của New World Waiter – Scandinavian Minimalism
 class AppColors {
   AppColors._();
 
