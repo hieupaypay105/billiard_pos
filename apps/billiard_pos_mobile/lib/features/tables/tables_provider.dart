@@ -357,6 +357,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
   WebSocket? _ws;
   Timer? _reconnectTimer;
   String? _connectedIp;
+  String? _lastSessionStr;
 
   bool get _isOnline => _syncService?.isOnline ?? true;
 
@@ -454,6 +455,13 @@ class TablesNotifier extends StateNotifier<TablesState> {
           final body = await utf8.decodeStream(response);
           final res = jsonDecode(body) as Map<String, dynamic>;
           if (res['status'] == 1 && _localDb != null) {
+            final sessionStr = res['session'] as String?;
+            if (isSilent && sessionStr != null && sessionStr == _lastSessionStr) {
+              // No change in session data, skip updates to prevent UI stutter/rebuilds
+              return;
+            }
+            _lastSessionStr = sessionStr;
+
             // Write caches to local storage only during explicit/initial reload to avoid UI freeze/stutter
             if (!isSilent) {
               if (res['tables'] != null) {
@@ -505,7 +513,6 @@ class TablesNotifier extends StateNotifier<TablesState> {
               }
             }
             
-            final sessionStr = res['session'] as String?;
             if (sessionStr != null) {
               await _localDb!.setSetting('billiard_active_session', sessionStr);
             } else {
@@ -660,6 +667,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
         'tableNotes': state.tableNotes,
       };
       final sessionJson = jsonEncode(data);
+      _lastSessionStr = sessionJson;
       await _localDb!.setSetting('billiard_active_session', sessionJson);
 
       // Push to desktop server if connected
@@ -688,6 +696,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
     if (_localDb == null) return;
     try {
       final sessionJson = await _localDb!.getSetting('billiard_active_session');
+      _lastSessionStr = sessionJson;
       if (sessionJson != null) {
         final data = jsonDecode(sessionJson) as Map<String, dynamic>;
 
