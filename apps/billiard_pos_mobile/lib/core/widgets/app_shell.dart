@@ -5,6 +5,8 @@ import '../constants/app_colors.dart';
 import '../router/app_router.dart';
 import '../../features/auth/auth_provider.dart';
 
+import 'desktop_connection_dialog.dart';
+
 class _NavItem {
   final String route;
   final IconData icon;
@@ -61,29 +63,61 @@ class AppShell extends ConsumerWidget {
           } else if (index == 1) {
             context.go(AppRoutes.reports);
           } else if (index == 2) {
-            // Context.go to profile or show a logout dialog
-            showDialog(
+            showModalBottomSheet(
               context: context,
-              builder: (ctx) => Consumer(
-                builder: (context, dialogRef, _) {
-                  return AlertDialog(
-                    title: const Text('Đăng xuất'),
-                    content: const Text('Bạn có chắc chắn muốn đăng xuất?'),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('Hủy'),
-                      ),
-                      ElevatedButton(
-                        onPressed: () {
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
+              ),
+              builder: (ctx) => SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.wifi_tethering, color: Colors.blue),
+                        title: const Text('Kết nối máy tính (Wifi)'),
+                        onTap: () {
                           Navigator.pop(ctx);
-                          dialogRef.read(authProvider.notifier).logout();
+                          showDialog(
+                            context: context,
+                            builder: (context) => const DesktopConnectionDialog(),
+                          );
                         },
-                        child: const Text('Đăng xuất'),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.logout, color: Colors.red),
+                        title: const Text('Đăng xuất'),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          showDialog(
+                            context: context,
+                            builder: (dialogCtx) => AlertDialog(
+                              title: const Text('Đăng xuất'),
+                              content: const Text('Bạn có chắc chắn muốn đăng xuất?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(dialogCtx),
+                                  child: const Text('Hủy'),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () {
+                                    Navigator.pop(dialogCtx);
+                                    ref.read(authProvider.notifier).logout();
+                                  },
+                                  child: const Text('Đăng xuất'),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                     ],
-                  );
-                }
+                  ),
+                ),
               ),
             );
           }

@@ -7,6 +7,8 @@ import '../constants/app_text_styles.dart';
 import '../router/app_router.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/sync/sync_provider.dart';
+import '../providers/providers.dart';
+import '../config/env_config.dart';
 import 'status_bar.dart';
 
 /// Navigation item model
@@ -58,6 +60,9 @@ class AppShell extends ConsumerWidget {
     final activeIndex = currentIndex < 0 ? 0 : currentIndex;
     final user = ref.watch(currentUserProvider);
     final syncState = ref.watch(syncStateProvider);
+
+    // Proactively start local API server for mobile clients
+    ref.read(localApiServerProvider).start();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -353,6 +358,19 @@ class _UserMenu extends ConsumerWidget {
             ],
           ),
         ),
+        if (user.role == 'admin') ...[
+          const PopupMenuDivider(),
+          const PopupMenuItem(
+            value: 'config_server',
+            child: Row(
+              children: [
+                Icon(Icons.settings, size: 16),
+                SizedBox(width: 8),
+                Text('Cấu hình Server'),
+              ],
+            ),
+          ),
+        ],
         const PopupMenuDivider(),
         const PopupMenuItem(
           value: 'logout',
@@ -366,7 +384,9 @@ class _UserMenu extends ConsumerWidget {
         ),
       ],
       onSelected: (val) async {
-        if (val == 'logout') {
+        if (val == 'config_server') {
+          _showConfigServerDialog(context, ref);
+        } else if (val == 'logout') {
           await ref.read(authProvider.notifier).logout();
           if (context.mounted) context.go(AppRoutes.login);
         }
@@ -419,6 +439,49 @@ class _UserMenu extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+  void _showConfigServerDialog(BuildContext context, WidgetRef ref) {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final currentUrl = prefs.getString('api_base_url') ?? EnvConfig.apiBaseUrl;
+    final controller = TextEditingController(text: currentUrl);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Cấu hình Endpoint Base URL'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              labelText: 'API Base URL',
+              hintText: 'https://...',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Hủy'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final newUrl = controller.text.trim();
+                if (newUrl.isNotEmpty) {
+                  await prefs.setString('api_base_url', newUrl);
+                  ref.read(apiClientProvider).setBaseUrl(newUrl);
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Đã cập nhật cấu hình API Base URL')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Lưu'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

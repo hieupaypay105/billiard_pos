@@ -1,12 +1,19 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_client.dart';
 import '../services/local_db_service.dart';
 import '../services/sync_service.dart';
+import '../services/local_api_server.dart';
 
 // ─── Core Services ────────────────────────────────────────────────────────────
 
+final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
+  throw UnimplementedError();
+});
+
 final apiClientProvider = Provider<ApiClient>((ref) {
-  return ApiClient();
+  final prefs = ref.watch(sharedPreferencesProvider);
+  return ApiClient(prefs);
 });
 
 final localDbServiceProvider = Provider<LocalDbService>((ref) {
@@ -19,4 +26,11 @@ final syncServiceProvider = Provider<SyncService>((ref) {
   final service = SyncService(localDb: localDb, apiClient: apiClient);
   ref.onDispose(service.dispose);
   return service;
+});
+
+final localApiServerProvider = Provider<LocalApiServer>((ref) {
+  final db = ref.watch(localDbServiceProvider);
+  final server = LocalApiServer(ref, db);
+  ref.onDispose(server.stop);
+  return server;
 });

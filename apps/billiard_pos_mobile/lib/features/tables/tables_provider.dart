@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:core_shared/core_shared.dart';
 import 'package:iot_controller/iot_controller.dart';
 import 'package:uuid/uuid.dart';
@@ -350,6 +352,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
   final LocalDbService? _localDb;
   final ApiClient? _apiClient;
   final SyncService? _syncService;
+  final SharedPreferences? _prefs;
+  Timer? _syncTimer;
 
   bool get _isOnline => _syncService?.isOnline ?? true;
 
@@ -357,15 +361,105 @@ class TablesNotifier extends StateNotifier<TablesState> {
     LocalDbService? localDb,
     ApiClient? apiClient,
     SyncService? syncService,
+    SharedPreferences? prefs,
   }) : _localDb = localDb,
        _apiClient = apiClient,
        _syncService = syncService,
+       _prefs = prefs,
        super(const TablesState()) {
     loadTables();
+    _startSyncTimer();
   }
 
-  Future<void> loadTables({bool preventAutoPull = false}) async {
-    state = state.copyWith(isLoading: true);
+  void _startSyncTimer() {
+    _syncTimer?.cancel();
+    _syncTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      final prefs = _prefs;
+      final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
+      if (desktopIp.isNotEmpty) {
+        await loadTables(preventAutoPull: true, isSilent: true);
+      }
+    });
+  }
+
+  Future<void> loadTables({bool preventAutoPull = false, bool isSilent = false}) async {
+    if (!isSilent) {
+      state = state.copyWith(isLoading: true);
+    }
+
+    // ── Check if connected to Desktop Server ──────────────────────────────────
+    final prefs = _prefs;
+    final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
+    if (desktopIp.isNotEmpty) {
+      try {
+        final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+        final request = await client.getUrl(Uri.parse('http://$desktopIp:8085/api/session'));
+        final response = await request.close();
+        if (response.statusCode == 200) {
+          final body = await utf8.decodeStream(response);
+          final res = jsonDecode(body) as Map<String, dynamic>;
+          if (res['status'] == 1 && _localDb != null) {
+            // Write caches to local storage
+            if (res['tables'] != null) {
+              await _localDb!.clearCachedTables();
+              for (final t in res['tables'] as List) {
+                final tableMap = Map<String, dynamic>.from(t as Map);
+                await _localDb!.cacheTable(tableMap['id'].toString(), tableMap);
+              }
+            }
+            if (res['products'] != null) {
+              await _localDb!.clearCachedProducts();
+              await _localDb!.cacheProducts(List<Map<String, dynamic>>.from(
+                (res['products'] as List).map((e) => Map<String, dynamic>.from(e as Map))
+              ));
+            }
+            if (res['categories'] != null) {
+              await _localDb!.clearCachedProductCategories();
+              await _localDb!.cacheProductCategories(List<Map<String, dynamic>>.from(
+                (res['categories'] as List).map((e) => Map<String, dynamic>.from(e as Map))
+              ));
+            }
+            if (res['members'] != null) {
+              await _localDb!.clearCachedMembers();
+              await _localDb!.cacheMembers(List<Map<String, dynamic>>.from(
+                (res['members'] as List).map((e) => Map<String, dynamic>.from(e as Map))
+              ));
+            }
+            if (res['prices'] != null) {
+              await _localDb!.clearCachedTablePrices();
+              await _localDb!.cacheTablePrices(List<Map<String, dynamic>>.from(
+                (res['prices'] as List).map((e) => Map<String, dynamic>.from(e as Map))
+              ));
+            }
+            if (res['types'] != null) {
+              await _localDb!.clearCachedTableTypes();
+              await _localDb!.cacheTableTypes(List<Map<String, dynamic>>.from(
+                (res['types'] as List).map((e) => Map<String, dynamic>.from(e as Map))
+              ));
+            }
+            if (res['tiers'] != null) {
+              await _localDb!.clearCachedMembershipTiers();
+              await _localDb!.cacheMembershipTiers(List<Map<String, dynamic>>.from(
+                (res['tiers'] as List).map((e) => Map<String, dynamic>.from(e as Map))
+              ));
+            }
+            if (res['invoice_template'] != null) {
+              await _localDb!.clearInvoiceTemplate();
+              await _localDb!.saveInvoiceTemplate(Map<String, dynamic>.from(res['invoice_template'] as Map));
+            }
+            
+            final sessionStr = res['session'] as String?;
+            if (sessionStr != null) {
+              await _localDb!.setSetting('billiard_active_session', sessionStr);
+            } else {
+              await _localDb!.setSetting('billiard_active_session', '{}');
+            }
+          }
+        }
+      } catch (e) {
+        print("Lỗi đồng bộ từ Desktop: $e");
+      }
+    }
 
     // ── Nguồn duy nhất: SQLite local DB ──────────────────────────────────────
     if (_localDb != null) {
@@ -427,10 +521,16 @@ class TablesNotifier extends StateNotifier<TablesState> {
             }
           }
 
+          final currentSelectedTableId = state.selectedTableId;
+          final newSelectedTableId = (currentSelectedTableId != null &&
+                  loadedTables.any((t) => t.id == currentSelectedTableId))
+              ? currentSelectedTableId
+              : (loadedTables.isNotEmpty ? loadedTables.first.id : null);
+
           if (!mounted) return;
           state = state.copyWith(
             tables: loadedTables,
-            selectedTableId: loadedTables.first.id,
+            selectedTableId: newSelectedTableId,
             iotConfigs: loadedIotConfigs.isNotEmpty
                 ? loadedIotConfigs
                 : state.iotConfigs,
@@ -495,7 +595,26 @@ class TablesNotifier extends StateNotifier<TablesState> {
         'tableExtraPlayMinutes': state.tableExtraPlayMinutes,
         'tableNotes': state.tableNotes,
       };
-      await _localDb!.setSetting('billiard_active_session', jsonEncode(data));
+      final sessionJson = jsonEncode(data);
+      await _localDb!.setSetting('billiard_active_session', sessionJson);
+
+      // Push to desktop server if connected
+      final prefs = _prefs;
+      final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
+      if (desktopIp.isNotEmpty) {
+        try {
+          final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+          final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/session'));
+          request.headers.contentType = ContentType.json;
+          request.write(jsonEncode({'session': sessionJson}));
+          final response = await request.close();
+          if (response.statusCode != 200) {
+            print("Lỗi push session lên Desktop: ${response.statusCode}");
+          }
+        } catch (e) {
+          print("Lỗi kết nối push session lên Desktop: $e");
+        }
+      }
     } catch (e) {
       print("Lỗi lưu session: $e");
     }
@@ -1968,6 +2087,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
 
   @override
   void dispose() {
+    _syncTimer?.cancel();
     for (final c in _controllers.values) {
       c.disconnect();
     }
@@ -1983,10 +2103,12 @@ final tablesProvider = StateNotifierProvider<TablesNotifier, TablesState>((
   final localDb = ref.watch(localDbServiceProvider);
   final apiClient = ref.watch(apiClientProvider);
   final syncService = ref.watch(syncServiceProvider);
+  final prefs = ref.watch(sharedPreferencesProvider);
   final notifier = TablesNotifier(
     localDb: localDb,
     apiClient: apiClient,
     syncService: syncService,
+    prefs: prefs,
   );
 
   // Tự động reload bàn khi sync hoàn tất hoặc cache bị xóa

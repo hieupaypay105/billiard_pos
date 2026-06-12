@@ -7,6 +7,11 @@ import 'package:billiard_desktop/core/services/sync_service.dart';
 import 'package:billiard_desktop/core/services/local_db_service.dart';
 import 'package:billiard_desktop/core/services/api_client.dart';
 
+class FakeSharedPreferences implements SharedPreferences {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
 // A fake SyncService subclass that avoids real sqlite/connectivity plugins
 class FakeSyncService extends SyncService {
   final _fakeStatusController = StreamController<ConnectivityStatus>.broadcast();
@@ -15,7 +20,7 @@ class FakeSyncService extends SyncService {
   int _fakePendingCount = 2; // Start with some pending count to test syncNow decrement
   final List<String> _fakeSyncLog = [];
 
-  FakeSyncService() : super(localDb: LocalDbService(), apiClient: ApiClient());
+  FakeSyncService() : super(localDb: LocalDbService(), apiClient: ApiClient(FakeSharedPreferences()));
 
   @override
   Stream<ConnectivityStatus> get statusStream => _fakeStatusController.stream;

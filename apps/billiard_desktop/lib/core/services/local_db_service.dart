@@ -366,6 +366,14 @@ class LocalDbService {
     await batch.commit(noResult: true);
   }
 
+  Future<List<Map<String, dynamic>>> getCachedMembers() async {
+    final db = await database;
+    final rows = await db.query('cached_members');
+    return rows
+        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+        .toList();
+  }
+
   Future<Map<String, dynamic>?> getMemberByPhone(String phone) async {
     final db = await database;
     final rows = await db.query(

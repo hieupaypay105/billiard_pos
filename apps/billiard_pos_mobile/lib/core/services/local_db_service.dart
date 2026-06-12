@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:path/path.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -16,6 +18,38 @@ class LocalDbService {
   Future<Database> get database async {
     _db ??= await _initDb();
     return _db!;
+  }
+
+  Future<T> _proxyOrLocal<T>(
+    String method,
+    Map<String, dynamic> args,
+    Future<T> Function() localCallback,
+    T Function(dynamic result) castResult,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final desktopIp = prefs.getString('desktop_server_ip') ?? '';
+    if (desktopIp.isNotEmpty) {
+      try {
+        final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+        final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/db-query'));
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode({
+          'method': method,
+          'args': args,
+        }));
+        final response = await request.close();
+        if (response.statusCode == 200) {
+          final body = await utf8.decodeStream(response);
+          final res = jsonDecode(body) as Map<String, dynamic>;
+          if (res['status'] == 1) {
+            return castResult(res['result']);
+          }
+        }
+      } catch (e) {
+        print("Lỗi proxy DB call ($method) lên Desktop: $e");
+      }
+    }
+    return localCallback();
   }
 
   Future<Database> _initDb() async {
@@ -237,59 +271,98 @@ class LocalDbService {
     String id,
     Map<String, dynamic> orderData,
   ) async {
-    final db = await database;
-    await db.insert('pending_orders', {
-      'id': id,
-      'data': jsonEncode(orderData),
-      'synced': 0,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    return _proxyOrLocal<void>(
+      'saveOrderLocally',
+      {'id': id, 'orderData': orderData},
+      () async {
+        final db = await database;
+        await db.insert('pending_orders', {
+          'id': id,
+          'data': jsonEncode(orderData),
+          'synced': 0,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      },
+      (res) => null,
+    );
   }
 
   Future<List<Map<String, dynamic>>> getPendingOrders() async {
-    final db = await database;
-    final rows = await db.query(
-      'pending_orders',
-      where: 'synced = 0',
-      orderBy: 'created_at ASC',
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'getPendingOrders',
+      {},
+      () async {
+        final db = await database;
+        final rows = await db.query(
+          'pending_orders',
+          where: 'synced = 0',
+          orderBy: 'created_at ASC',
+        );
+        return rows
+            .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+            .toList();
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
     );
-    return rows
-        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
-        .toList();
   }
 
   Future<void> markOrderSynced(String id) async {
-    final db = await database;
-    await db.update(
-      'pending_orders',
-      {'synced': 1},
-      where: 'id = ?',
-      whereArgs: [id],
+    return _proxyOrLocal<void>(
+      'markOrderSynced',
+      {'id': id},
+      () async {
+        final db = await database;
+        await db.update(
+          'pending_orders',
+          {'synced': 1},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      },
+      (res) => null,
     );
   }
 
   Future<int> getPendingCount() async {
-    final db = await database;
-    final ordersResult = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM pending_orders WHERE synced = 0',
+    return _proxyOrLocal<int>(
+      'getPendingCount',
+      {},
+      () async {
+        final db = await database;
+        final ordersResult = await db.rawQuery(
+          'SELECT COUNT(*) as count FROM pending_orders WHERE synced = 0',
+        );
+        final cancelsResult = await db.rawQuery(
+          'SELECT COUNT(*) as count FROM cancelled_invoices WHERE synced = 0',
+        );
+        final ordersCount = (ordersResult.first['count'] as int?) ?? 0;
+        final cancelsCount = (cancelsResult.first['count'] as int?) ?? 0;
+        return ordersCount + cancelsCount;
+      },
+      (res) => res as int,
     );
-    final cancelsResult = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM cancelled_invoices WHERE synced = 0',
-    );
-    final ordersCount = (ordersResult.first['count'] as int?) ?? 0;
-    final cancelsCount = (cancelsResult.first['count'] as int?) ?? 0;
-    return ordersCount + cancelsCount;
   }
 
   /// Lấy tất cả orders trong local DB (bao gồm cả đã sync) để dùng cho báo cáo offline.
   Future<List<Map<String, dynamic>>> getAllLocalOrders() async {
-    final db = await database;
-    final rows = await db.query(
-      'pending_orders',
-      orderBy: 'created_at DESC',
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'getAllLocalOrders',
+      {},
+      () async {
+        final db = await database;
+        final rows = await db.query(
+          'pending_orders',
+          orderBy: 'created_at DESC',
+        );
+        return rows
+            .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+            .toList();
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
     );
-    return rows
-        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
-        .toList();
   }
 
   /// Lấy orders trong khoảng ngày (dựa theo created_at) để tạo báo cáo offline.
@@ -297,18 +370,27 @@ class LocalDbService {
     DateTime from,
     DateTime to,
   ) async {
-    final db = await database;
-    final fromStr = from.toIso8601String().substring(0, 10);
-    final toStr = to.add(const Duration(days: 1)).toIso8601String().substring(0, 10);
-    final rows = await db.query(
-      'pending_orders',
-      where: "date(created_at) >= ? AND date(created_at) < ?",
-      whereArgs: [fromStr, toStr],
-      orderBy: 'created_at ASC',
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'getOrdersInDateRange',
+      {'from': from.toIso8601String(), 'to': to.toIso8601String()},
+      () async {
+        final db = await database;
+        final fromStr = from.toIso8601String().substring(0, 10);
+        final toStr = to.add(const Duration(days: 1)).toIso8601String().substring(0, 10);
+        final rows = await db.query(
+          'pending_orders',
+          where: "date(created_at) >= ? AND date(created_at) < ?",
+          whereArgs: [fromStr, toStr],
+          orderBy: 'created_at ASC',
+        );
+        return rows
+            .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+            .toList();
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
     );
-    return rows
-        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
-        .toList();
   }
 
   // ─── Cache Tables ─────────────────────────────────────────────────────────────
@@ -322,11 +404,20 @@ class LocalDbService {
   }
 
   Future<List<Map<String, dynamic>>> getCachedTables() async {
-    final db = await database;
-    final rows = await db.query('cached_tables');
-    return rows
-        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
-        .toList();
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'getCachedTables',
+      {},
+      () async {
+        final db = await database;
+        final rows = await db.query('cached_tables');
+        return rows
+            .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+            .toList();
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
+    );
   }
 
   // ─── Cache Products ───────────────────────────────────────────────────────────
@@ -344,11 +435,20 @@ class LocalDbService {
   }
 
   Future<List<Map<String, dynamic>>> getCachedProducts() async {
-    final db = await database;
-    final rows = await db.query('cached_products');
-    return rows
-        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
-        .toList();
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'getCachedProducts',
+      {},
+      () async {
+        final db = await database;
+        final rows = await db.query('cached_products');
+        return rows
+            .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+            .toList();
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
+    );
   }
 
   // ─── Cache Members ────────────────────────────────────────────────────────────
@@ -366,29 +466,62 @@ class LocalDbService {
     await batch.commit(noResult: true);
   }
 
-  Future<Map<String, dynamic>?> getMemberByPhone(String phone) async {
-    final db = await database;
-    final rows = await db.query(
-      'cached_members',
-      where: 'phone_number = ?',
-      whereArgs: [phone],
-      limit: 1,
+  Future<List<Map<String, dynamic>>> getCachedMembers() async {
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'getCachedMembers',
+      {},
+      () async {
+        final db = await database;
+        final rows = await db.query('cached_members');
+        return rows
+            .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+            .toList();
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
     );
-    if (rows.isEmpty) return null;
-    return jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>?> getMemberByPhone(String phone) async {
+    return _proxyOrLocal<Map<String, dynamic>?>(
+      'getMemberByPhone',
+      {'phone': phone},
+      () async {
+        final db = await database;
+        final rows = await db.query(
+          'cached_members',
+          where: 'phone_number = ?',
+          whereArgs: [phone],
+          limit: 1,
+        );
+        if (rows.isEmpty) return null;
+        return jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+      },
+      (res) => res != null ? Map<String, dynamic>.from(res as Map) : null,
+    );
   }
 
   Future<List<Map<String, dynamic>>> searchMembers(String query) async {
-    final db = await database;
-    final rows = await db.query(
-      'cached_members',
-      where: 'phone_number LIKE ?',
-      whereArgs: ['%$query%'],
-      limit: 10,
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'searchMembers',
+      {'query': query},
+      () async {
+        final db = await database;
+        final rows = await db.query(
+          'cached_members',
+          where: 'phone_number LIKE ?',
+          whereArgs: ['%$query%'],
+          limit: 10,
+        );
+        return rows
+            .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+            .toList();
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
     );
-    return rows
-        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
-        .toList();
   }
 
   // ─── Cache IoT Configs ────────────────────────────────────────────────────────
@@ -406,11 +539,20 @@ class LocalDbService {
   }
 
   Future<List<Map<String, dynamic>>> getCachedIotConfigs() async {
-    final db = await database;
-    final rows = await db.query('cached_iot_configs');
-    return rows
-        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
-        .toList();
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'getCachedIotConfigs',
+      {},
+      () async {
+        final db = await database;
+        final rows = await db.query('cached_iot_configs');
+        return rows
+            .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+            .toList();
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
+    );
   }
 
   // ─── Cache Product Categories ─────────────────────────────────────────────────
@@ -430,11 +572,20 @@ class LocalDbService {
   }
 
   Future<List<Map<String, dynamic>>> getCachedProductCategories() async {
-    final db = await database;
-    final rows = await db.query('cached_product_categories');
-    return rows
-        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
-        .toList();
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'getCachedProductCategories',
+      {},
+      () async {
+        final db = await database;
+        final rows = await db.query('cached_product_categories');
+        return rows
+            .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+            .toList();
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
+    );
   }
 
   // ─── Cache Table Types ────────────────────────────────────────────────────────
@@ -452,11 +603,20 @@ class LocalDbService {
   }
 
   Future<List<Map<String, dynamic>>> getCachedTableTypes() async {
-    final db = await database;
-    final rows = await db.query('cached_table_types');
-    return rows
-        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
-        .toList();
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'getCachedTableTypes',
+      {},
+      () async {
+        final db = await database;
+        final rows = await db.query('cached_table_types');
+        return rows
+            .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+            .toList();
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
+    );
   }
 
   // ─── Cache Table Prices ───────────────────────────────────────────────────────
@@ -474,11 +634,20 @@ class LocalDbService {
   }
 
   Future<List<Map<String, dynamic>>> getCachedTablePrices() async {
-    final db = await database;
-    final rows = await db.query('cached_table_prices');
-    return rows
-        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
-        .toList();
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'getCachedTablePrices',
+      {},
+      () async {
+        final db = await database;
+        final rows = await db.query('cached_table_prices');
+        return rows
+            .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+            .toList();
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
+    );
   }
 
   // ─── Cache Membership Tiers ───────────────────────────────────────────────────
@@ -496,11 +665,20 @@ class LocalDbService {
   }
 
   Future<List<Map<String, dynamic>>> getCachedMembershipTiers() async {
-    final db = await database;
-    final rows = await db.query('cached_membership_tiers');
-    return rows
-        .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
-        .toList();
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'getCachedMembershipTiers',
+      {},
+      () async {
+        final db = await database;
+        final rows = await db.query('cached_membership_tiers');
+        return rows
+            .map((r) => jsonDecode(r['data'] as String) as Map<String, dynamic>)
+            .toList();
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
+    );
   }
 
 
@@ -513,25 +691,54 @@ class LocalDbService {
     required String cancelReason,
     required Map<String, dynamic> data,
   }) async {
-    final db = await database;
-    await db.insert('cancelled_invoices', {
-      'id': id,
-      'order_id': orderId,
-      'table_name': tableName,
-      'cancel_reason': cancelReason,
-      'data': jsonEncode(data),
-      'synced': 0,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    return _proxyOrLocal<void>(
+      'saveCancelledInvoice',
+      {
+        'id': id,
+        'orderId': orderId,
+        'tableName': tableName,
+        'cancelReason': cancelReason,
+        'data': data,
+      },
+      () async {
+        final db = await database;
+        await db.insert('cancelled_invoices', {
+          'id': id,
+          'order_id': orderId,
+          'table_name': tableName,
+          'cancel_reason': cancelReason,
+          'data': jsonEncode(data),
+          'synced': 0,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      },
+      (res) => null,
+    );
   }
 
   Future<List<Map<String, dynamic>>> getUnsyncedCancelledInvoices() async {
-    final db = await database;
-    return db.query('cancelled_invoices', where: 'synced = 0', orderBy: 'cancelled_at ASC');
+    return _proxyOrLocal<List<Map<String, dynamic>>>(
+      'getUnsyncedCancelledInvoices',
+      {},
+      () async {
+        final db = await database;
+        return db.query('cancelled_invoices', where: 'synced = 0', orderBy: 'cancelled_at ASC');
+      },
+      (res) => List<Map<String, dynamic>>.from(
+        (res as List).map((e) => Map<String, dynamic>.from(e as Map)),
+      ),
+    );
   }
 
   Future<void> markCancelledInvoiceSynced(String id) async {
-    final db = await database;
-    await db.update('cancelled_invoices', {'synced': 1}, where: 'id = ?', whereArgs: [id]);
+    return _proxyOrLocal<void>(
+      'markCancelledInvoiceSynced',
+      {'id': id},
+      () async {
+        final db = await database;
+        await db.update('cancelled_invoices', {'synced': 1}, where: 'id = ?', whereArgs: [id]);
+      },
+      (res) => null,
+    );
   }
 
   // ─── Active Shifts ────────────────────────────────────────────────────────────
@@ -542,56 +749,96 @@ class LocalDbService {
     required DateTime openedAt,
     required Map<String, dynamic> data,
   }) async {
-    final db = await database;
-    // Only one active shift at a time — clear old ones first
-    await db.delete('active_shifts');
-    await db.insert('active_shifts', {
-      'id': id,
-      'user_id': userId,
-      'opened_at': openedAt.toIso8601String(),
-      'data': jsonEncode(data),
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    return _proxyOrLocal<void>(
+      'saveActiveShift',
+      {
+        'id': id,
+        'userId': userId,
+        'openedAt': openedAt.toIso8601String(),
+        'data': data,
+      },
+      () async {
+        final db = await database;
+        // Only one active shift at a time — clear old ones first
+        await db.delete('active_shifts');
+        await db.insert('active_shifts', {
+          'id': id,
+          'user_id': userId,
+          'opened_at': openedAt.toIso8601String(),
+          'data': jsonEncode(data),
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      },
+      (res) => null,
+    );
   }
 
   Future<Map<String, dynamic>?> getActiveShift() async {
-    final db = await database;
-    final rows = await db.query('active_shifts', limit: 1);
-    if (rows.isEmpty) return null;
-    final row = rows.first;
-    final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
-    // Merge top-level fields into data for convenience
-    return {
-      ...data,
-      'id': row['id'],
-      'user_id': row['user_id'],
-      'opened_at': row['opened_at'],
-    };
+    return _proxyOrLocal<Map<String, dynamic>?>(
+      'getActiveShift',
+      {},
+      () async {
+        final db = await database;
+        final rows = await db.query('active_shifts', limit: 1);
+        if (rows.isEmpty) return null;
+        final row = rows.first;
+        final data = jsonDecode(row['data'] as String) as Map<String, dynamic>;
+        // Merge top-level fields into data for convenience
+        return {
+          ...data,
+          'id': row['id'],
+          'user_id': row['user_id'],
+          'opened_at': row['opened_at'],
+        };
+      },
+      (res) => res != null ? Map<String, dynamic>.from(res as Map) : null,
+    );
   }
 
   Future<void> clearActiveShift() async {
-    final db = await database;
-    await db.delete('active_shifts');
+    return _proxyOrLocal<void>(
+      'clearActiveShift',
+      {},
+      () async {
+        final db = await database;
+        await db.delete('active_shifts');
+      },
+      (res) => null,
+    );
   }
 
   // ─── App Settings ─────────────────────────────────────────────────────────────
 
   Future<void> setSetting(String key, String value) async {
-    final db = await database;
-    await db.insert('app_settings', {
-      'key': key,
-      'value': value,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    return _proxyOrLocal<void>(
+      'setSetting',
+      {'key': key, 'value': value},
+      () async {
+        final db = await database;
+        await db.insert('app_settings', {
+          'key': key,
+          'value': value,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      },
+      (res) => null,
+    );
   }
 
   Future<String?> getSetting(String key) async {
-    final db = await database;
-    final rows = await db.query(
-      'app_settings',
-      where: 'key = ?',
-      whereArgs: [key],
+    return _proxyOrLocal<String?>(
+      'getSetting',
+      {'key': key},
+      () async {
+        final db = await database;
+        final rows = await db.query(
+          'app_settings',
+          where: 'key = ?',
+          whereArgs: [key],
+        );
+        if (rows.isEmpty) return null;
+        return rows.first['value'] as String?;
+      },
+      (res) => res as String?,
     );
-    if (rows.isEmpty) return null;
-    return rows.first['value'] as String?;
   }
 
   // ─── Clear Specific Cache ─────────────────────────────────────────────────────
@@ -656,15 +903,22 @@ class LocalDbService {
 
   /// Đọc cấu hình mẫu hóa đơn từ local DB.
   Future<Map<String, dynamic>?> getInvoiceTemplate() async {
-    final db = await database;
-    final rows = await db.query(
-      'cached_invoice_template',
-      where: 'id = ?',
-      whereArgs: ['default'],
-      limit: 1,
+    return _proxyOrLocal<Map<String, dynamic>?>(
+      'getInvoiceTemplate',
+      {},
+      () async {
+        final db = await database;
+        final rows = await db.query(
+          'cached_invoice_template',
+          where: 'id = ?',
+          whereArgs: ['default'],
+          limit: 1,
+        );
+        if (rows.isEmpty) return null;
+        return jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
+      },
+      (res) => res != null ? Map<String, dynamic>.from(res as Map) : null,
     );
-    if (rows.isEmpty) return null;
-    return jsonDecode(rows.first['data'] as String) as Map<String, dynamic>;
   }
 
   /// Xóa cache mẫu hóa đơn.

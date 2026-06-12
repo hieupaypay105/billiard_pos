@@ -14,13 +14,15 @@ class ApiClient {
 
   late final Dio _dio;
   bool _isRefreshing = false;
+  final SharedPreferences _prefs;
 
   /// Callback được gọi khi refresh token thất bại (401) → cần logout về màn hình đăng nhập.
   void Function()? onUnauthorized;
 
-  ApiClient() {
+  ApiClient(this._prefs) {
+    final customUrl = _prefs.getString('api_base_url');
     _dio = Dio(BaseOptions(
-      baseUrl: _baseUrl,
+      baseUrl: customUrl != null && customUrl.isNotEmpty ? customUrl : _baseUrl,
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 15),
       headers: {
@@ -30,6 +32,10 @@ class ApiClient {
     ));
     _dio.interceptors.add(_authInterceptor());
     _dio.interceptors.add(_logInterceptor());
+  }
+
+  void setBaseUrl(String url) {
+    _dio.options.baseUrl = url;
   }
 
   // ─── Interceptors ────────────────────────────────────────────────────────────

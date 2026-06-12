@@ -6,11 +6,18 @@ import 'package:billiard_desktop/features/auth/auth_provider.dart';
 import 'package:billiard_desktop/core/services/api_client.dart';
 import 'package:billiard_desktop/core/providers/providers.dart';
 
+class FakeSharedPreferences implements SharedPreferences {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
 class FakeApiClient extends ApiClient {
   Map<String, dynamic>? mockLoginResponse;
   bool shouldThrowLoginError = false;
   String? loginErrorMsg;
   bool logoutCalled = false;
+
+  FakeApiClient() : super(FakeSharedPreferences());
 
   @override
   Future<Map<String, dynamic>> login({
