@@ -371,6 +371,31 @@ class ApiClient {
     return allItems;
   }
 
+  Future<List<dynamic>> getDailySummary({
+    required String dateFrom,
+    required String dateTo,
+    String? status,
+    String? cashierId,
+  }) async {
+    final res = await _dio.get('/order/dailySummary.html', queryParameters: {
+      'date_from': dateFrom,
+      'date_to': dateTo,
+      if (status != null) 'status': status,
+      if (cashierId != null) 'cashier_id': cashierId,
+    });
+    final body = res.data;
+    if (body is List) return body;
+    if (body is Map<String, dynamic>) {
+      final inner = body['data'] ?? body['items'] ?? body['result'] ?? body['summary'];
+      if (inner is List) return inner;
+      if (inner is Map<String, dynamic>) {
+        final nested = inner['items'] ?? inner['data'] ?? inner['summary'];
+        if (nested is List) return nested;
+      }
+    }
+    return [];
+  }
+
   Future<Map<String, dynamic>> getOrderDetails(String orderId) async {
     final res = await _dio.get(EnvConfig.orderDetails, queryParameters: {
       'order_id': orderId,
