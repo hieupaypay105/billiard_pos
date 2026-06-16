@@ -14,3 +14,4 @@ dependency_overrides:
   # Resolve conflict: flutter_libserialport requires ffi ^1.0 but
   # path_provider_windows requires ffi ^2.0. ffi 2.x is backward-compatible.
   ffi: ^2.1.0
+  path_provider_foundation: 2.4.0
