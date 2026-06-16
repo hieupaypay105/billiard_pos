@@ -133,6 +133,18 @@ class UnpaidInvoice {
   }
 }
 
+class MobileProductNotification {
+  final String id;
+  final String tableName;
+  final List<Map<String, dynamic>> items;
+
+  const MobileProductNotification({
+    required this.id,
+    required this.tableName,
+    required this.items,
+  });
+}
+
 class TablesState {
   final List<TableModel> tables;
   final Map<String, IotConfigModel> iotConfigs;
@@ -160,6 +172,7 @@ class TablesState {
   final Map<String, double> tableExtraPlayAmounts;
   final Map<String, int> tableExtraPlayMinutes;
   final Map<String, String> tableNotes;
+  final List<MobileProductNotification> mobileProductNotifications;
 
   const TablesState({
     this.tables = const [],
@@ -191,6 +204,7 @@ class TablesState {
     this.tableExtraPlayAmounts = const {},
     this.tableExtraPlayMinutes = const {},
     this.tableNotes = const {},
+    this.mobileProductNotifications = const [],
   });
 
   // Sử dụng Object? sentinel để phân biệt "không truyền" và "truyền null"
@@ -220,6 +234,7 @@ class TablesState {
     Map<String, double>? tableExtraPlayAmounts,
     Map<String, int>? tableExtraPlayMinutes,
     Map<String, String>? tableNotes,
+    List<MobileProductNotification>? mobileProductNotifications,
   }) {
     return TablesState(
       tables: tables ?? this.tables,
@@ -252,6 +267,8 @@ class TablesState {
       tableExtraPlayMinutes:
           tableExtraPlayMinutes ?? this.tableExtraPlayMinutes,
       tableNotes: tableNotes ?? this.tableNotes,
+      mobileProductNotifications:
+          mobileProductNotifications ?? this.mobileProductNotifications,
     );
   }
 
@@ -357,6 +374,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
   final ApiClient? _apiClient;
   final SyncService? _syncService;
   final Ref? _ref;
+  bool _isSessionRestoredOnce = false;
 
   bool get _isOnline => _syncService?.isOnline ?? true;
 
@@ -665,6 +683,144 @@ class TablesNotifier extends StateNotifier<TablesState> {
           newSelectedTableId = restoredTables.isNotEmpty ? restoredTables.first.id : null;
         }
 
+        // Calculate new product additions from mobile
+        final List<MobileProductNotification> newNotifications = [];
+        if (_isSessionRestoredOnce) {
+          // Compare active table orders
+          restoredOrders.forEach((tableId, newItems) {
+            final oldItems = state.tableOrders[tableId] ?? [];
+            TableModel? table;
+            for (final t in restoredTables) {
+              if (t.id == tableId) {
+                table = t;
+                break;
+              }
+            }
+            final tableName = table?.tableName ?? 'Bàn bida';
+            
+            final List<Map<String, dynamic>> addedProducts = [];
+            for (final newItem in newItems) {
+              final prodId = newItem['product_id'];
+              final name = newItem['name'] ?? newItem['product_name'] ?? '—';
+              final newQty = newItem['qty'] as int? ?? 0;
+              
+              Map<String, dynamic>? oldItem;
+              for (final o in oldItems) {
+                if (o['product_id'] == prodId) {
+                  oldItem = o;
+                  break;
+                }
+              }
+              final oldQty = oldItem != null ? (oldItem['qty'] as int? ?? 0) : 0;
+              
+              if (newQty > oldQty) {
+                addedProducts.add({
+                  'product_id': prodId,
+                  'name': name,
+                  'qty': newQty - oldQty,
+                });
+              }
+            }
+            if (addedProducts.isNotEmpty) {
+              newNotifications.add(MobileProductNotification(
+                id: const Uuid().v4(),
+                tableName: tableName,
+                items: addedProducts,
+              ));
+            }
+          });
+
+          // Compare unpaid invoices
+          for (final newInv in restoredUnpaid) {
+            UnpaidInvoice? oldInv;
+            for (final inv in state.unpaidInvoices) {
+              if (inv.id == newInv.id) {
+                oldInv = inv;
+                break;
+              }
+            }
+            
+            final List<Map<String, dynamic>> addedProducts = [];
+            final tableName = newInv.tableName;
+            
+            if (oldInv != null) {
+              // Hóa đơn đã tồn tại ở local: kiểm tra số lượng sản phẩm tăng lên
+              for (final newItem in newInv.products) {
+                final prodId = newItem['product_id'];
+                final name = newItem['name'] ?? newItem['product_name'] ?? '—';
+                final newQty = newItem['qty'] as int? ?? 0;
+                
+                Map<String, dynamic>? oldItem;
+                for (final o in oldInv.products) {
+                  if (o['product_id'] == prodId) {
+                    oldItem = o;
+                    break;
+                  }
+                }
+                final oldQty = oldItem != null ? (oldItem['qty'] as int? ?? 0) : 0;
+                
+                if (newQty > oldQty) {
+                  addedProducts.add({
+                    'product_id': prodId,
+                    'name': name,
+                    'qty': newQty - oldQty,
+                  });
+                }
+              }
+            } else {
+              // Hóa đơn mới xuất hiện ở local (do tắt bàn hoặc do tạo trực tiếp từ mobile)
+              // Kiểm tra xem có chuyển đổi từ bàn đang hoạt động ở old state không
+              final oldTableOrder = state.tableOrders[newInv.tableId];
+              if (oldTableOrder != null) {
+                // Bàn đã hoạt động trước đó ở local, kiểm tra xem sản phẩm ở hóa đơn mới có nhiều hơn ở bàn cũ không
+                for (final newItem in newInv.products) {
+                  final prodId = newItem['product_id'];
+                  final name = newItem['name'] ?? newItem['product_name'] ?? '—';
+                  final newQty = newItem['qty'] as int? ?? 0;
+                  
+                  Map<String, dynamic>? oldItem;
+                  for (final o in oldTableOrder) {
+                    if (o['product_id'] == prodId) {
+                      oldItem = o;
+                      break;
+                    }
+                  }
+                  final oldQty = oldItem != null ? (oldItem['qty'] as int? ?? 0) : 0;
+                  
+                  if (newQty > oldQty) {
+                    addedProducts.add({
+                      'product_id': prodId,
+                      'name': name,
+                      'qty': newQty - oldQty,
+                    });
+                  }
+                }
+              } else {
+                // Bàn không hoạt động trước đó, coi như toàn bộ sản phẩm ở hóa đơn này là mới thêm từ mobile
+                for (final newItem in newInv.products) {
+                  addedProducts.add({
+                    'product_id': newItem['product_id'],
+                    'name': newItem['name'] ?? newItem['product_name'] ?? '—',
+                    'qty': newItem['qty'] as int? ?? 0,
+                  });
+                }
+              }
+            }
+            
+            if (addedProducts.isNotEmpty) {
+              newNotifications.add(MobileProductNotification(
+                id: const Uuid().v4(),
+                tableName: tableName,
+                items: addedProducts,
+              ));
+            }
+          }
+        }
+        _isSessionRestoredOnce = true;
+
+        final updatedNotifications = List<MobileProductNotification>.from(state.mobileProductNotifications)
+          ..addAll(newNotifications);
+
         state = state.copyWith(
           tables: restoredTables,
           tableStartTimes: restoredStartTimes,
@@ -680,6 +836,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
           tableNotes: restoredNotes,
           selectedUnpaidInvoiceId: newSelectedUnpaidId,
           selectedTableId: newSelectedTableId,
+          mobileProductNotifications: updatedNotifications,
         );
       }
     } catch (e) {
@@ -790,6 +947,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
       selectedUnpaidInvoiceId: invoiceId,
       selectedTableId: null,
     );
+  }
+
+  void clearMobileProductNotifications() {
+    state = state.copyWith(mobileProductNotifications: const []);
   }
 
   void toggleSimulator(bool useSimulator) {

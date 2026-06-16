@@ -34,6 +34,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
   Timer? _ticker;
   int? _selectedTableTypeId;
   static bool _hasCheckedUpdate = false;
+  bool _isNotificationDialogOpen = false;
 
   // Quick product search suggest variables
   final FocusNode _searchFocusNode = FocusNode();
@@ -192,6 +193,20 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<TablesState>(tablesProvider, (previous, next) {
+      if (next.mobileProductNotifications.isNotEmpty && !_isNotificationDialogOpen) {
+        _isNotificationDialogOpen = true;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const MobileProductsNotificationDialog(),
+        ).then((_) {
+          _isNotificationDialogOpen = false;
+          ref.read(tablesProvider.notifier).clearMobileProductNotifications();
+        });
+      }
+    });
+
     final tablesState = ref.watch(tablesProvider);
     final activeTableTypeId = _selectedTableTypeId ?? 
         (tablesState.tableTypes.isNotEmpty ? tablesState.tableTypes.first.id : null);
@@ -2961,6 +2976,175 @@ class _CancelInvoiceDialogState extends State<_CancelInvoiceDialog> {
           ),
           icon: const Icon(Icons.delete_forever_outlined, size: 16),
           label: const Text('Xác nhận huỷ', style: TextStyle(fontWeight: FontWeight.w600)),
+        ),
+      ],
+    );
+  }
+}
+
+class MobileProductsNotificationDialog extends ConsumerWidget {
+  const MobileProductsNotificationDialog({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(tablesProvider);
+    final notifications = state.mobileProductNotifications;
+
+    if (notifications.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+      });
+      return const SizedBox.shrink();
+    }
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      backgroundColor: Colors.white,
+      titlePadding: const EdgeInsets.only(top: 24, left: 24, right: 24),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      actionsPadding: const EdgeInsets.only(bottom: 20, right: 24, left: 24),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.primarySurface,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.phone_android_rounded,
+              color: AppColors.primary,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Text(
+              'Dịch vụ thêm từ Mobile',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 400,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Có sản phẩm/dịch vụ mới được gọi từ ứng dụng điện thoại:',
+                style: TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ...notifications.map((notification) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceVariant,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          notification.tableName,
+                          style: const TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: Column(
+                          children: notification.items.map((item) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.arrow_right_rounded,
+                                    size: 18,
+                                    color: AppColors.textMuted,
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      item['name'] as String? ?? '',
+                                      style: const TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontSize: 14,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    'x${item['qty']}',
+                                    style: const TextStyle(
+                                      fontFamily: 'Inter',
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        SizedBox(
+          width: double.infinity,
+          height: 44,
+          child: ElevatedButton(
+            onPressed: () {
+              ref.read(tablesProvider.notifier).clearMobileProductNotifications();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              elevation: 0,
+            ),
+            child: const Text(
+              'Xác nhận',
+              style: TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
         ),
       ],
     );
