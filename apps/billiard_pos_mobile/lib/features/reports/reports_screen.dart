@@ -121,6 +121,56 @@ final _reportDataProvider = FutureProvider.family<_ReportData, DateTimeRange>((
   }
 });
 
+class _SummaryParam {
+  final DateTimeRange range;
+  final String status;
+  final String cashier;
+
+  const _SummaryParam({
+    required this.range,
+    required this.status,
+    required this.cashier,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _SummaryParam &&
+          runtimeType == other.runtimeType &&
+          range == other.range &&
+          status == other.status &&
+          cashier == other.cashier;
+
+  @override
+  int get hashCode => range.hashCode ^ status.hashCode ^ cashier.hashCode;
+}
+
+final _dailySummaryProvider = FutureProvider.family<List<dynamic>, _SummaryParam>((
+  ref,
+  param,
+) async {
+  final syncState = ref.watch(syncStateProvider);
+  final isOnline = syncState.isOnline;
+
+  if (isOnline) {
+    try {
+      final api = ref.read(apiClientProvider);
+      final dateFrom = _fmtIso(param.range.start);
+      final dateTo = _fmtIso(param.range.end);
+      return await api.getDailySummary(
+        dateFrom: dateFrom,
+        dateTo: dateTo,
+        status: param.status != 'all' ? param.status : null,
+        cashierId: param.cashier != 'all' ? param.cashier : null,
+      );
+    } catch (e) {
+      debugPrint('Error fetching daily summary from API: $e');
+      return [];
+    }
+  }
+  return [];
+});
+
 final _cashiersProvider = FutureProvider<List<dynamic>>((ref) async {
   final syncState = ref.watch(syncStateProvider);
   if (!syncState.isOnline) return [];
@@ -607,6 +657,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                     _InvoiceSummaryTab(
                       orders: filteredOrders,
                       isOffline: data.isOffline,
+                      dateRange: _dateRange,
+                      status: _selectedStatus,
+                      cashier: _selectedCashier,
                     ),
                   ],
                 );
@@ -902,17 +955,24 @@ class _InvoiceDetailsListTab extends StatelessWidget {
 
 // ─── Tab 2: Grouped Daily Invoice Summary (Mobile Optimized) ─────────────────
 
-class _InvoiceSummaryTab extends StatelessWidget {
+class _InvoiceSummaryTab extends ConsumerWidget {
   final List<dynamic> orders;
   final bool isOffline;
+  final DateTimeRange dateRange;
+  final String status;
+  final String cashier;
 
-  const _InvoiceSummaryTab({required this.orders, required this.isOffline});
+  const _InvoiceSummaryTab({
+    required this.orders,
+    required this.isOffline,
+    required this.dateRange,
+    required this.status,
+    required this.cashier,
+  });
 
-  @override
-  Widget build(BuildContext context) {
-    // Group orders by day
+  List<_ReportRow> _groupOrdersInMemory(List<dynamic> ordersList) {
     final Map<String, List<Map<String, dynamic>>> byDay = {};
-    for (final o in orders) {
+    for (final o in ordersList) {
       final raw = o as Map<String, dynamic>;
 
       final dateStr = (raw['created_at'] as String? ?? '').replaceAll(' ', 'T');
@@ -927,7 +987,7 @@ class _InvoiceSummaryTab extends StatelessWidget {
       byDay.putIfAbsent(key, () => []).add(raw);
     }
 
-    final rows = byDay.entries.map((e) {
+    return byDay.entries.map((e) {
       final list = e.value;
       double play = 0, service = 0, discount = 0, total = 0;
       for (final r in list) {
@@ -944,8 +1004,21 @@ class _InvoiceSummaryTab extends StatelessWidget {
         discount: discount,
         total: total,
       );
-    }).toList()..sort((a, b) => b.date.compareTo(a.date));
+    }).toList()..sort((a, b) {
+      try {
+        final aParts = a.date.split('/');
+        final bParts = b.date.split('/');
+        if (aParts.length == 3 && bParts.length == 3) {
+          final aDate = DateTime(int.parse(aParts[2]), int.parse(aParts[1]), int.parse(aParts[0]));
+          final bDate = DateTime(int.parse(bParts[2]), int.parse(bParts[1]), int.parse(bParts[0]));
+          return bDate.compareTo(aDate);
+        }
+      } catch (_) {}
+      return b.date.compareTo(a.date);
+    });
+  }
 
+  Widget _renderRows(BuildContext context, List<_ReportRow> rows) {
     if (rows.isEmpty) {
       return const Center(
         child: Column(
@@ -1075,6 +1148,79 @@ class _InvoiceSummaryTab extends StatelessWidget {
         Text(label, style: TextStyle(fontSize: 12, color: isDiscount ? AppColors.accent : AppColors.textSecondary)),
         Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: isDiscount ? AppColors.accent : AppColors.textPrimary)),
       ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (isOffline) {
+      final inMemoryRows = _groupOrdersInMemory(orders);
+      return _renderRows(context, inMemoryRows);
+    }
+
+    final param = _SummaryParam(range: dateRange, status: status, cashier: cashier);
+    final summaryAsync = ref.watch(_dailySummaryProvider(param));
+
+    return summaryAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, __) {
+        debugPrint('Daily summary error: $e, falling back to local memory calculation');
+        final inMemoryRows = _groupOrdersInMemory(orders);
+        return _renderRows(context, inMemoryRows);
+      },
+      data: (summaryData) {
+        if (summaryData.isEmpty) {
+          if (orders.isNotEmpty) {
+            final inMemoryRows = _groupOrdersInMemory(orders);
+            return _renderRows(context, inMemoryRows);
+          }
+        }
+
+        final List<_ReportRow> rows = [];
+        for (final item in summaryData) {
+          if (item is! Map<String, dynamic>) continue;
+
+          final dateRaw = (item['date'] ?? item['order_date'] ?? item['date_group'] ?? item['created_at'] ?? '').toString();
+          String formattedDate = dateRaw;
+          try {
+            if (dateRaw.contains('-')) {
+              final dt = DateTime.parse(dateRaw.replaceAll(' ', 'T'));
+              formattedDate = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+            }
+          } catch (_) {}
+
+          final countVal = item['count'] ?? item['order_count'] ?? item['total_invoices'] ?? 0;
+          final playVal = item['play'] ?? item['play_amount'] ?? item['total_play_time_amount'] ?? 0.0;
+          final serviceVal = item['service'] ?? item['product_amount'] ?? item['service_amount'] ?? item['total_product_amount'] ?? 0.0;
+          final discountVal = item['discount'] ?? item['discount_amount'] ?? 0.0;
+          final totalVal = item['total'] ?? item['daily_revenue'] ?? item['total_amount'] ?? item['grand_total'] ?? 0.0;
+
+          rows.add(_ReportRow(
+            date: formattedDate,
+            count: _toInt(countVal),
+            play: _toDouble(playVal),
+            service: _toDouble(serviceVal),
+            discount: _toDouble(discountVal),
+            total: _toDouble(totalVal),
+          ));
+        }
+
+        // Sort descending by date
+        rows.sort((a, b) {
+          try {
+            final aParts = a.date.split('/');
+            final bParts = b.date.split('/');
+            if (aParts.length == 3 && bParts.length == 3) {
+              final aDate = DateTime(int.parse(aParts[2]), int.parse(aParts[1]), int.parse(aParts[0]));
+              final bDate = DateTime(int.parse(bParts[2]), int.parse(bParts[1]), int.parse(bParts[0]));
+              return bDate.compareTo(aDate);
+            }
+          } catch (_) {}
+          return b.date.compareTo(a.date);
+        });
+
+        return _renderRows(context, rows);
+      },
     );
   }
 }
