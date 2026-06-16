@@ -978,7 +978,7 @@ class _InvoiceSummaryTab extends ConsumerWidget {
       final dateStr = (raw['created_at'] as String? ?? '').replaceAll(' ', 'T');
       DateTime? dt;
       try {
-        if (dateStr.isNotEmpty) dt = DateTime.parse(dateStr);
+        if (dateStr.isNotEmpty) dt = DateTime.parse(dateStr).subtract(const Duration(hours: 8));
       } catch (_) {}
       if (dt == null) continue;
 

@@ -192,7 +192,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
       final dateStr = (raw['end_time'] ?? raw['created_at'] ?? raw['start_time'] ?? '').toString().replaceAll(' ', 'T');
       if (dateStr.isEmpty) continue;
       try {
-        final dt = DateTime.parse(dateStr);
+        final dt = DateTime.parse(dateStr).subtract(const Duration(hours: 8));
         final dateKey = DateTime(dt.year, dt.month, dt.day);
         final double amount = _toDouble(raw['total_amount']);
         dailyRevenue[dateKey] = (dailyRevenue[dateKey] ?? 0.0) + amount;
@@ -893,7 +893,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
       final dateStr = (raw['end_time'] ?? raw['created_at'] ?? raw['start_time'] ?? '').toString().replaceAll(' ', 'T');
       if (dateStr.isEmpty) continue;
       try {
-        final dt = DateTime.parse(dateStr);
+        final dt = DateTime.parse(dateStr).subtract(const Duration(hours: 8));
         final dateKey = DateTime(dt.year, dt.month, dt.day);
         final double amount = _toDouble(raw['total_amount']);
         dailyRevenue[dateKey] = (dailyRevenue[dateKey] ?? 0.0) + amount;
