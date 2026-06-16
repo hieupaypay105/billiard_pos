@@ -21,6 +21,7 @@ import 'package:flutter/services.dart';
 import '../update/update_service.dart';
 import '../update/update_dialog.dart';
 import 'package:uuid/uuid.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 
 class TablesScreen extends ConsumerStatefulWidget {
@@ -35,6 +36,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
   int? _selectedTableTypeId;
   static bool _hasCheckedUpdate = false;
   bool _isNotificationDialogOpen = false;
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   // Quick product search suggest variables
   final FocusNode _searchFocusNode = FocusNode();
@@ -78,6 +80,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
     _ticker?.cancel();
     _searchFocusNode.dispose();
     _searchCtrl.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -194,7 +197,13 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
   @override
   Widget build(BuildContext context) {
     ref.listen<TablesState>(tablesProvider, (previous, next) {
-      if (next.mobileProductNotifications.isNotEmpty && !_isNotificationDialogOpen) {
+      final prevLen = previous?.mobileProductNotifications.length ?? 0;
+      final nextLen = next.mobileProductNotifications.length;
+      if (nextLen > prevLen) {
+        _audioPlayer.play(AssetSource('sounds/notification.mp3'));
+      }
+
+      if (nextLen > 0 && !_isNotificationDialogOpen) {
         _isNotificationDialogOpen = true;
         showDialog(
           context: context,

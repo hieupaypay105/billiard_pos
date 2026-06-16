@@ -45,6 +45,7 @@ dependencies:
   qr_flutter: ^4.1.0
   printing: ^5.14.3
   pdf: ^3.12.0
+  audioplayers: ^6.7.1
 
   # Receipt Printing (K80) - TODO: integrate when printer hardware confirmed
   # esc_pos_utils_plus: ^2.0.4  # add when ready to integrate
@@ -62,6 +63,7 @@ flutter:
     - assets/images/logo.png
     - assets/fonts/Roboto-Regular.ttf
     - assets/fonts/Roboto-Bold.ttf
+    - assets/sounds/notification.mp3
   # fonts:
   #   - family: Inter
   #     fonts:
