@@ -1,0 +1,27 @@
+HƯỚNG DẪN CÀI ĐẶT & SỬ DỤNG (INSTALLATION GUIDE)
+================================================
+
+Để cài đặt ứng dụng trên macOS 12.7.4 trở lên, vui lòng làm theo các bước sau:
+
+1. Kéo thả file "billiard_desktop.app" vào biểu tượng thư mục "Applications" bên cạnh.
+2. Mở Finder, truy cập thư mục Applications (Ứng dụng) trên máy của bạn.
+3. Nhấp chuột phải (hoặc nhấn giữ phím Control và nhấp chuột) vào "billiard_desktop" và chọn "Open" (Mở).
+4. Một thông báo cảnh báo về nhà phát triển chưa được xác minh (Unidentified Developer) sẽ xuất hiện. Hãy nhấn chọn "Open" (Mở) để xác nhận chạy ứng dụng.
+   (Lưu ý: Bạn chỉ cần thực hiện bước này ở lần đầu tiên mở ứng dụng. Những lần sau có thể click đúp mở bình thường).
+
+MẸO NHANH (QUICK TRICK):
+Nếu ứng dụng vẫn báo lỗi không mở được, bạn hãy mở Terminal trên macOS và chạy lệnh sau:
+xattr -cr /Applications/billiard_desktop.app
+
+------------------------------------------------
+
+ENGLISH INSTRUCTIONS:
+To install and run the app on macOS:
+1. Drag and drop "billiard_desktop.app" into the "Applications" folder shortcut.
+2. Open Finder, navigate to your Applications folder.
+3. Right-click (or Control-click) "billiard_desktop" and select "Open".
+4. When the Gatekeeper dialog warns you about an "unidentified developer", click "Open".
+   (Note: You only need to do this the first time. Afterwards, you can launch it normally).
+
+If you still encounter issues, run this command in Terminal to bypass Gatekeeper:
+xattr -cr /Applications/billiard_desktop.app

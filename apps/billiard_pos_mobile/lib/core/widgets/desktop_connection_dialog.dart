@@ -65,30 +65,36 @@ class _DesktopConnectionDialogState extends ConsumerState<DesktopConnectionDialo
 
       final List<String> foundIps = [];
       if (subnetPrefixes.isNotEmpty) {
-        final List<Future<void>> scans = [];
-        final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 400);
+        final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 1200);
 
         for (final subnet in subnetPrefixes) {
-          for (int i = 1; i < 255; i++) {
-            final targetIp = '$subnet$i';
-            scans.add(() async {
-              try {
-                final request = await client.getUrl(Uri.parse('http://$targetIp:8085/api/ping'));
-                final response = await request.close();
-                if (response.statusCode == 200) {
-                  final body = await response.transform(utf8.decoder).join();
-                  final data = jsonDecode(body) as Map<String, dynamic>;
-                  if (data['app'] == 'billiard_pos') {
-                    foundIps.add(targetIp);
+          // Scan in chunks of 50 in parallel to prevent socket exhaustion and packet loss
+          const chunkSize = 50;
+          for (int chunkStart = 1; chunkStart < 255; chunkStart += chunkSize) {
+            final chunkEnd = (chunkStart + chunkSize < 255) ? chunkStart + chunkSize : 255;
+            final List<Future<void>> chunkScans = [];
+
+            for (int i = chunkStart; i < chunkEnd; i++) {
+              final targetIp = '$subnet$i';
+              chunkScans.add(() async {
+                try {
+                  final request = await client.getUrl(Uri.parse('http://$targetIp:8085/api/ping'));
+                  final response = await request.close();
+                  if (response.statusCode == 200) {
+                    final body = await response.transform(utf8.decoder).join();
+                    final data = jsonDecode(body) as Map<String, dynamic>;
+                    if (data['app'] == 'billiard_pos') {
+                      foundIps.add(targetIp);
+                    }
                   }
+                } catch (_) {
+                  // Ignore timeouts and socket exceptions
                 }
-              } catch (_) {
-                // Ignore timeouts and socket exceptions
-              }
-            }());
+              }());
+            }
+            await Future.wait(chunkScans);
           }
         }
-        await Future.wait(scans);
       }
 
       if (mounted) {
@@ -109,6 +115,7 @@ class _DesktopConnectionDialogState extends ConsumerState<DesktopConnectionDialo
       }
     }
   }
+
 
   Future<void> _connect(String ip) async {
     setState(() {

@@ -4,6 +4,7 @@ import 'package:core_shared/core_shared.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_text_styles.dart';
 import '../../features/sync/sync_provider.dart';
+import '../providers/providers.dart';
 
 class StatusBar extends ConsumerWidget {
   final UserModel? user;
@@ -39,6 +40,33 @@ class StatusBar extends ConsumerWidget {
             _chip(_roleLabel(user!.role),
                 color: _roleColor(user!.role)),
           ],
+
+          // Local IP display
+          ref.watch(localIpsProvider).when(
+            data: (ips) {
+              if (ips.isEmpty) return const SizedBox();
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _separator(),
+                  Icon(Icons.wifi_tethering, size: 14,
+                      color: Colors.white.withOpacity(0.5)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'IP Kết nối: ${ips.join(", ")} (Port: 8085)',
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 12,
+                      color: Colors.white.withOpacity(0.7),
+                    ),
+                  ),
+                ],
+              );
+            },
+            loading: () => const SizedBox(),
+            error: (_, __) => const SizedBox(),
+          ),
+
 
           const Spacer(),
           // Pending sync count
