@@ -1288,7 +1288,7 @@ class _InvoiceSummaryTab extends ConsumerWidget {
         for (final item in summaryData) {
           if (item is! Map<String, dynamic>) continue;
           
-          final dateRaw = (item['date'] ?? item['date_group'] ?? item['created_at'] ?? '').toString();
+          final dateRaw = (item['date'] ?? item['order_date'] ?? item['date_group'] ?? item['created_at'] ?? '').toString();
           String formattedDate = dateRaw;
           try {
             if (dateRaw.contains('-')) {
@@ -1299,9 +1299,9 @@ class _InvoiceSummaryTab extends ConsumerWidget {
 
           final countVal = item['count'] ?? item['order_count'] ?? item['total_invoices'] ?? 0;
           final playVal = item['play'] ?? item['play_amount'] ?? item['total_play_time_amount'] ?? 0.0;
-          final serviceVal = item['service'] ?? item['service_amount'] ?? item['total_product_amount'] ?? 0.0;
+          final serviceVal = item['service'] ?? item['product_amount'] ?? item['service_amount'] ?? item['total_product_amount'] ?? 0.0;
           final discountVal = item['discount'] ?? item['discount_amount'] ?? 0.0;
-          final totalVal = item['total'] ?? item['total_amount'] ?? item['grand_total'] ?? 0.0;
+          final totalVal = item['total'] ?? item['daily_revenue'] ?? item['total_amount'] ?? item['grand_total'] ?? 0.0;
 
           rows.add(_ReportRow(
             date: formattedDate,
