@@ -1034,7 +1034,7 @@ class ReportPrintPreviewDialog extends ConsumerWidget {
             'TỔNG DOANH THU:',
             _fmtCurrency(totalAmount),
             bold: true,
-            color: const Color(0xFF2E4F4F),
+            color: AppColors.primary,
           ),
 
           dashedDiv(),

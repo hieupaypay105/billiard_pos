@@ -146,73 +146,107 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
               final titleSize = isCompact ? 15.0 : 18.0;
               final spacing = isCompact ? 4.0 : 8.0;
               
+              final pendingCount = state.tablePendingOrders[table.id]?.length ?? 0;
+              
               return InkWell(
                 onTap: () {
                   context.push('${AppRoutes.billing}/${table.id}');
                 },
                 borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: isActive ? AppColors.primary.withValues(alpha: 0.1) : Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isActive ? AppColors.primary : Colors.grey.shade300,
-                      width: 2,
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 4,
-                        offset: Offset(0, 2),
-                      )
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.table_bar,
-                        size: iconSize,
-                        color: isActive ? AppColors.primary : Colors.grey.shade400,
-                      ),
-                      SizedBox(height: spacing),
-                      Text(
-                        table.tableName,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: titleSize,
-                          color: isActive ? AppColors.primary : Colors.black87,
+                child: Stack(
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      height: double.infinity,
+                      decoration: BoxDecoration(
+                        color: isActive ? AppColors.primary.withValues(alpha: 0.1) : Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isActive ? AppColors.primary : Colors.grey.shade300,
+                          width: 2,
                         ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 4,
+                            offset: Offset(0, 2),
+                          )
+                        ],
                       ),
-                      if (isActive) ...[
-                        SizedBox(height: spacing),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(12),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.table_bar,
+                            size: iconSize,
+                            color: isActive ? AppColors.primary : Colors.grey.shade400,
                           ),
-                          child: const Text(
-                            'Đang chơi',
+                          SizedBox(height: spacing),
+                          Text(
+                            table.tableName,
                             style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: titleSize,
+                              color: isActive ? AppColors.primary : Colors.black87,
+                            ),
+                          ),
+                          if (isActive) ...[
+                            SizedBox(height: spacing),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                'Đang chơi',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ] else ...[
+                            SizedBox(height: spacing),
+                            Text(
+                              'Bàn trống',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                          ]
+                        ],
+                      ),
+                    ),
+                    if (pendingCount > 0)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: const BoxDecoration(
+                            color: Colors.orange,
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 20,
+                            minHeight: 20,
+                          ),
+                          child: Center(
+                            child: Text(
+                              '$pendingCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
-                      ] else ...[
-                        SizedBox(height: spacing),
-                        Text(
-                          'Bàn trống',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                      ]
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               );
             },

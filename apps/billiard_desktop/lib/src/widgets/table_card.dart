@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:core_shared/core_shared.dart';
+import '../../core/constants/app_colors.dart';
 
 class TableCard extends StatefulWidget {
   final TableModel table;
@@ -46,8 +47,8 @@ class _TableCardState extends State<TableCard> with SingleTickerProviderStateMix
     String statusText;
 
     if (isActive) {
-      cardBg = const Color(0xFFEDF6F6); // Soft HSL Teal light tint
-      accentBorderColor = const Color(0xFF2E4F4F);
+      cardBg = const Color(0xFFF5F2F0); // Warm grey surface
+      accentBorderColor = AppColors.primary;
       statusDotColor = const Color(0xFF0D9488); // Teal Green
       statusText = 'Đang chơi';
     } else if (widget.table.status == 'maintenance') {
@@ -64,7 +65,7 @@ class _TableCardState extends State<TableCard> with SingleTickerProviderStateMix
 
     // Highlight border when selected
     if (widget.isSelected) {
-      accentBorderColor = const Color(0xFF2E4F4F);
+      accentBorderColor = AppColors.primary;
     }
 
     return MouseRegion(
@@ -187,7 +188,7 @@ class _TableCardState extends State<TableCard> with SingleTickerProviderStateMix
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14.5,
-                          color: Color(0xFF2E4F4F),
+                          color: AppColors.primary,
                         ),
                       ),
                     ],

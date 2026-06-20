@@ -779,6 +779,55 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
     final elapsed = endTime.difference(startTime);
 
+    final buildProductRow = (BuildContext context, Map<String, dynamic> p, {required bool isLocked}) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(p['name'] as String, style: AppTextStyles.labelLarge),
+                  const SizedBox(height: 4),
+                  Text(_fmtCurrency(p['price'] as double), style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+                ],
+              ),
+            ),
+            Row(
+              children: [
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(Icons.remove_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.textSecondary),
+                  onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(table.id, p['product_id'] as String, -1),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text('${p['qty']}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isLocked ? AppColors.textMuted : AppColors.textPrimary)),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(Icons.add_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.primary),
+                  onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(table.id, p['product_id'] as String, 1),
+                ),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: isLocked ? null : () => ref.read(tablesProvider.notifier).removeProductFromTable(table.id, p['product_id'] as String),
+                  child: Icon(Icons.delete_outline, color: isLocked ? AppColors.textMuted : Colors.redAccent, size: 20),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    };
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -897,54 +946,8 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             ),
           ),
 
-          final buildProductRow = (BuildContext context, Map<String, dynamic> p, {required bool isLocked}) {
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(p['name'] as String, style: AppTextStyles.labelLarge),
-                        const SizedBox(height: 4),
-                        Text(_fmtCurrency(p['price'] as double), style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
-                      ],
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(Icons.remove_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.textSecondary),
-                        onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(table.id, p['product_id'] as String, -1),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Text('${p['qty']}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isLocked ? AppColors.textMuted : AppColors.textPrimary)),
-                      ),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(Icons.add_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.primary),
-                        onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(table.id, p['product_id'] as String, 1),
-                      ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: isLocked ? null : () => ref.read(tablesProvider.notifier).removeProductFromTable(table.id, p['product_id'] as String),
-                        child: Icon(Icons.delete_outline, color: isLocked ? AppColors.textMuted : Colors.redAccent, size: 20),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          };
+          // Product List Header (DỊCH VỤ ĐÃ GỌI / Thêm)
+          // No inline buildProductRow declaration here
 
           Expanded(
             child: (products.isEmpty && pendingProducts.isEmpty)
@@ -1368,6 +1371,55 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final discountAmount = playDiscountAmount + serviceDiscountAmount + billDiscountAmount;
     final netTotal = (playAmount + productTotal) - discountAmount;
 
+    final buildProductRow = (BuildContext context, Map<String, dynamic> p, {required bool isLocked}) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(p['name'] as String, style: AppTextStyles.labelLarge),
+                  const SizedBox(height: 4),
+                  Text(_fmtCurrency(p['price'] as double), style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+                ],
+              ),
+            ),
+            Row(
+              children: [
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(Icons.remove_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.textSecondary),
+                  onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(invoice.id, p['product_id'] as String, -1),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text('${p['qty']}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isLocked ? AppColors.textMuted : AppColors.textPrimary)),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(Icons.add_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.primary),
+                  onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(invoice.id, p['product_id'] as String, 1),
+                ),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: isLocked ? null : () => ref.read(tablesProvider.notifier).removeProductFromTable(invoice.id, p['product_id'] as String),
+                  child: Icon(Icons.delete_outline, color: isLocked ? AppColors.textMuted : Colors.redAccent, size: 20),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    };
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -1477,54 +1529,8 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             ),
           ),
 
-          final buildProductRow = (BuildContext context, Map<String, dynamic> p, {required bool isLocked}) {
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(p['name'] as String, style: AppTextStyles.labelLarge),
-                        const SizedBox(height: 4),
-                        Text(_fmtCurrency(p['price'] as double), style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
-                      ],
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(Icons.remove_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.textSecondary),
-                        onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(invoice.id, p['product_id'] as String, -1),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Text('${p['qty']}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isLocked ? AppColors.textMuted : AppColors.textPrimary)),
-                      ),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: Icon(Icons.add_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.primary),
-                        onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(invoice.id, p['product_id'] as String, 1),
-                      ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: isLocked ? null : () => ref.read(tablesProvider.notifier).removeProductFromTable(invoice.id, p['product_id'] as String),
-                        child: Icon(Icons.delete_outline, color: isLocked ? AppColors.textMuted : Colors.redAccent, size: 20),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          };
+          // Product List Header (DỊCH VỤ ĐÃ GỌI / Thêm)
+          // No inline buildProductRow declaration here
 
           Expanded(
             child: (products.isEmpty && pendingProducts.isEmpty)

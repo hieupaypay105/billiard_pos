@@ -5,10 +5,10 @@ class AppColors {
   AppColors._();
 
   // --- Primary Brand ---
-  static const Color primary = Color(0xFF2E4F4F);
-  static const Color primaryLight = Color(0xFF3D6666);
-  static const Color primaryDark = Color(0xFF1E3535);
-  static const Color primarySurface = Color(0xFFEDF5F5);
+  static const Color primary = Color(0xFF5C544E);
+  static const Color primaryLight = Color(0xFF756B64);
+  static const Color primaryDark = Color(0xFF3D3733);
+  static const Color primarySurface = Color(0xFFF5F2F0);
 
   // --- Accent / Highlight ---
   static const Color accent = Color(0xFFE28743);
@@ -19,7 +19,7 @@ class AppColors {
   static const Color surface = Colors.white;
   static const Color surfaceVariant = Color(0xFFECEFF1);
   static const Color surfaceDark = Color(0xFF1E1E1E);
-  static const Color dialogBg = Color(0xFF1A3333);
+  static const Color dialogBg = Color(0xFF35302C);
 
   // --- Text ---
   static const Color textPrimary = Color(0xFF212121);
@@ -47,9 +47,9 @@ class AppColors {
   static const Color infoLight = Color(0xFFDBEAFE);
 
   // --- Navigation Rail ---
-  static const Color navRailBg = Color(0xFF1A3333);
-  static const Color navRailSelected = Color(0xFF2E4F4F);
-  static const Color navRailIndicator = Color(0xFF3D6666);
+  static const Color navRailBg = Color(0xFF35302C);
+  static const Color navRailSelected = Color(0xFF5C544E);
+  static const Color navRailIndicator = Color(0xFF756B64);
 
   // --- Border ---
   static const Color border = Color(0xFFE5E7EB);

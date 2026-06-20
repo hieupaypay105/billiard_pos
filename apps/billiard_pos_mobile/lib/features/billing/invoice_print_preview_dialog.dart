@@ -1616,7 +1616,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
             'TỔNG CỘNG:',
             _fmtCurrency(effectiveNet),
             bold: true,
-            color: isUnpaid ? const Color(0xFFDC2626) : const Color(0xFF2E4F4F),
+            color: isUnpaid ? const Color(0xFFDC2626) : AppColors.primary,
           ),
 
           // ── GHI CHÚ / LÝ DO (không có badge trạng thái) ─────────────────

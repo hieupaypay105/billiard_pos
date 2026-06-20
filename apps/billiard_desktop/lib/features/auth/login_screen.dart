@@ -108,7 +108,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                             ),
                             const SizedBox(height: 32),
                             const Text(
-                              'New World Waiter',
+                              'New World Pos',
                               style: TextStyle(
                                 fontFamily: 'Inter',
                                 fontSize: 40,
@@ -322,7 +322,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                       // Footer
                       Center(
                         child: Text(
-                          'New World Waiter v1.0 © 2026',
+                          'New World Pos v1.0 © 2026',
                           style: AppTextStyles.labelSmall,
                         ),
                       ),
