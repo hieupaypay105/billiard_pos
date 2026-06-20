@@ -79,5 +79,4 @@ flutter:
 msix_config:
   display_name: New World Pos
   publisher_display_name: New World
-  logo_path: 
-    - assets/appicons/desktop.png # Đường dẫn đến file ảnh làm logo (tự động chuyển đổi)
+  logo_path: assets/appicons/desktop.png # Đường dẫn đến file ảnh làm logo (tự động chuyển đổi)
