@@ -74,3 +74,8 @@ flutter:
   #         weight: 600
   #       - asset: assets/fonts/Inter-Bold.ttf
   #         weight: 700
+
+  msix_config:
+    display_name: New World Pos
+    publisher_display_name: New World
+    logo_path: assets/appicons/desktop.png    # Đường dẫn đến file ảnh làm logo (tự động chuyển đổi)
