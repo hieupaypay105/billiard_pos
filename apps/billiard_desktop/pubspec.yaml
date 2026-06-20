@@ -1,5 +1,5 @@
 name: billiard_desktop
-description: Billiard POS Desktop Client
+description: New World Pos
 version: 1.0.0+1
 publish_to: none
 resolution: workspace
@@ -56,6 +56,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   mockito: ^5.4.4
   build_runner: ^2.4.13
+  msix: ^3.16.1 # Use the latest version available
 
 flutter:
   uses-material-design: true
@@ -75,7 +76,7 @@ flutter:
   #       - asset: assets/fonts/Inter-Bold.ttf
   #         weight: 700
 
-  msix_config:
-    display_name: New World Pos
-    publisher_display_name: New World
-    logo_path: assets/appicons/desktop.png    # Đường dẫn đến file ảnh làm logo (tự động chuyển đổi)
+msix_config:
+  display_name: New World Pos
+  publisher_display_name: New World
+  logo_path: assets/appicons/desktop.png # Đường dẫn đến file ảnh làm logo (tự động chuyển đổi)
