@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 import '../providers/providers.dart';
 import '../../features/tables/tables_provider.dart';
 
@@ -120,45 +121,103 @@ class _DesktopConnectionDialogState extends ConsumerState<DesktopConnectionDialo
   Future<void> _connect(String ip) async {
     setState(() {
       _isScanning = true;
-      _statusMessage = 'Đang kết nối đến $ip...';
+      _statusMessage = 'Đang gửi yêu cầu kết nối đến $ip...';
     });
 
     try {
-      final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
-      final request = await client.getUrl(Uri.parse('http://$ip:8085/api/ping'));
-      final response = await request.close();
+      final prefs = ref.read(sharedPreferencesProvider);
       
-      if (response.statusCode == 200) {
-        final body = await response.transform(utf8.decoder).join();
-        final data = jsonDecode(body) as Map<String, dynamic>;
-        
-        if (data['app'] == 'billiard_pos') {
-          final prefs = ref.read(sharedPreferencesProvider);
-          await prefs.setString('desktop_server_ip', ip);
-          
-          if (mounted) {
+      // Retrieve or generate unique device_id
+      var deviceId = prefs.getString('device_id') ?? '';
+      if (deviceId.isEmpty) {
+        deviceId = const Uuid().v4();
+        await prefs.setString('device_id', deviceId);
+      }
+
+      // Prepare device info payload
+      String osName = 'Unknown';
+      if (Platform.isAndroid) {
+        osName = 'Android';
+      } else if (Platform.isIOS) {
+        osName = 'iOS';
+      } else if (Platform.isMacOS) {
+        osName = 'macOS';
+      } else if (Platform.isWindows) {
+        osName = 'Windows';
+      }
+
+      String deviceName = Platform.localHostname;
+      if (deviceName == 'localhost' || deviceName.isEmpty) {
+        deviceName = Platform.isIOS ? 'iPhone' : (Platform.isAndroid ? 'Android Device' : 'Device');
+      }
+
+      final payload = {
+        'device_id': deviceId,
+        'device_name': deviceName,
+        'os': osName,
+      };
+
+      final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
+      bool isAuthorized = false;
+      int retryCount = 0;
+      const maxRetries = 15; // 30 seconds total waiting
+
+      while (retryCount < maxRetries) {
+        if (!mounted) return;
+        final request = await client.postUrl(Uri.parse('http://$ip:8085/api/request-access'));
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode(payload));
+
+        final response = await request.close();
+        if (response.statusCode == 200) {
+          final body = await response.transform(utf8.decoder).join();
+          final data = jsonDecode(body) as Map<String, dynamic>;
+
+          final access = data['access'] as String?;
+          if (access == 'approved') {
+            isAuthorized = true;
+            break;
+          } else if (access == 'denied') {
+            throw Exception('Yêu cầu kết nối bị từ chối.');
+          } else {
+            // Pending: wait and try again
             setState(() {
-              _isScanning = false;
-              _isSuccess = true;
-              _statusMessage = 'Kết nối thành công!';
+              _statusMessage = 'Đang chờ máy tính chấp nhận kết nối... (${(maxRetries - retryCount) * 2}s)';
             });
-            
-            // Reload tables provider to pull desktop state immediately
-            ref.read(tablesProvider.notifier).loadTables();
-            
-            Future.delayed(const Duration(milliseconds: 500), () {
-              if (mounted) Navigator.pop(context);
-            });
+            await Future.delayed(const Duration(seconds: 2));
+            retryCount++;
           }
-          return;
+        } else {
+          throw Exception('Không thể kết nối đến máy tính (HTTP ${response.statusCode})');
         }
       }
-      throw Exception('Thiết bị không phản hồi đúng giao thức.');
+
+      if (!isAuthorized) {
+        throw Exception('Hết thời gian chờ máy tính phê duyệt.');
+      }
+
+      // Connection approved and successful
+      await prefs.setString('desktop_server_ip', ip);
+
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+          _isSuccess = true;
+          _statusMessage = 'Kết nối thành công!';
+        });
+
+        // Reload tables provider to pull desktop state immediately
+        ref.read(tablesProvider.notifier).loadTables();
+
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) Navigator.pop(context);
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isScanning = false;
-          _statusMessage = 'Kết nối thất bại: $e';
+          _statusMessage = 'Kết nối thất bại: ${e.toString().replaceAll('Exception: ', '')}';
         });
       }
     }

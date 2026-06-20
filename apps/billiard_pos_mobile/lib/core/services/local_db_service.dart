@@ -33,12 +33,19 @@ class LocalDbService {
         final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
         final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/db-query'));
         request.headers.contentType = ContentType.json;
+        final deviceId = prefs.getString('device_id') ?? '';
+        if (deviceId.isNotEmpty) {
+          request.headers.add('x-device-id', deviceId);
+        }
         request.write(jsonEncode({
           'method': method,
           'args': args,
         }));
         final response = await request.close();
-        if (response.statusCode == 200) {
+        if (response.statusCode == 403) {
+          print("Connection unauthorized by desktop. Disconnecting.");
+          await prefs.remove('desktop_server_ip');
+        } else if (response.statusCode == 200) {
           final body = await utf8.decodeStream(response);
           final res = jsonDecode(body) as Map<String, dynamic>;
           if (res['status'] == 1) {

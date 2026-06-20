@@ -143,6 +143,8 @@ class TablesState {
   final String? selectedTableId;
   final Map<String, DateTime> tableStartTimes;
   final Map<String, List<Map<String, dynamic>>> tableOrders;
+  final Map<String, List<Map<String, dynamic>>> tablePendingOrders;
+  final String? connectedIp;
   final Map<String, double> tableDiscounts; // Deprecated fallback
   final Map<String, double> tablePlayDiscounts;
   final Map<String, double> tableServiceDiscounts;
@@ -173,6 +175,8 @@ class TablesState {
     this.selectedTableId,
     this.tableStartTimes = const {},
     this.tableOrders = const {},
+    this.tablePendingOrders = const {},
+    this.connectedIp,
     this.tableDiscounts = const {},
     this.tablePlayDiscounts = const {},
     this.tableServiceDiscounts = const {},
@@ -206,6 +210,8 @@ class TablesState {
     Object? selectedTableId = _absent,
     Map<String, DateTime>? tableStartTimes,
     Map<String, List<Map<String, dynamic>>>? tableOrders,
+    Map<String, List<Map<String, dynamic>>>? tablePendingOrders,
+    Object? connectedIp = _absent,
     Map<String, double>? tableDiscounts,
     Map<String, double>? tablePlayDiscounts,
     Map<String, double>? tableServiceDiscounts,
@@ -233,6 +239,10 @@ class TablesState {
           : selectedTableId as String?,
       tableStartTimes: tableStartTimes ?? this.tableStartTimes,
       tableOrders: tableOrders ?? this.tableOrders,
+      tablePendingOrders: tablePendingOrders ?? this.tablePendingOrders,
+      connectedIp: identical(connectedIp, _absent)
+          ? this.connectedIp
+          : connectedIp as String?,
       tableDiscounts: tableDiscounts ?? this.tableDiscounts,
       tablePlayDiscounts: tablePlayDiscounts ?? this.tablePlayDiscounts,
       tableServiceDiscounts:
@@ -396,7 +406,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
     if (desktopIp.isEmpty) return;
 
     try {
-      WebSocket.connect('ws://$desktopIp:8085/ws').then((socket) {
+      final deviceId = prefs?.getString('device_id') ?? '';
+      WebSocket.connect(
+        'ws://$desktopIp:8085/ws',
+        headers: {'x-device-id': deviceId},
+      ).then((socket) {
         _ws = socket;
         print("Đã kết nối WebSocket tới Desktop Server");
         
@@ -450,7 +464,19 @@ class TablesNotifier extends StateNotifier<TablesState> {
       try {
         final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
         final request = await client.getUrl(Uri.parse('http://$desktopIp:8085/api/session'));
+        final deviceId = prefs?.getString('device_id') ?? '';
+        if (deviceId.isNotEmpty) {
+          request.headers.add('x-device-id', deviceId);
+        }
         final response = await request.close();
+        if (response.statusCode == 403) {
+          print("Connection unauthorized. Disconnecting.");
+          await prefs?.remove('desktop_server_ip');
+          _connectedIp = null;
+          _ws?.close();
+          state = state.copyWith(connectedIp: null);
+          return;
+        }
         if (response.statusCode == 200) {
           final body = await utf8.decodeStream(response);
           final res = jsonDecode(body) as Map<String, dynamic>;
@@ -611,6 +637,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
                 ? loadedTableTypes
                 : state.tableTypes,
             tablePrices: loadedPrices,
+            connectedIp: desktopIp.isNotEmpty ? desktopIp : null,
           );
         } else {
           // Cache trống (sau khi xóa dữ liệu local): xóa hết session và dùng mock data làm fallback
@@ -650,6 +677,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
           (k, v) => MapEntry(k, v.toIso8601String()),
         ),
         'tableOrders': state.tableOrders,
+        'tablePendingOrders': state.tablePendingOrders,
         'tableDiscounts': state.tableDiscounts,
         'tablePlayDiscounts': state.tablePlayDiscounts,
         'tableServiceDiscounts': state.tableServiceDiscounts,
@@ -678,9 +706,19 @@ class TablesNotifier extends StateNotifier<TablesState> {
           final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
           final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/session'));
           request.headers.contentType = ContentType.json;
+          final deviceId = prefs?.getString('device_id') ?? '';
+          if (deviceId.isNotEmpty) {
+            request.headers.add('x-device-id', deviceId);
+          }
           request.write(jsonEncode({'session': sessionJson}));
           final response = await request.close();
-          if (response.statusCode != 200) {
+          if (response.statusCode == 403) {
+            print("Connection unauthorized. Disconnecting.");
+            await prefs?.remove('desktop_server_ip');
+            _connectedIp = null;
+            _ws?.close();
+            state = state.copyWith(connectedIp: null);
+          } else if (response.statusCode != 200) {
             print("Lỗi push session lên Desktop: ${response.statusCode}");
           }
         } catch (e) {
@@ -714,6 +752,16 @@ class TablesNotifier extends StateNotifier<TablesState> {
         if (data['tableOrders'] != null) {
           (data['tableOrders'] as Map<String, dynamic>).forEach((k, v) {
             restoredOrders[k] = List<Map<String, dynamic>>.from(
+              (v as List).map((item) => Map<String, dynamic>.from(item as Map)),
+            );
+          });
+        }
+
+        // Restore table pending orders
+        final restoredPendingOrders = <String, List<Map<String, dynamic>>>{};
+        if (data['tablePendingOrders'] != null) {
+          (data['tablePendingOrders'] as Map<String, dynamic>).forEach((k, v) {
+            restoredPendingOrders[k] = List<Map<String, dynamic>>.from(
               (v as List).map((item) => Map<String, dynamic>.from(item as Map)),
             );
           });
@@ -828,10 +876,14 @@ class TablesNotifier extends StateNotifier<TablesState> {
           newSelectedTableId = restoredTables.isNotEmpty ? restoredTables.first.id : null;
         }
 
+        final prefs = _prefs;
+        final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
+
         state = state.copyWith(
           tables: restoredTables,
           tableStartTimes: restoredStartTimes,
           tableOrders: restoredOrders,
+          tablePendingOrders: restoredPendingOrders,
           tableDiscounts: restoredDiscounts,
           tablePlayDiscounts: restoredPlayDiscounts,
           tableServiceDiscounts: restoredServiceDiscounts,
@@ -843,6 +895,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
           tableNotes: restoredNotes,
           selectedUnpaidInvoiceId: newSelectedUnpaidId,
           selectedTableId: newSelectedTableId,
+          connectedIp: desktopIp.isNotEmpty ? desktopIp : null,
         );
       }
     } catch (e) {
@@ -1027,6 +1080,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
     );
     updatedOrders[tableId] = [];
 
+    final updatedPending = Map<String, List<Map<String, dynamic>>>.from(
+      state.tablePendingOrders,
+    );
+    updatedPending[tableId] = [];
+
     // 3. Lưu server orderId vào state
     final updatedServerOrderIds = Map<String, String>.from(
       state.tableServerOrderIds,
@@ -1037,6 +1095,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tables: updatedTables,
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
+      tablePendingOrders: updatedPending,
       tableServerOrderIds: updatedServerOrderIds,
     );
     await _saveSessionState();
@@ -1082,6 +1141,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
     );
     updatedOrders.remove(tableId);
 
+    final updatedPending = Map<String, List<Map<String, dynamic>>>.from(
+      state.tablePendingOrders,
+    );
+    updatedPending.remove(tableId);
+
     final updatedDiscounts = Map<String, double>.from(state.tableDiscounts);
     updatedDiscounts.remove(tableId);
 
@@ -1112,6 +1176,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tables: updatedTables,
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
+      tablePendingOrders: updatedPending,
       tableDiscounts: updatedDiscounts,
       tablePlayDiscounts: updatedPlayDiscounts,
       tableServiceDiscounts: updatedServiceDiscounts,
@@ -1203,6 +1268,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final updatedOrders = Map<String, List<Map<String, dynamic>>>.from(
       state.tableOrders,
     )..remove(tableId);
+    final updatedPending = Map<String, List<Map<String, dynamic>>>.from(
+      state.tablePendingOrders,
+    )..remove(tableId);
     
     final updatedDiscounts = Map<String, double>.from(state.tableDiscounts)
       ..remove(tableId);
@@ -1232,6 +1300,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tables: updatedTables,
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
+      tablePendingOrders: updatedPending,
       tableDiscounts: updatedDiscounts,
       tablePlayDiscounts: updatedPlayDiscounts,
       tableServiceDiscounts: updatedServiceDiscounts,
@@ -1499,6 +1568,14 @@ class TablesNotifier extends StateNotifier<TablesState> {
       updatedOrders[targetTableId] = orders;
     }
 
+    final updatedPending = Map<String, List<Map<String, dynamic>>>.from(
+      state.tablePendingOrders,
+    );
+    final pending = updatedPending.remove(sourceTableId);
+    if (pending != null) {
+      updatedPending[targetTableId] = pending;
+    }
+
     final updatedDiscounts = Map<String, double>.from(state.tableDiscounts);
     final discount = updatedDiscounts.remove(sourceTableId);
     if (discount != null) {
@@ -1557,6 +1634,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tables: updatedTables,
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
+      tablePendingOrders: updatedPending,
       tableDiscounts: updatedDiscounts,
       tablePlayDiscounts: updatedPlayDiscounts,
       tableServiceDiscounts: updatedServiceDiscounts,
@@ -1642,6 +1720,30 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
     updatedOrders[targetTableId] = targetItems;
 
+    final updatedPending = Map<String, List<Map<String, dynamic>>>.from(
+      state.tablePendingOrders,
+    );
+    final sourcePending = updatedPending.remove(sourceTableId) ?? [];
+    final targetPending = List<Map<String, dynamic>>.from(
+      updatedPending[targetTableId] ?? [],
+    );
+
+    for (final item in sourcePending) {
+      final existingIndex = targetPending.indexWhere(
+        (p) => p['product_id'] == item['product_id'],
+      );
+      if (existingIndex >= 0) {
+        targetPending[existingIndex] = {
+          ...targetPending[existingIndex],
+          'qty':
+              (targetPending[existingIndex]['qty'] as int) + (item['qty'] as int),
+        };
+      } else {
+        targetPending.add(Map<String, dynamic>.from(item));
+      }
+    }
+    updatedPending[targetTableId] = targetPending;
+
     final updatedDiscounts = Map<String, double>.from(state.tableDiscounts);
     updatedDiscounts.remove(sourceTableId);
 
@@ -1687,6 +1789,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tables: updatedTables,
       tableStartTimes: updatedStartTimes,
       tableOrders: updatedOrders,
+      tablePendingOrders: updatedPending,
       tableDiscounts: updatedDiscounts,
       tablePlayDiscounts: updatedPlayDiscounts,
       tableServiceDiscounts: updatedServiceDiscounts,
@@ -2032,6 +2135,28 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   void addProductToTable(String targetId, Map<String, dynamic> product) {
+    if (state.connectedIp != null) {
+      final updatedPending = Map<String, List<Map<String, dynamic>>>.from(state.tablePendingOrders);
+      final items = List<Map<String, dynamic>>.from(updatedPending[targetId] ?? []);
+      
+      final existing = items.indexWhere((p) => p['product_id'] == product['product_id']);
+      final int addedQty = product['qty'] as int? ?? 1;
+
+      if (existing >= 0) {
+        items[existing] = {
+          ...items[existing],
+          'qty': (items[existing]['qty'] as int) + addedQty,
+        };
+      } else {
+        items.add({...product, 'qty': addedQty});
+      }
+
+      updatedPending[targetId] = items;
+      state = state.copyWith(tablePendingOrders: updatedPending);
+      _saveSessionState();
+      return;
+    }
+
     final invoiceIndex = state.unpaidInvoices.indexWhere(
       (inv) => inv.id == targetId,
     );
@@ -2084,6 +2209,16 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   void removeProductFromTable(String targetId, String productId) {
+    if (state.connectedIp != null) {
+      final updatedPending = Map<String, List<Map<String, dynamic>>>.from(state.tablePendingOrders);
+      final items = List<Map<String, dynamic>>.from(updatedPending[targetId] ?? []);
+      items.removeWhere((p) => p['product_id'] == productId);
+      updatedPending[targetId] = items;
+      state = state.copyWith(tablePendingOrders: updatedPending);
+      _saveSessionState();
+      return;
+    }
+
     final invoiceIndex = state.unpaidInvoices.indexWhere(
       (inv) => inv.id == targetId,
     );
@@ -2111,6 +2246,24 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   void updateProductQty(String targetId, String productId, int delta) {
+    if (state.connectedIp != null) {
+      final updatedPending = Map<String, List<Map<String, dynamic>>>.from(state.tablePendingOrders);
+      final items = List<Map<String, dynamic>>.from(updatedPending[targetId] ?? []);
+      final existing = items.indexWhere((p) => p['product_id'] == productId);
+      if (existing >= 0) {
+        final newQty = (items[existing]['qty'] as int) + delta;
+        if (newQty <= 0) {
+          items.removeAt(existing);
+        } else {
+          items[existing] = {...items[existing], 'qty': newQty};
+        }
+        updatedPending[targetId] = items;
+        state = state.copyWith(tablePendingOrders: updatedPending);
+        _saveSessionState();
+      }
+      return;
+    }
+
     final invoiceIndex = state.unpaidInvoices.indexWhere(
       (inv) => inv.id == targetId,
     );
@@ -2151,6 +2304,51 @@ class TablesNotifier extends StateNotifier<TablesState> {
       state = state.copyWith(tableOrders: updatedOrders);
       _saveSessionState();
     }
+  }
+
+  void approvePendingProduct(String targetId, String productId) {
+    final pendingItems = List<Map<String, dynamic>>.from(state.tablePendingOrders[targetId] ?? []);
+    final itemIndex = pendingItems.indexWhere((p) => p['product_id'] == productId);
+    if (itemIndex < 0) return;
+    final approvedItem = pendingItems.removeAt(itemIndex);
+
+    final updatedPending = Map<String, List<Map<String, dynamic>>>.from(state.tablePendingOrders);
+    updatedPending[targetId] = pendingItems;
+
+    final updatedOrders = Map<String, List<Map<String, dynamic>>>.from(state.tableOrders);
+    final approvedItems = List<Map<String, dynamic>>.from(state.tableOrders[targetId] ?? []);
+    
+    final existingIndex = approvedItems.indexWhere((p) => p['product_id'] == productId);
+    if (existingIndex >= 0) {
+      approvedItems[existingIndex] = {
+        ...approvedItems[existingIndex],
+        'qty': (approvedItems[existingIndex]['qty'] as int) + (approvedItem['qty'] as int),
+      };
+    } else {
+      approvedItems.add(approvedItem);
+    }
+    updatedOrders[targetId] = approvedItems;
+
+    state = state.copyWith(
+      tablePendingOrders: updatedPending,
+      tableOrders: updatedOrders,
+    );
+    _saveSessionState();
+  }
+
+  void denyPendingProduct(String targetId, String productId) {
+    final pendingItems = List<Map<String, dynamic>>.from(state.tablePendingOrders[targetId] ?? []);
+    final itemIndex = pendingItems.indexWhere((p) => p['product_id'] == productId);
+    if (itemIndex < 0) return;
+    pendingItems.removeAt(itemIndex);
+
+    final updatedPending = Map<String, List<Map<String, dynamic>>>.from(state.tablePendingOrders);
+    updatedPending[targetId] = pendingItems;
+
+    state = state.copyWith(
+      tablePendingOrders: updatedPending,
+    );
+    _saveSessionState();
   }
 
   void completeUnpaidInvoicePayment(String invoiceId) {

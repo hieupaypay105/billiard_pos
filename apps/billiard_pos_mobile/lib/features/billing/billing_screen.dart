@@ -751,6 +751,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   // ───────────────────────────────────────────────────────────────────────────
   Widget _buildActiveTableScreen(BuildContext context, TableModel table, TablesState state) {
     final products = state.tableOrders[table.id] ?? [];
+    final pendingProducts = state.tablePendingOrders[table.id] ?? [];
     final startTime = state.tableStartTimes[table.id] ?? DateTime.now();
     final endTime = DateTime.now();
     final rate = state.getTableHourlyRate(table, startTime);
@@ -783,15 +784,39 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       appBar: AppBar(
         title: Text(table.tableName),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.power_settings_new, color: Colors.red),
-            tooltip: 'Tắt bàn',
-            onPressed: () => _handleDeactivateTable(table),
-          )
+          if (state.connectedIp == null)
+            IconButton(
+              icon: const Icon(Icons.power_settings_new, color: Colors.red),
+              tooltip: 'Tắt bàn',
+              onPressed: () => _handleDeactivateTable(table),
+            )
         ],
       ),
       body: Column(
         children: [
+          if (state.connectedIp != null)
+            Container(
+              width: double.infinity,
+              color: Colors.amber.shade100,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.sync, color: Colors.amber.shade900, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Đang đồng bộ với máy thu ngân. Thao tác thanh toán được thực hiện tại quầy.',
+                      style: TextStyle(
+                        color: Colors.amber.shade900,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // ── Timer Ticking Section (Compact Layout) ──
           Container(
             width: double.infinity,
@@ -872,8 +897,57 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             ),
           ),
 
+          final buildProductRow = (BuildContext context, Map<String, dynamic> p, {required bool isLocked}) {
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(p['name'] as String, style: AppTextStyles.labelLarge),
+                        const SizedBox(height: 4),
+                        Text(_fmtCurrency(p['price'] as double), style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(Icons.remove_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.textSecondary),
+                        onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(table.id, p['product_id'] as String, -1),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text('${p['qty']}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isLocked ? AppColors.textMuted : AppColors.textPrimary)),
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(Icons.add_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.primary),
+                        onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(table.id, p['product_id'] as String, 1),
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: isLocked ? null : () => ref.read(tablesProvider.notifier).removeProductFromTable(table.id, p['product_id'] as String),
+                        child: Icon(Icons.delete_outline, color: isLocked ? AppColors.textMuted : Colors.redAccent, size: 20),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          };
+
           Expanded(
-            child: products.isEmpty
+            child: (products.isEmpty && pendingProducts.isEmpty)
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -884,162 +958,149 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       ],
                     ),
                   )
-                : ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: products.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, idx) {
-                      final p = products[idx];
-                      return Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.border),
+                : CustomScrollView(
+                    slivers: [
+                      if (products.isNotEmpty) ...[
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Text('Đã duyệt (${products.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green, fontFamily: 'Inter')),
+                          ),
                         ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(p['name'] as String, style: AppTextStyles.labelLarge),
-                                  const SizedBox(height: 4),
-                                  Text(_fmtCurrency(p['price'] as double), style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
-                                ],
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  icon: const Icon(Icons.remove_circle_outline, color: AppColors.textSecondary),
-                                  onPressed: () => ref.read(tablesProvider.notifier).updateProductQty(table.id, p['product_id'] as String, -1),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                                  child: Text('${p['qty']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                ),
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  icon: const Icon(Icons.add_circle_outline, color: AppColors.primary),
-                                  onPressed: () => ref.read(tablesProvider.notifier).updateProductQty(table.id, p['product_id'] as String, 1),
-                                ),
-                                const SizedBox(width: 8),
-                                InkWell(
-                                  onTap: () => ref.read(tablesProvider.notifier).removeProductFromTable(table.id, p['product_id'] as String),
-                                  child: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                ),
-                              ],
-                            ),
-                          ],
+                        SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, idx) {
+                              final p = products[idx];
+                              final isLocked = state.connectedIp != null;
+                              return buildProductRow(context, p, isLocked: isLocked);
+                            },
+                            childCount: products.length,
+                          ),
+                        ),
+                      ],
+                      if (pendingProducts.isNotEmpty) ...[
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Text('Chờ duyệt (${pendingProducts.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.orange, fontFamily: 'Inter')),
+                          ),
+                        ),
+                        SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, idx) {
+                              final p = pendingProducts[idx];
+                              return buildProductRow(context, p, isLocked: false);
+                            },
+                            childCount: pendingProducts.length,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+          ),
+
+          if (state.connectedIp == null)
+            // ── Quick Operations Grid ──
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              child: GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 3,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 3.2,
+                children: [
+                  _buildQuickActionBtn(
+                    icon: Icons.person_add_alt_1_outlined,
+                    label: 'Chọn TV',
+                    color: AppColors.primary,
+                    onTap: () => showDialog(context: context, builder: (_) => MemberLookupDialog(tableId: table.id)),
+                  ),
+                  _buildQuickActionBtn(
+                    icon: Icons.local_offer_outlined,
+                    label: 'Khuyến mãi',
+                    color: AppColors.accent,
+                    onTap: () => showDialog(context: context, builder: (_) => DiscountPanel(tableId: table.id)),
+                  ),
+                  _buildQuickActionBtn(
+                    icon: Icons.merge_type,
+                    label: 'Gộp bàn',
+                    color: AppColors.info,
+                    onTap: () => showDialog(context: context, builder: (_) => TableMergeDialog(sourceTableId: table.id)),
+                  ),
+                  _buildQuickActionBtn(
+                    icon: Icons.swap_horiz,
+                    label: 'Chuyển bàn',
+                    color: AppColors.transfer,
+                    onTap: () => showDialog(context: context, builder: (_) => TableTransferDialog(sourceTableId: table.id)),
+                  ),
+                  _buildQuickActionBtn(
+                    icon: Icons.print_outlined,
+                    label: 'In hóa đơn',
+                    color: Colors.blueGrey,
+                    onTap: () {
+                      final currentUser = ref.read(currentUserProvider);
+                      final cashierName = currentUser?.displayName ?? currentUser?.username ?? 'Hệ thống';
+                      final activeShift = ref.read(shiftProvider).activeShift;
+
+                      showDialog(
+                        context: context,
+                        builder: (_) => InvoicePrintPreviewDialog(
+                          tableName: table.tableName,
+                          startTime: startTime,
+                          endTime: endTime,
+                          playMinutes: playMinutes,
+                          playAmount: playAmount,
+                          hourlyRate: rate,
+                          products: products,
+                          totalAmount: playAmount + productTotal,
+                          discountPlayPercent: discountPlayPercent,
+                          discountServicePercent: discountServicePercent,
+                          discountBillPercent: discountBillPercent,
+                          discountPercent: discountBillPercent,
+                          discountAmount: discountAmount,
+                          netTotal: netTotal,
+                          member: member,
+                          cashierName: cashierName,
+                          shiftLabel: activeShift != null ? 'Ca ${activeShift.id.replaceAll('shift-', '')}' : null,
+                          status: 'paid',
                         ),
                       );
                     },
                   ),
-          ),
-
-          // ── Quick Operations Grid ──
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            child: GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 3,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              childAspectRatio: 3.2,
-              children: [
-                _buildQuickActionBtn(
-                  icon: Icons.person_add_alt_1_outlined,
-                  label: 'Chọn TV',
-                  color: AppColors.primary,
-                  onTap: () => showDialog(context: context, builder: (_) => MemberLookupDialog(tableId: table.id)),
-                ),
-                _buildQuickActionBtn(
-                  icon: Icons.local_offer_outlined,
-                  label: 'Khuyến mãi',
-                  color: AppColors.accent,
-                  onTap: () => showDialog(context: context, builder: (_) => DiscountPanel(tableId: table.id)),
-                ),
-                _buildQuickActionBtn(
-                  icon: Icons.merge_type,
-                  label: 'Gộp bàn',
-                  color: AppColors.info,
-                  onTap: () => showDialog(context: context, builder: (_) => TableMergeDialog(sourceTableId: table.id)),
-                ),
-                _buildQuickActionBtn(
-                  icon: Icons.swap_horiz,
-                  label: 'Chuyển bàn',
-                  color: AppColors.transfer,
-                  onTap: () => showDialog(context: context, builder: (_) => TableTransferDialog(sourceTableId: table.id)),
-                ),
-                _buildQuickActionBtn(
-                  icon: Icons.print_outlined,
-                  label: 'In hóa đơn',
-                  color: Colors.blueGrey,
-                  onTap: () {
-                    final currentUser = ref.read(currentUserProvider);
-                    final cashierName = currentUser?.displayName ?? currentUser?.username ?? 'Hệ thống';
-                    final activeShift = ref.read(shiftProvider).activeShift;
-
-                    showDialog(
-                      context: context,
-                      builder: (_) => InvoicePrintPreviewDialog(
-                        tableName: table.tableName,
-                        startTime: startTime,
-                        endTime: endTime,
-                        playMinutes: playMinutes,
-                        playAmount: playAmount,
-                        hourlyRate: rate,
-                        products: products,
-                        totalAmount: playAmount + productTotal,
-                        discountPlayPercent: discountPlayPercent,
-                        discountServicePercent: discountServicePercent,
-                        discountBillPercent: discountBillPercent,
-                        discountPercent: discountBillPercent,
-                        discountAmount: discountAmount,
-                        netTotal: netTotal,
-                        member: member,
-                        cashierName: cashierName,
-                        shiftLabel: activeShift != null ? 'Ca ${activeShift.id.replaceAll('shift-', '')}' : null,
-                        status: 'paid',
-                      ),
-                    );
-                  },
-                ),
-                _buildQuickActionBtn(
-                  icon: Icons.notes_outlined,
-                  label: 'Ghi chú',
-                  color: Colors.brown,
-                  onTap: () async {
-                    final notifier = ref.read(tablesProvider.notifier);
-                    final ctrl = TextEditingController(text: state.tableNotes[table.id] ?? '');
-                    final note = await showDialog<String>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Ghi chú bàn'),
-                        content: TextField(
-                          controller: ctrl,
-                          decoration: const InputDecoration(hintText: 'Nhập ghi chú...'),
+                  _buildQuickActionBtn(
+                    icon: Icons.notes_outlined,
+                    label: 'Ghi chú',
+                    color: Colors.brown,
+                    onTap: () async {
+                      final notifier = ref.read(tablesProvider.notifier);
+                      final ctrl = TextEditingController(text: state.tableNotes[table.id] ?? '');
+                      final note = await showDialog<String>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Ghi chú bàn'),
+                          content: TextField(
+                            controller: ctrl,
+                            decoration: const InputDecoration(hintText: 'Nhập ghi chú...'),
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+                            ElevatedButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Lưu')),
+                          ],
                         ),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
-                          ElevatedButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Lưu')),
-                        ],
-                      ),
-                    );
-                    if (note != null) {
-                      notifier.state = notifier.state.copyWith(
-                        tableNotes: {...notifier.state.tableNotes, table.id: note},
                       );
-                    }
-                  },
-                ),
-              ],
+                      if (note != null) {
+                        notifier.state = notifier.state.copyWith(
+                          tableNotes: {...notifier.state.tableNotes, table.id: note},
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
 
           // ── Summary & Payment Buttons (Sticky Bottom) ──
           Container(
@@ -1085,67 +1146,69 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       Text(_fmtCurrency(netTotal), style: AppTextStyles.currency.copyWith(fontSize: 22)),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => _handleCheckoutTap(
-                            context,
-                            table,
-                            'unpaid',
-                            playAmount,
-                            productTotal,
-                            discountPlayPercent,
-                            discountServicePercent,
-                            discountBillPercent,
-                            discountAmount,
-                            netTotal,
-                            startTime,
-                            products,
-                            rate,
-                            member,
+                  if (state.connectedIp == null) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _handleCheckoutTap(
+                              context,
+                              table,
+                              'unpaid',
+                              playAmount,
+                              productTotal,
+                              discountPlayPercent,
+                              discountServicePercent,
+                              discountBillPercent,
+                              discountAmount,
+                              netTotal,
+                              startTime,
+                              products,
+                              rate,
+                              member,
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: AppColors.error, width: 1.5),
+                              foregroundColor: AppColors.error,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            child: const Text('Không thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                           ),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: AppColors.error, width: 1.5),
-                            foregroundColor: AppColors.error,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          child: const Text('Không thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () => _handleCheckoutTap(
-                            context,
-                            table,
-                            'paid',
-                            playAmount,
-                            productTotal,
-                            discountPlayPercent,
-                            discountServicePercent,
-                            discountBillPercent,
-                            discountAmount,
-                            netTotal,
-                            startTime,
-                            products,
-                            rate,
-                            member,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () => _handleCheckoutTap(
+                              context,
+                              table,
+                              'paid',
+                              playAmount,
+                              productTotal,
+                              discountPlayPercent,
+                              discountServicePercent,
+                              discountBillPercent,
+                              discountAmount,
+                              netTotal,
+                              startTime,
+                              products,
+                              rate,
+                              member,
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              elevation: 0,
+                            ),
+                            child: const Text('Thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                           ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            elevation: 0,
-                          ),
-                          child: const Text('Thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1283,6 +1346,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   // ───────────────────────────────────────────────────────────────────────────
   Widget _buildUnpaidInvoiceDetailScreen(BuildContext context, UnpaidInvoice invoice, TablesState state) {
     final products = invoice.products;
+    final pendingProducts = state.tablePendingOrders[invoice.id] ?? [];
     final startTime = invoice.startTime;
     final endTime = invoice.endTime;
     final rate = invoice.hourlyRate;
@@ -1319,6 +1383,29 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       ),
       body: Column(
         children: [
+          if (state.connectedIp != null)
+            Container(
+              width: double.infinity,
+              color: Colors.amber.shade100,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.sync, color: Colors.amber.shade900, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Đang đồng bộ với máy thu ngân. Thao tác thanh toán được thực hiện tại quầy.',
+                      style: TextStyle(
+                        color: Colors.amber.shade900,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Header Summary Card (Compact Layout)
           Container(
             width: double.infinity,
@@ -1390,8 +1477,57 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             ),
           ),
 
+          final buildProductRow = (BuildContext context, Map<String, dynamic> p, {required bool isLocked}) {
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(p['name'] as String, style: AppTextStyles.labelLarge),
+                        const SizedBox(height: 4),
+                        Text(_fmtCurrency(p['price'] as double), style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+                      ],
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(Icons.remove_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.textSecondary),
+                        onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(invoice.id, p['product_id'] as String, -1),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text('${p['qty']}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isLocked ? AppColors.textMuted : AppColors.textPrimary)),
+                      ),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(Icons.add_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.primary),
+                        onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(invoice.id, p['product_id'] as String, 1),
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: isLocked ? null : () => ref.read(tablesProvider.notifier).removeProductFromTable(invoice.id, p['product_id'] as String),
+                        child: Icon(Icons.delete_outline, color: isLocked ? AppColors.textMuted : Colors.redAccent, size: 20),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          };
+
           Expanded(
-            child: products.isEmpty
+            child: (products.isEmpty && pendingProducts.isEmpty)
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -1402,166 +1538,153 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       ],
                     ),
                   )
-                : ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: products.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, idx) {
-                      final p = products[idx];
-                      return Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppColors.border),
+                : CustomScrollView(
+                    slivers: [
+                      if (products.isNotEmpty) ...[
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Text('Đã duyệt (${products.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green, fontFamily: 'Inter')),
+                          ),
                         ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(p['name'] as String, style: AppTextStyles.labelLarge),
-                                  const SizedBox(height: 4),
-                                  Text(_fmtCurrency(p['price'] as double), style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
-                                ],
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  icon: const Icon(Icons.remove_circle_outline, color: AppColors.textSecondary),
-                                  onPressed: () => ref.read(tablesProvider.notifier).updateProductQty(invoice.id, p['product_id'] as String, -1),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                                  child: Text('${p['qty']}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                ),
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  icon: const Icon(Icons.add_circle_outline, color: AppColors.primary),
-                                  onPressed: () => ref.read(tablesProvider.notifier).updateProductQty(invoice.id, p['product_id'] as String, 1),
-                                ),
-                                const SizedBox(width: 8),
-                                InkWell(
-                                  onTap: () => ref.read(tablesProvider.notifier).removeProductFromTable(invoice.id, p['product_id'] as String),
-                                  child: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                ),
-                              ],
-                            ),
-                          ],
+                        SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, idx) {
+                              final p = products[idx];
+                              final isLocked = state.connectedIp != null;
+                              return buildProductRow(context, p, isLocked: isLocked);
+                            },
+                            childCount: products.length,
+                          ),
                         ),
-                      );
-                    },
+                      ],
+                      if (pendingProducts.isNotEmpty) ...[
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Text('Chờ duyệt (${pendingProducts.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.orange, fontFamily: 'Inter')),
+                          ),
+                        ),
+                        SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, idx) {
+                              final p = pendingProducts[idx];
+                              return buildProductRow(context, p, isLocked: false);
+                            },
+                            childCount: pendingProducts.length,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
           ),
 
           // Quick Operations Grid
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-            child: GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 3,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              childAspectRatio: 3.2,
-              children: [
-                _buildQuickActionBtn(
-                  icon: Icons.person_add_alt_1_outlined,
-                  label: 'Chọn TV',
-                  color: AppColors.primary,
-                  onTap: () => showDialog(context: context, builder: (_) => MemberLookupDialog(tableId: invoice.id)),
-                ),
-                _buildQuickActionBtn(
-                  icon: Icons.local_offer_outlined,
-                  label: 'Khuyến mãi',
-                  color: AppColors.accent,
-                  onTap: () => showDialog(context: context, builder: (_) => DiscountPanel(tableId: invoice.id)),
-                ),
-                _buildQuickActionBtn(
-                  icon: Icons.merge_type,
-                  label: 'Gộp bàn',
-                  color: AppColors.info,
-                  onTap: () => showDialog(context: context, builder: (_) => TableMergeDialog(sourceInvoiceId: invoice.id)),
-                ),
-                _buildQuickActionBtn(
-                  icon: Icons.swap_horiz,
-                  label: 'Chuyển bàn',
-                  color: AppColors.transfer,
-                  onTap: () => showDialog(context: context, builder: (_) => TableTransferDialog(sourceInvoiceId: invoice.id)),
-                ),
-                _buildQuickActionBtn(
-                  icon: Icons.print_outlined,
-                  label: 'In hóa đơn',
-                  color: Colors.blueGrey,
-                  onTap: () {
-                    final currentUser = ref.read(currentUserProvider);
-                    final cashierName = currentUser?.displayName ?? currentUser?.username ?? 'Hệ thống';
-                    final activeShift = ref.read(shiftProvider).activeShift;
+          if (state.connectedIp == null)
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              child: GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 3,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 3.2,
+                children: [
+                  _buildQuickActionBtn(
+                    icon: Icons.person_add_alt_1_outlined,
+                    label: 'Chọn TV',
+                    color: AppColors.primary,
+                    onTap: () => showDialog(context: context, builder: (_) => MemberLookupDialog(tableId: invoice.id)),
+                  ),
+                  _buildQuickActionBtn(
+                    icon: Icons.local_offer_outlined,
+                    label: 'Khuyến mãi',
+                    color: AppColors.accent,
+                    onTap: () => showDialog(context: context, builder: (_) => DiscountPanel(tableId: invoice.id)),
+                  ),
+                  _buildQuickActionBtn(
+                    icon: Icons.merge_type,
+                    label: 'Gộp bàn',
+                    color: AppColors.info,
+                    onTap: () => showDialog(context: context, builder: (_) => TableMergeDialog(sourceInvoiceId: invoice.id)),
+                  ),
+                  _buildQuickActionBtn(
+                    icon: Icons.swap_horiz,
+                    label: 'Chuyển bàn',
+                    color: AppColors.transfer,
+                    onTap: () => showDialog(context: context, builder: (_) => TableTransferDialog(sourceInvoiceId: invoice.id)),
+                  ),
+                  _buildQuickActionBtn(
+                    icon: Icons.print_outlined,
+                    label: 'In hóa đơn',
+                    color: Colors.blueGrey,
+                    onTap: () {
+                      final currentUser = ref.read(currentUserProvider);
+                      final cashierName = currentUser?.displayName ?? currentUser?.username ?? 'Hệ thống';
+                      final activeShift = ref.read(shiftProvider).activeShift;
 
-                    showDialog(
-                      context: context,
-                      builder: (_) => InvoicePrintPreviewDialog(
-                        tableName: invoice.tableName,
-                        startTime: startTime,
-                        endTime: endTime,
-                        playMinutes: invoice.playMinutes,
-                        playAmount: playAmount,
-                        hourlyRate: rate,
-                        products: products,
-                        totalAmount: playAmount + productTotal,
-                        discountPlayPercent: discountPlayPercent,
-                        discountServicePercent: discountServicePercent,
-                        discountBillPercent: discountBillPercent,
-                        discountPercent: discountBillPercent,
-                        discountAmount: discountAmount,
-                        netTotal: netTotal,
-                        member: member,
-                        cashierName: cashierName,
-                        shiftLabel: activeShift != null ? 'Ca ${activeShift.id.replaceAll('shift-', '')}' : null,
-                        status: 'paid',
-                      ),
-                    );
-                  },
-                ),
-                _buildQuickActionBtn(
-                  icon: Icons.notes_outlined,
-                  label: 'Ghi chú',
-                  color: Colors.brown,
-                  onTap: () async {
-                    final notifier = ref.read(tablesProvider.notifier);
-                    final ctrl = TextEditingController(text: invoice.note ?? '');
-                    final note = await showDialog<String>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Ghi chú hóa đơn'),
-                        content: TextField(
-                          controller: ctrl,
-                          decoration: const InputDecoration(hintText: 'Nhập ghi chú...'),
+                      showDialog(
+                        context: context,
+                        builder: (_) => InvoicePrintPreviewDialog(
+                          tableName: invoice.tableName,
+                          startTime: startTime,
+                          endTime: endTime,
+                          playMinutes: invoice.playMinutes,
+                          playAmount: playAmount,
+                          hourlyRate: rate,
+                          products: products,
+                          totalAmount: playAmount + productTotal,
+                          discountPlayPercent: discountPlayPercent,
+                          discountServicePercent: discountServicePercent,
+                          discountBillPercent: discountBillPercent,
+                          discountPercent: discountBillPercent,
+                          discountAmount: discountAmount,
+                          netTotal: netTotal,
+                          member: member,
+                          cashierName: cashierName,
+                          shiftLabel: activeShift != null ? 'Ca ${activeShift.id.replaceAll('shift-', '')}' : null,
+                          status: 'paid',
                         ),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
-                          ElevatedButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Lưu')),
-                        ],
-                      ),
-                    );
-                    if (note != null) {
-                      final updated = List<UnpaidInvoice>.from(notifier.state.unpaidInvoices);
-                      final index = updated.indexWhere((inv) => inv.id == invoice.id);
-                      if (index >= 0) {
-                        updated[index] = updated[index].copyWith(note: note);
-                        notifier.state = notifier.state.copyWith(unpaidInvoices: updated);
-                        notifier.selectTable(widget.tableId); // Triggers save state internally or forces rebuild
+                      );
+                    },
+                  ),
+                  _buildQuickActionBtn(
+                    icon: Icons.notes_outlined,
+                    label: 'Ghi chú',
+                    color: Colors.brown,
+                    onTap: () async {
+                      final notifier = ref.read(tablesProvider.notifier);
+                      final ctrl = TextEditingController(text: invoice.note ?? '');
+                      final note = await showDialog<String>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Ghi chú hóa đơn'),
+                          content: TextField(
+                            controller: ctrl,
+                            decoration: const InputDecoration(hintText: 'Nhập ghi chú...'),
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+                            ElevatedButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Lưu')),
+                          ],
+                        ),
+                      );
+                      if (note != null) {
+                        final updated = List<UnpaidInvoice>.from(notifier.state.unpaidInvoices);
+                        final index = updated.indexWhere((inv) => inv.id == invoice.id);
+                        if (index >= 0) {
+                          updated[index] = updated[index].copyWith(note: note);
+                          notifier.state = notifier.state.copyWith(unpaidInvoices: updated);
+                          notifier.selectTable(widget.tableId); // Triggers save state internally or forces rebuild
+                        }
                       }
-                    }
-                  },
-                ),
-              ],
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
 
           // Summary and Payment
           Container(
@@ -1608,68 +1731,71 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => _handleCheckoutUnpaid(
-                            context,
-                            invoice,
-                            'unpaid',
-                            playAmount,
-                            productTotal,
-                            discountPlayPercent,
-                            discountServicePercent,
-                            discountBillPercent,
-                            discountAmount,
-                            netTotal,
-                            startTime,
-                            endTime,
-                            products,
-                            rate,
-                            member,
+                  if (state.connectedIp == null) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _handleCheckoutUnpaid(
+                              context,
+                              invoice,
+                              'unpaid',
+                              playAmount,
+                              productTotal,
+                              discountPlayPercent,
+                              discountServicePercent,
+                              discountBillPercent,
+                              discountAmount,
+                              netTotal,
+                              startTime,
+                              endTime,
+                              products,
+                              rate,
+                              member,
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: AppColors.error, width: 1.5),
+                              foregroundColor: AppColors.error,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            child: const Text('Không thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                           ),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: AppColors.error, width: 1.5),
-                            foregroundColor: AppColors.error,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          child: const Text('Không thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () => _handleCheckoutUnpaid(
-                            context,
-                            invoice,
-                            'paid',
-                            playAmount,
-                            productTotal,
-                            discountPlayPercent,
-                            discountServicePercent,
-                            discountBillPercent,
-                            discountAmount,
-                            netTotal,
-                            startTime,
-                            endTime,
-                            products,
-                            rate,
-                            member,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () => _handleCheckoutUnpaid(
+                              context,
+                              invoice,
+                              'paid',
+                              playAmount,
+                              productTotal,
+                              discountPlayPercent,
+                              discountServicePercent,
+                              discountBillPercent,
+                              discountAmount,
+                              netTotal,
+                              startTime,
+                              endTime,
+                              products,
+                              rate,
+                              member,
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              elevation: 0,
+                            ),
+                            child: const Text('Thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                           ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            elevation: 0,
-                          ),
-                          child: const Text('Thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

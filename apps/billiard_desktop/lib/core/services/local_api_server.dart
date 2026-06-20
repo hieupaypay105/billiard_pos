@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/tables/tables_provider.dart';
 import '../providers/providers.dart';
+import '../providers/device_connection_provider.dart';
 import 'local_db_service.dart';
 
 class LocalApiServer {
@@ -26,6 +27,11 @@ class LocalApiServer {
       _server!.listen((HttpRequest request) async {
         final path = request.uri.path;
         if (path == '/ws') {
+          final deviceId = request.headers.value('x-device-id');
+          if (deviceId == null || !_ref.read(deviceConnectionProvider.notifier).isApproved(deviceId)) {
+            await _sendError(request, HttpStatus.forbidden, 'Unauthorized WebSocket connection');
+            return;
+          }
           if (WebSocketTransformer.isUpgradeRequest(request)) {
             try {
               final socket = await WebSocketTransformer.upgrade(request);
@@ -48,7 +54,7 @@ class LocalApiServer {
         // Enable CORS
         request.response.headers.add('Access-Control-Allow-Origin', '*');
         request.response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        request.response.headers.add('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
+        request.response.headers.add('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With, x-device-id');
         
         if (request.method == 'OPTIONS') {
           request.response.statusCode = HttpStatus.ok;
@@ -56,10 +62,44 @@ class LocalApiServer {
           return;
         }
 
+        // Validate access
+        if (path.startsWith('/api/') && path != '/api/ping' && path != '/api/request-access') {
+          final deviceId = request.headers.value('x-device-id');
+          if (deviceId == null || !_ref.read(deviceConnectionProvider.notifier).isApproved(deviceId)) {
+            await _sendError(request, HttpStatus.forbidden, 'Unauthorized device connection');
+            return;
+          }
+        }
+
         try {
           final path = request.uri.path;
           if (path == '/api/ping') {
             await _sendJson(request, {'status': 1, 'app': 'billiard_pos'});
+          } else if (path == '/api/request-access' && request.method == 'POST') {
+            final body = await _readBody(request);
+            final deviceId = body['device_id'] as String?;
+            final deviceName = body['device_name'] as String? ?? 'Thiết bị';
+            final os = body['os'] as String? ?? 'Unknown';
+            final ip = request.connectionInfo?.remoteAddress.address ?? 'Unknown';
+
+            if (deviceId != null) {
+              final notifier = _ref.read(deviceConnectionProvider.notifier);
+              if (notifier.isApproved(deviceId)) {
+                await _sendJson(request, {'status': 1, 'access': 'approved'});
+              } else if (notifier.isDenied(deviceId)) {
+                await _sendJson(request, {'status': 0, 'access': 'denied'});
+              } else {
+                notifier.addRequest(DeviceRequest(
+                  deviceId: deviceId,
+                  deviceName: deviceName,
+                  os: os,
+                  ip: ip,
+                ));
+                await _sendJson(request, {'status': 1, 'access': 'pending'});
+              }
+            } else {
+              await _sendError(request, HttpStatus.badRequest, 'Missing device_id');
+            }
           } else if (path == '/api/session' && request.method == 'GET') {
             final session = await _localDb.getSetting('billiard_active_session');
             final tables = await _localDb.getCachedTables();

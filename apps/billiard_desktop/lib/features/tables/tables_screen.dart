@@ -22,6 +22,7 @@ import '../update/update_service.dart';
 import '../update/update_dialog.dart';
 import 'package:uuid/uuid.dart';
 import 'package:audioplayers/audioplayers.dart';
+import '../../core/providers/device_connection_provider.dart';
 
 
 class TablesScreen extends ConsumerStatefulWidget {
@@ -36,6 +37,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
   int? _selectedTableTypeId;
   static bool _hasCheckedUpdate = false;
   bool _isNotificationDialogOpen = false;
+  bool _isDeviceRequestDialogOpen = false;
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   // Quick product search suggest variables
@@ -115,6 +117,58 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
     } catch (e) {
       debugPrint('Error loading products in TablesScreen: $e');
     }
+  }
+
+  void _showDeviceRequestDialog(BuildContext context, WidgetRef ref, DeviceRequest req) {
+    if (_isDeviceRequestDialogOpen) return;
+    _isDeviceRequestDialogOpen = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.wifi_tethering, color: AppColors.primary),
+            const SizedBox(width: 10),
+            const Text('Yêu cầu kết nối thiết bị'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Có thiết bị muốn kết nối vào hệ thống cơ sở dữ liệu của bạn:'),
+            const SizedBox(height: 12),
+            Text('· Tên thiết bị: ${req.deviceName}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text('· Hệ điều hành: ${req.os}'),
+            Text('· Địa chỉ IP: ${req.ip}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              ref.read(deviceConnectionProvider.notifier).denyDevice(req.deviceId);
+              Navigator.pop(ctx);
+            },
+            child: const Text('Từ chối', style: TextStyle(color: AppColors.error)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              ref.read(deviceConnectionProvider.notifier).approveDevice(req.deviceId);
+              Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Chấp nhận'),
+          ),
+        ],
+      ),
+    ).then((_) {
+      _isDeviceRequestDialogOpen = false;
+    });
   }
 
   void _onSearchChanged(String query) {
@@ -213,6 +267,13 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
           _isNotificationDialogOpen = false;
           ref.read(tablesProvider.notifier).clearMobileProductNotifications();
         });
+      }
+    });
+
+    ref.listen<DeviceConnectionState>(deviceConnectionProvider, (previous, next) {
+      if (next.pendingRequests.isNotEmpty) {
+        final req = next.pendingRequests.first;
+        _showDeviceRequestDialog(context, ref, req);
       }
     });
 
@@ -475,6 +536,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                                               final typeLabel = typeModel.typeName;
                                               final hourlyRate = tablesState.getTableHourlyRate(table);
 
+                                              final pendingCount = tablesState.tablePendingOrders[table.id]?.length ?? 0;
                                               return _TableCard(
                                                 table: table,
                                                 isSelected: table.id == tablesState.selectedTableId,
@@ -489,6 +551,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                                                         table.id, table.status != 'maintenance'),
                                                 typeLabel: typeLabel,
                                                 hourlyRate: hourlyRate,
+                                                pendingOrdersCount: pendingCount,
                                               );
                                             },
                                           );
@@ -1108,6 +1171,7 @@ class _TableCard extends StatelessWidget {
   final VoidCallback onMaintenance;
   final String typeLabel;
   final double hourlyRate;
+  final int pendingOrdersCount;
 
   const _TableCard({
     required this.table,
@@ -1119,6 +1183,7 @@ class _TableCard extends StatelessWidget {
     required this.onMaintenance,
     required this.typeLabel,
     required this.hourlyRate,
+    required this.pendingOrdersCount,
   });
 
 
@@ -1204,6 +1269,24 @@ class _TableCard extends StatelessWidget {
                           ],
                         ),
                       ),
+                      if (pendingOrdersCount > 0) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.orange,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$pendingOrdersCount',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
                       _PulsingDot(color: statusDotColor, isActive: isActive),
                     ],
                   ),
@@ -1604,7 +1687,7 @@ class _InvoicePanel extends ConsumerWidget {
 
         // ── Product list ──
         Expanded(
-          child: products.isEmpty
+          child: (products.isEmpty && (tablesState.tablePendingOrders[table.id]?.isEmpty ?? true))
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1615,27 +1698,73 @@ class _InvoicePanel extends ConsumerWidget {
                     ],
                   ),
                 )
-              : ListView.separated(
+              : ListView(
                   padding: const EdgeInsets.all(12),
-                  itemCount: products.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 4),
-                  itemBuilder: (_, i) {
-                    final p = products[i];
-                    return _ProductLineItem(
-                      name: p['name'] as String,
-                      qty: p['qty'] as int,
-                      price: p['price'] as double,
-                      onRemove: () => ref
-                          .read(tablesProvider.notifier)
-                          .removeProductFromTable(table.id, p['product_id'] as String),
-                      onAdd: () => ref
-                          .read(tablesProvider.notifier)
-                          .updateProductQty(table.id, p['product_id'] as String, 1),
-                      onSubtract: () => ref
-                          .read(tablesProvider.notifier)
-                          .updateProductQty(table.id, p['product_id'] as String, -1),
-                    );
-                  },
+                  children: [
+                    if (products.isNotEmpty) ...[
+                      if (tablesState.tablePendingOrders[table.id]?.isNotEmpty ?? false)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8, top: 4),
+                          child: Text(
+                            'ĐÃ DUYỆT',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ...products.map((p) => Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: _ProductLineItem(
+                              name: p['name'] as String,
+                              qty: p['qty'] as int,
+                              price: p['price'] as double,
+                              onRemove: () => ref
+                                  .read(tablesProvider.notifier)
+                                  .removeProductFromTable(table.id, p['product_id'] as String),
+                              onAdd: () => ref
+                                  .read(tablesProvider.notifier)
+                                  .updateProductQty(table.id, p['product_id'] as String, 1),
+                              onSubtract: () => ref
+                                  .read(tablesProvider.notifier)
+                                  .updateProductQty(table.id, p['product_id'] as String, -1),
+                            ),
+                          )),
+                    ],
+                    if (tablesState.tablePendingOrders[table.id]?.isNotEmpty ?? false) ...[
+                      Padding(
+                        padding: EdgeInsets.only(
+                          top: products.isNotEmpty ? 16.0 : 4.0,
+                          bottom: 8.0,
+                        ),
+                        child: const Text(
+                          'YÊU CẦU CHỜ DUYỆT (TỪ MOBILE)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                      ...(tablesState.tablePendingOrders[table.id] ?? []).map((p) => Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: _PendingProductLineItem(
+                              name: p['name'] as String,
+                              qty: p['qty'] as int,
+                              price: p['price'] as double,
+                              onApprove: () => ref
+                                  .read(tablesProvider.notifier)
+                                  .approvePendingProduct(table.id, p['product_id'] as String),
+                              onDeny: () => ref
+                                  .read(tablesProvider.notifier)
+                                  .denyPendingProduct(table.id, p['product_id'] as String),
+                            ),
+                          )),
+                    ],
+                  ],
                 ),
         ),
         const Divider(height: 1),
@@ -2302,7 +2431,7 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
 
         // ── Product list ──
         Expanded(
-          child: products.isEmpty
+          child: (products.isEmpty && (tablesState.tablePendingOrders[invoice.id]?.isEmpty ?? true))
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -2313,27 +2442,73 @@ class _InvoicePanelForUnpaid extends ConsumerWidget {
                     ],
                   ),
                 )
-              : ListView.separated(
+              : ListView(
                   padding: const EdgeInsets.all(12),
-                  itemCount: products.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 4),
-                  itemBuilder: (_, i) {
-                    final p = products[i];
-                    return _ProductLineItem(
-                      name: p['name'] as String,
-                      qty: p['qty'] as int,
-                      price: p['price'] as double,
-                      onRemove: () => ref
-                          .read(tablesProvider.notifier)
-                          .removeProductFromTable(invoice.id, p['product_id'] as String),
-                      onAdd: () => ref
-                          .read(tablesProvider.notifier)
-                          .updateProductQty(invoice.id, p['product_id'] as String, 1),
-                      onSubtract: () => ref
-                          .read(tablesProvider.notifier)
-                          .updateProductQty(invoice.id, p['product_id'] as String, -1),
-                    );
-                  },
+                  children: [
+                    if (products.isNotEmpty) ...[
+                      if (tablesState.tablePendingOrders[invoice.id]?.isNotEmpty ?? false)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8, top: 4),
+                          child: Text(
+                            'ĐÃ DUYỆT',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ...products.map((p) => Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: _ProductLineItem(
+                              name: p['name'] as String,
+                              qty: p['qty'] as int,
+                              price: p['price'] as double,
+                              onRemove: () => ref
+                                  .read(tablesProvider.notifier)
+                                  .removeProductFromTable(invoice.id, p['product_id'] as String),
+                              onAdd: () => ref
+                                  .read(tablesProvider.notifier)
+                                  .updateProductQty(invoice.id, p['product_id'] as String, 1),
+                              onSubtract: () => ref
+                                  .read(tablesProvider.notifier)
+                                  .updateProductQty(invoice.id, p['product_id'] as String, -1),
+                            ),
+                          )),
+                    ],
+                    if (tablesState.tablePendingOrders[invoice.id]?.isNotEmpty ?? false) ...[
+                      Padding(
+                        padding: EdgeInsets.only(
+                          top: products.isNotEmpty ? 16.0 : 4.0,
+                          bottom: 8.0,
+                        ),
+                        child: const Text(
+                          'YÊU CẦU CHỜ DUYỆT (TỪ MOBILE)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                      ...(tablesState.tablePendingOrders[invoice.id] ?? []).map((p) => Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: _PendingProductLineItem(
+                              name: p['name'] as String,
+                              qty: p['qty'] as int,
+                              price: p['price'] as double,
+                              onApprove: () => ref
+                                  .read(tablesProvider.notifier)
+                                  .approvePendingProduct(invoice.id, p['product_id'] as String),
+                              onDeny: () => ref
+                                  .read(tablesProvider.notifier)
+                                  .denyPendingProduct(invoice.id, p['product_id'] as String),
+                            ),
+                          )),
+                    ],
+                  ],
                 ),
         ),
         const Divider(height: 1),
@@ -2750,6 +2925,96 @@ class _ProductLineItem extends StatelessWidget {
                 padding: EdgeInsets.all(4),
                 child: Icon(Icons.delete_outline, size: 18, color: AppColors.error),
               ),
+            ),
+          ],
+        ),
+      );
+}
+
+class _PendingProductLineItem extends StatelessWidget {
+  final String name;
+  final int qty;
+  final double price;
+  final VoidCallback onApprove;
+  final VoidCallback onDeny;
+
+  const _PendingProductLineItem({
+    required this.name,
+    required this.qty,
+    required this.price,
+    required this.onApprove,
+    required this.onDeny,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.orange.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange.shade200),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        margin: const EdgeInsets.only(right: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.orange,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'Chờ duyệt',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_fmtCurrency(price)} x $qty',
+                    style: AppTextStyles.labelSmall.copyWith(color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              _fmtCurrency(price * qty),
+              style: AppTextStyles.labelLarge.copyWith(color: Colors.orange.shade900),
+            ),
+            const SizedBox(width: 12),
+            IconButton(
+              tooltip: 'Duyệt',
+              icon: const Icon(Icons.check_circle, color: Colors.green, size: 24),
+              onPressed: onApprove,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+            const SizedBox(width: 10),
+            IconButton(
+              tooltip: 'Từ chối',
+              icon: const Icon(Icons.cancel, color: Colors.red, size: 24),
+              onPressed: onDeny,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
             ),
           ],
         ),
