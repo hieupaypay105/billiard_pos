@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:excel/excel.dart' as ex;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:file_picker/file_picker.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/providers/providers.dart';
@@ -292,8 +293,8 @@ List<Map<String, dynamic>> _aggregateProductSales(List<dynamic> orders, List<dyn
       final qty = _toInt(map['quantity']);
       if (qty <= 0) continue;
 
-      final unitPrice = _toDouble(map['unit_price'] ?? (qty > 0 ? _toDouble(map['total_price']) / qty : 0.0));
-      final totalAmount = _toDouble(map['total_price'] ?? (unitPrice * qty));
+      final unitPrice = _toDouble(map['unit_price'] ?? (qty > 0 ? _toDouble(map['total_price']) / qty : 0.0)).roundToDouble();
+      final totalAmount = _toDouble(map['total_price'] ?? (unitPrice * qty)).roundToDouble();
 
       double costPrice = 0.0;
       String barcode = productId;
@@ -305,7 +306,7 @@ List<Map<String, dynamic>> _aggregateProductSales(List<dynamic> orders, List<dyn
         orElse: () => null,
       );
       if (prod != null) {
-        costPrice = _toDouble(prod['cost_price']);
+        costPrice = _toDouble(prod['cost_price']).roundToDouble();
         barcode = prod['barcode']?.toString() ?? prod['id']?.toString() ?? barcode;
         if (prod['unit'] != null && prod['unit'].toString().isNotEmpty) {
           unit = prod['unit'].toString();
@@ -315,7 +316,7 @@ List<Map<String, dynamic>> _aggregateProductSales(List<dynamic> orders, List<dyn
         }
       }
 
-      final profit = totalAmount - (qty * costPrice);
+      final profit = (totalAmount - (qty * costPrice)).roundToDouble();
 
       if (aggregated.containsKey(productId)) {
         final existing = aggregated[productId]!;
@@ -514,12 +515,36 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
 
     String filename = "";
 
+    String _fmtCurrencyExcel(double v) {
+      final double rounded = v.roundToDouble();
+      final isNegative = rounded < 0;
+      final absVal = rounded.abs();
+      final s = absVal.toStringAsFixed(0);
+      final buf = StringBuffer();
+      int count = 0;
+      for (int i = s.length - 1; i >= 0; i--) {
+        if (count > 0 && count % 3 == 0) buf.write('.');
+        buf.write(s[i]);
+        count++;
+      }
+      final formatted = buf.toString().split('').reversed.join();
+      return '${isNegative ? '-' : ''}$formatted đ';
+    }
+
+    void _setCell(int col, int row, ex.CellValue val, {bool bold = false}) {
+      final cell = sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row));
+      cell.value = val;
+      if (bold) {
+        cell.cellStyle = ex.CellStyle(bold: true);
+      }
+    }
+
     if (activeTab == 0) {
       filename = "HDCT_NGAY_${_fmtDateFilename(_dateRange.start)}_${_fmtDateFilename(_dateRange.end)}.xlsx";
 
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1)).value = ex.TextCellValue("NEW WORLD BILLIARD CLUB");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 3)).value = ex.TextCellValue("TỔNG HỢP HÓA ĐƠN THEO NGÀY - CHI TIẾT");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 5)).value = ex.TextCellValue("Thời gian: $dateFromText 08:00 - $dateToText 08:00 ;Tình trạng thanh toán: ${_selectedStatus == 'all' ? 'Tất cả' : _getStatusLabel(_selectedStatus)}");
+      _setCell(0, 1, ex.TextCellValue("NEW WORLD BILLIARD CLUB"), bold: true);
+      _setCell(0, 3, ex.TextCellValue("TỔNG HỢP HÓA ĐƠN THEO NGÀY - CHI TIẾT"), bold: true);
+      _setCell(0, 5, ex.TextCellValue("Thời gian: $dateFromText 08:00 - $dateToText 08:00 ;Tình trạng thanh toán: ${_selectedStatus == 'all' ? 'Tất cả' : _getStatusLabel(_selectedStatus)}"));
 
       final headers = [
         "STT", "Số\nHĐ", "Giờ\nvào", "Mã bàn", "Tên khách hàng", "Tiền\nbàn", 
@@ -527,7 +552,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         "Ghi chú", "Tình trạng"
       ];
       for (int c = 0; c < headers.length; c++) {
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 9)).value = ex.TextCellValue(headers[c]);
+        _setCell(c, 9, ex.TextCellValue(headers[c]), bold: true);
       }
 
       final Map<String, List<Map<String, dynamic>>> grouped = {};
@@ -563,7 +588,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
       });
 
       for (final dateKey in sortedKeys) {
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue("Ngày: $dateKey");
+        _setCell(0, curRow, ex.TextCellValue("Ngày: $dateKey"), bold: true);
         curRow += 2;
 
         final list = grouped[dateKey]!;
@@ -594,10 +619,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
             customerCount++;
           }
 
-          final playAmt = _toDouble(order['total_play_time_amount']);
-          final servAmt = _toDouble(order['total_product_amount']);
-          final discAmt = _toDouble(order['discount_amount']);
-          final netAmt = _toDouble(order['total_amount']);
+          final playAmt = _toDouble(order['total_play_time_amount']).roundToDouble();
+          final servAmt = _toDouble(order['total_product_amount']).roundToDouble();
+          final discAmt = _toDouble(order['discount_amount']).roundToDouble();
+          final netAmt = _toDouble(order['total_amount']).roundToDouble();
 
           final cashierName = _getCashierName(
             order['closed_by']?.toString() ?? order['created_by']?.toString(),
@@ -606,18 +631,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
           final noteText = order['note']?.toString() ?? '';
           final statusLabel = _getStatusLabel(order['status']?.toString() ?? '');
 
-          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue("$stt");
-          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.TextCellValue(shortId);
-          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.TextCellValue(startText);
-          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.TextCellValue(tableName);
-          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.TextCellValue(memberName);
-          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.DoubleCellValue(playAmt);
-          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: curRow)).value = ex.DoubleCellValue(servAmt);
-          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.DoubleCellValue(discAmt);
-          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: curRow)).value = ex.DoubleCellValue(netAmt);
-          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: curRow)).value = ex.TextCellValue(cashierName);
-          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 10, rowIndex: curRow)).value = ex.TextCellValue(noteText);
-          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 11, rowIndex: curRow)).value = ex.TextCellValue(statusLabel);
+          _setCell(0, curRow, ex.TextCellValue("$stt"));
+          _setCell(1, curRow, ex.TextCellValue(shortId));
+          _setCell(2, curRow, ex.TextCellValue(startText));
+          _setCell(3, curRow, ex.TextCellValue(tableName));
+          _setCell(4, curRow, ex.TextCellValue(memberName));
+          _setCell(5, curRow, ex.TextCellValue(_fmtCurrencyExcel(playAmt)));
+          _setCell(6, curRow, ex.TextCellValue(_fmtCurrencyExcel(servAmt)));
+          _setCell(7, curRow, ex.TextCellValue(_fmtCurrencyExcel(discAmt)));
+          _setCell(8, curRow, ex.TextCellValue(_fmtCurrencyExcel(netAmt)));
+          _setCell(9, curRow, ex.TextCellValue(cashierName));
+          _setCell(10, curRow, ex.TextCellValue(noteText));
+          _setCell(11, curRow, ex.TextCellValue(statusLabel));
 
           dayPlay += playAmt;
           dayService += servAmt;
@@ -628,12 +653,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
           curRow += 2;
         }
 
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.TextCellValue("Cộng ngày:");
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.IntCellValue(dayCount);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.DoubleCellValue(dayPlay);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: curRow)).value = ex.DoubleCellValue(dayService);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.DoubleCellValue(dayDiscount);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: curRow)).value = ex.DoubleCellValue(dayTotal);
+        _setCell(1, curRow, ex.TextCellValue("Cộng ngày:"), bold: true);
+        _setCell(3, curRow, ex.IntCellValue(dayCount), bold: true);
+        _setCell(5, curRow, ex.TextCellValue(_fmtCurrencyExcel(dayPlay)), bold: true);
+        _setCell(6, curRow, ex.TextCellValue(_fmtCurrencyExcel(dayService)), bold: true);
+        _setCell(7, curRow, ex.TextCellValue(_fmtCurrencyExcel(dayDiscount)), bold: true);
+        _setCell(8, curRow, ex.TextCellValue(_fmtCurrencyExcel(dayTotal)), bold: true);
 
         grandPlay += dayPlay;
         grandService += dayService;
@@ -644,37 +669,37 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         curRow += 2;
       }
 
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.TextCellValue("Tổng cộng:");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.IntCellValue(grandCount);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.IntCellValue(customerCount);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.DoubleCellValue(grandPlay);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: curRow)).value = ex.DoubleCellValue(grandService);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.DoubleCellValue(grandDiscount);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: curRow)).value = ex.DoubleCellValue(grandTotal);
+      _setCell(1, curRow, ex.TextCellValue("Tổng cộng:"), bold: true);
+      _setCell(3, curRow, ex.IntCellValue(grandCount), bold: true);
+      _setCell(4, curRow, ex.IntCellValue(customerCount), bold: true);
+      _setCell(5, curRow, ex.TextCellValue(_fmtCurrencyExcel(grandPlay)), bold: true);
+      _setCell(6, curRow, ex.TextCellValue(_fmtCurrencyExcel(grandService)), bold: true);
+      _setCell(7, curRow, ex.TextCellValue(_fmtCurrencyExcel(grandDiscount)), bold: true);
+      _setCell(8, curRow, ex.TextCellValue(_fmtCurrencyExcel(grandTotal)), bold: true);
 
       curRow += 2;
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: curRow)).value = ex.TextCellValue(dateSignStr);
+      _setCell(9, curRow, ex.TextCellValue(dateSignStr));
       curRow += 1;
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.TextCellValue("KẾ TOÁN");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: curRow)).value = ex.TextCellValue("GIÁM ĐỐC");
+      _setCell(2, curRow, ex.TextCellValue("KẾ TOÁN"), bold: true);
+      _setCell(9, curRow, ex.TextCellValue("GIÁM ĐỐC"), bold: true);
       curRow += 2;
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.TextCellValue("(Ký, họ tên)");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: curRow)).value = ex.TextCellValue("(Ký, họ tên, đóng dấu)");
+      _setCell(2, curRow, ex.TextCellValue("(Ký, họ tên)"));
+      _setCell(9, curRow, ex.TextCellValue("(Ký, họ tên, đóng dấu)"));
 
       curRow += 4;
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue(timeStr);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.TextCellValue("Billiard POS CRM V1.0");
+      _setCell(0, curRow, ex.TextCellValue(timeStr));
+      _setCell(5, curRow, ex.TextCellValue("Billiard POS CRM V1.0"));
 
     } else if (activeTab == 1) {
       filename = "DTHU_NGAY_${_fmtDateFilename(_dateRange.start)}_${_fmtDateFilename(_dateRange.end)}.xlsx";
 
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1)).value = ex.TextCellValue("NEW WORLD BILLIARD CLUB");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 3)).value = ex.TextCellValue("TỔNG HỢP HÓA ĐƠN THEO NGÀY - TỔNG HỢP");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 5)).value = ex.TextCellValue("Thời gian: $dateFromText 08:00 - $dateToText 08:00 ;Tình trạng thanh toán: ${_selectedStatus == 'all' ? 'Tất cả' : _getStatusLabel(_selectedStatus)}");
+      _setCell(0, 1, ex.TextCellValue("NEW WORLD BILLIARD CLUB"), bold: true);
+      _setCell(0, 3, ex.TextCellValue("TỔNG HỢP HÓA ĐƠN THEO NGÀY - TỔNG HỢP"), bold: true);
+      _setCell(0, 5, ex.TextCellValue("Thời gian: $dateFromText 08:00 - $dateToText 08:00 ;Tình trạng thanh toán: ${_selectedStatus == 'all' ? 'Tất cả' : _getStatusLabel(_selectedStatus)}"));
 
       final headers = ["Ngày", "Số HĐ", "Tiền\nBàn/Phòng", "Tiền\nĐồ ăn / Đồ uống", "Tiền\nkhuyến mại", "Tổng\nthanh toán"];
       for (int c = 0; c < headers.length; c++) {
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 9)).value = ex.TextCellValue(headers[c]);
+        _setCell(c, 9, ex.TextCellValue(headers[c]), bold: true);
       }
 
       final Map<String, List<Map<String, dynamic>>> grouped = {};
@@ -716,18 +741,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         double dayTotal = 0.0;
 
         for (final order in list) {
-          dayPlay += _toDouble(order['total_play_time_amount']);
-          dayService += _toDouble(order['total_product_amount']);
-          dayDiscount += _toDouble(order['discount_amount']);
-          dayTotal += _toDouble(order['total_amount']);
+          dayPlay += _toDouble(order['total_play_time_amount']).roundToDouble();
+          dayService += _toDouble(order['total_product_amount']).roundToDouble();
+          dayDiscount += _toDouble(order['discount_amount']).roundToDouble();
+          dayTotal += _toDouble(order['total_amount']).roundToDouble();
         }
 
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue(dateKey);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.IntCellValue(list.length);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.DoubleCellValue(dayPlay);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.DoubleCellValue(dayService);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.DoubleCellValue(dayDiscount);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.DoubleCellValue(dayTotal);
+        _setCell(0, curRow, ex.TextCellValue(dateKey));
+        _setCell(1, curRow, ex.IntCellValue(list.length));
+        _setCell(2, curRow, ex.TextCellValue(_fmtCurrencyExcel(dayPlay)));
+        _setCell(3, curRow, ex.TextCellValue(_fmtCurrencyExcel(dayService)));
+        _setCell(4, curRow, ex.TextCellValue(_fmtCurrencyExcel(dayDiscount)));
+        _setCell(5, curRow, ex.TextCellValue(_fmtCurrencyExcel(dayTotal)));
 
         grandPlay += dayPlay;
         grandService += dayService;
@@ -738,37 +763,37 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         curRow++;
       }
 
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue("Tổng cộng:");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.IntCellValue(grandCount);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.DoubleCellValue(grandPlay);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.DoubleCellValue(grandService);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.DoubleCellValue(grandDiscount);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.DoubleCellValue(grandTotal);
+      _setCell(0, curRow, ex.TextCellValue("Tổng cộng:"), bold: true);
+      _setCell(1, curRow, ex.IntCellValue(grandCount), bold: true);
+      _setCell(2, curRow, ex.TextCellValue(_fmtCurrencyExcel(grandPlay)), bold: true);
+      _setCell(3, curRow, ex.TextCellValue(_fmtCurrencyExcel(grandService)), bold: true);
+      _setCell(4, curRow, ex.TextCellValue(_fmtCurrencyExcel(grandDiscount)), bold: true);
+      _setCell(5, curRow, ex.TextCellValue(_fmtCurrencyExcel(grandTotal)), bold: true);
 
       curRow += 2;
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.TextCellValue(dateSignStr);
+      _setCell(5, curRow, ex.TextCellValue(dateSignStr));
       curRow += 1;
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.TextCellValue("KẾ TOÁN");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.TextCellValue("GIÁM ĐỐC");
+      _setCell(1, curRow, ex.TextCellValue("KẾ TOÁN"), bold: true);
+      _setCell(5, curRow, ex.TextCellValue("GIÁM ĐỐC"), bold: true);
       curRow += 2;
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.TextCellValue("(Ký, họ tên)");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.TextCellValue("(Ký, họ tên, đóng dấu)");
+      _setCell(1, curRow, ex.TextCellValue("(Ký, họ tên)"));
+      _setCell(5, curRow, ex.TextCellValue("(Ký, họ tên, đóng dấu)"));
 
       curRow += 4;
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue(timeStr);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.TextCellValue("Billiard POS CRM V1.0");
+      _setCell(0, curRow, ex.TextCellValue(timeStr));
+      _setCell(3, curRow, ex.TextCellValue("Billiard POS CRM V1.0"));
 
     } else {
       filename = "HANG_XUAT_${_fmtDateFilename(_dateRange.start)}_${_fmtDateFilename(_dateRange.end)}.xlsx";
 
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1)).value = ex.TextCellValue("NEW WORLD BILLIARD CLUB");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 3)).value = ex.TextCellValue("TỔNG HỢP HÀNG XUẤT");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 5)).value = ex.TextCellValue("Thời gian: $dateFromText 08:00 - $dateToText 08:00");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: 7)).value = ex.TextCellValue("Đơn vị tính: VNĐ");
+      _setCell(0, 1, ex.TextCellValue("NEW WORLD BILLIARD CLUB"), bold: true);
+      _setCell(0, 3, ex.TextCellValue("TỔNG HỢP HÀNG XUẤT"), bold: true);
+      _setCell(0, 5, ex.TextCellValue("Thời gian: $dateFromText 08:00 - $dateToText 08:00"));
+      _setCell(7, 7, ex.TextCellValue("Đơn vị tính: VNĐ"), bold: true);
 
       final headers = ["STT", "Mã hàng", "Tên hàng", "ĐVT", "Số lượng", "Đơn giá", "Thành tiền", "Lợi nhuận"];
       for (int c = 0; c < headers.length; c++) {
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 9)).value = ex.TextCellValue(headers[c]);
+        _setCell(c, 9, ex.TextCellValue(headers[c]), bold: true);
       }
 
       final aggregatedSales = _aggregateProductSales(filtered, products);
@@ -789,14 +814,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         final amount = item['amount'] as double;
         final profit = item['profit'] as double;
 
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue("$stt");
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.TextCellValue(barcode);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.TextCellValue(name);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.TextCellValue(unit);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.IntCellValue(qty);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.DoubleCellValue(price);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: curRow)).value = ex.DoubleCellValue(amount);
-        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.DoubleCellValue(profit);
+        _setCell(0, curRow, ex.TextCellValue("$stt"));
+        _setCell(1, curRow, ex.TextCellValue(barcode));
+        _setCell(2, curRow, ex.TextCellValue(name));
+        _setCell(3, curRow, ex.TextCellValue(unit));
+        _setCell(4, curRow, ex.IntCellValue(qty));
+        _setCell(5, curRow, ex.TextCellValue(_fmtCurrencyExcel(price)));
+        _setCell(6, curRow, ex.TextCellValue(_fmtCurrencyExcel(amount)));
+        _setCell(7, curRow, ex.TextCellValue(_fmtCurrencyExcel(profit)));
 
         grandQty += qty;
         grandAmount += amount;
@@ -805,23 +830,23 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         curRow++;
       }
 
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue("Tổng cộng:");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.DoubleCellValue(grandQty);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: curRow)).value = ex.DoubleCellValue(grandAmount);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.DoubleCellValue(grandProfit);
+      _setCell(0, curRow, ex.TextCellValue("Tổng cộng:"), bold: true);
+      _setCell(4, curRow, ex.DoubleCellValue(grandQty), bold: true);
+      _setCell(6, curRow, ex.TextCellValue(_fmtCurrencyExcel(grandAmount)), bold: true);
+      _setCell(7, curRow, ex.TextCellValue(_fmtCurrencyExcel(grandProfit)), bold: true);
 
       curRow += 2;
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.TextCellValue(dateSignStr);
+      _setCell(7, curRow, ex.TextCellValue(dateSignStr));
       curRow += 1;
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.TextCellValue("KẾ TOÁN");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.TextCellValue("GIÁM ĐỐC");
+      _setCell(2, curRow, ex.TextCellValue("KẾ TOÁN"), bold: true);
+      _setCell(7, curRow, ex.TextCellValue("GIÁM ĐỐC"), bold: true);
       curRow += 2;
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.TextCellValue("(Ký, họ tên)");
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.TextCellValue("(Ký, họ tên, đóng dấu)");
+      _setCell(2, curRow, ex.TextCellValue("(Ký, họ tên)"));
+      _setCell(7, curRow, ex.TextCellValue("(Ký, họ tên, đóng dấu)"));
 
       curRow += 4;
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue(timeStr);
-      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.TextCellValue("Billiard POS CRM V1.0");
+      _setCell(0, curRow, ex.TextCellValue(timeStr));
+      _setCell(4, curRow, ex.TextCellValue("Billiard POS CRM V1.0"));
     }
 
     try {
@@ -830,41 +855,34 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         throw Exception("Không thể lưu cấu trúc Excel");
       }
 
-      Directory targetDir = await getApplicationDocumentsDirectory();
-      String fullPath = "";
-      bool wroteSuccessfully = false;
+      String? outputFile = await FilePicker.saveFile(
+        dialogTitle: 'Chọn nơi lưu tệp Excel',
+        fileName: filename,
+        type: FileType.custom,
+        allowedExtensions: ['xlsx'],
+      );
 
-      final downloadsDir = await getDownloadsDirectory();
-      if (downloadsDir != null) {
-        try {
-          targetDir = downloadsDir;
-          fullPath = p.join(targetDir.path, filename);
-          final file = File(fullPath);
-          await file.writeAsBytes(fileBytes);
-          wroteSuccessfully = true;
-        } catch (e) {
-          debugPrint("Failed to write to downloads directory: $e");
-        }
+      if (outputFile == null) {
+        // User cancelled
+        return;
       }
 
-      if (!wroteSuccessfully) {
-        targetDir = await getApplicationDocumentsDirectory();
-        fullPath = p.join(targetDir.path, filename);
-        final file = File(fullPath);
-        await file.writeAsBytes(fileBytes);
-      }
+      final file = File(outputFile);
+      await file.writeAsBytes(fileBytes);
 
       if (context.mounted) {
+        final savedFilename = p.basename(outputFile);
+        final targetDirPath = p.dirname(outputFile);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Đã xuất Excel thành công: $filename'),
+            content: Text('Đã xuất Excel thành công: $savedFilename'),
             behavior: SnackBarBehavior.floating,
             backgroundColor: AppColors.success,
             duration: const Duration(seconds: 8),
             action: SnackBarAction(
               label: 'Mở thư mục',
               textColor: Colors.white,
-              onPressed: () => _openDirectory(targetDir.path),
+              onPressed: () => _openDirectory(targetDirPath),
             ),
           ),
         );

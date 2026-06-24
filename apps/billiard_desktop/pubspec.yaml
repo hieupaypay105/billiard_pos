@@ -47,6 +47,7 @@ dependencies:
   pdf: ^3.12.0
   audioplayers: ^6.7.1
   excel: ^4.0.6
+  file_picker: ^11.0.2
 
   # Receipt Printing (K80) - TODO: integrate when printer hardware confirmed
   # esc_pos_utils_plus: ^2.0.4  # add when ready to integrate
