@@ -830,11 +830,29 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
         throw Exception("Không thể lưu cấu trúc Excel");
       }
 
+      Directory targetDir = await getApplicationDocumentsDirectory();
+      String fullPath = "";
+      bool wroteSuccessfully = false;
+
       final downloadsDir = await getDownloadsDirectory();
-      final targetDir = downloadsDir ?? await getApplicationDocumentsDirectory();
-      final fullPath = p.join(targetDir.path, filename);
-      final file = File(fullPath);
-      await file.writeAsBytes(fileBytes);
+      if (downloadsDir != null) {
+        try {
+          targetDir = downloadsDir;
+          fullPath = p.join(targetDir.path, filename);
+          final file = File(fullPath);
+          await file.writeAsBytes(fileBytes);
+          wroteSuccessfully = true;
+        } catch (e) {
+          debugPrint("Failed to write to downloads directory: $e");
+        }
+      }
+
+      if (!wroteSuccessfully) {
+        targetDir = await getApplicationDocumentsDirectory();
+        fullPath = p.join(targetDir.path, filename);
+        final file = File(fullPath);
+        await file.writeAsBytes(fileBytes);
+      }
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
