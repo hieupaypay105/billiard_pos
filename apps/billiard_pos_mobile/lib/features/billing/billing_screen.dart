@@ -81,6 +81,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
   // --- Start Table Activation Flow ---
   Future<void> _handleStartTable(TableModel table) async {
+    final state = ref.read(tablesProvider);
+    if (state.connectedIp == null) {
+      _showConnectionRequiredDialog();
+      return;
+    }
     final notifier = ref.read(tablesProvider.notifier);
     final currentShiftId = ref.read(currentShiftIdProvider) ?? 'shift-default';
 
@@ -156,6 +161,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
   // --- Deactivate Active Table Flow ---
   Future<void> _handleDeactivateTable(TableModel table) async {
+    final state = ref.read(tablesProvider);
+    if (state.connectedIp == null) {
+      _showConnectionRequiredDialog();
+      return;
+    }
     final notifier = ref.read(tablesProvider.notifier);
     final forceDeactivate = await showDialog<bool>(
       context: context,
@@ -189,6 +199,34 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         ));
       }
     }
+  }
+
+  void _showConnectionRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.warning),
+            SizedBox(width: 8),
+            Text('Yêu cầu kết nối'),
+          ],
+        ),
+        content: const Text(
+          'Bắt buộc phải kết nối app desktop qua wifi trước.',
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Đã hiểu'),
+          ),
+        ],
+      ),
+    );
   }
 
   // --- Checkout Flow for Active Tables ---
@@ -833,12 +871,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       appBar: AppBar(
         title: Text(table.tableName),
         actions: [
-          if (state.connectedIp == null)
-            IconButton(
-              icon: const Icon(Icons.power_settings_new, color: Colors.red),
-              tooltip: 'Tắt bàn',
-              onPressed: () => _handleDeactivateTable(table),
-            )
+          IconButton(
+            icon: const Icon(Icons.power_settings_new, color: Colors.red),
+            tooltip: 'Tắt bàn',
+            onPressed: () => _handleDeactivateTable(table),
+          )
         ],
       ),
       body: Column(
