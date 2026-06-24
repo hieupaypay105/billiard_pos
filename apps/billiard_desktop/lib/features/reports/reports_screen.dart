@@ -1,5 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:excel/excel.dart' as ex;
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/providers/providers.dart';
@@ -112,7 +116,29 @@ final _reportDataProvider = FutureProvider.family<_ReportData, DateTimeRange>((
         dateTo: dateTo,
       );
 
-      return _ReportData(orders: orders, isOffline: false);
+      final futureList = orders.map((o) async {
+        final orderMap = _normalizeOrder(o);
+        if (orderMap.containsKey('details') && orderMap['details'] is List) {
+          return orderMap;
+        } else {
+          try {
+            final detailsRes = await api.getOrderDetails(orderMap['id']);
+            final details = detailsRes['data']?['details'] as List<dynamic>? ?? [];
+            final member = detailsRes['data']?['member'] as Map<String, dynamic>?;
+            return {
+              ...orderMap,
+              'details': details,
+              'member': member,
+            };
+          } catch (e) {
+            debugPrint('Error loading details for order ${orderMap['id']}: $e');
+            return orderMap;
+          }
+        }
+      }).toList();
+
+      final resolvedOrders = await Future.wait(futureList);
+      return _ReportData(orders: resolvedOrders, isOffline: false);
     } catch (e) {
       return _buildOfflineData(ref, range);
     }
@@ -120,6 +146,24 @@ final _reportDataProvider = FutureProvider.family<_ReportData, DateTimeRange>((
     return _buildOfflineData(ref, range);
   }
 });
+
+final _allProductsProvider = FutureProvider<List<dynamic>>((ref) async {
+  final syncState = ref.watch(syncStateProvider);
+  final isOnline = syncState.isOnline;
+  if (isOnline) {
+    try {
+      final api = ref.read(apiClientProvider);
+      return await api.getProducts();
+    } catch (_) {
+      final db = ref.read(localDbServiceProvider);
+      return await db.getCachedProducts();
+    }
+  } else {
+    final db = ref.read(localDbServiceProvider);
+    return await db.getCachedProducts();
+  }
+});
+
 
 class _SummaryParam {
   final DateTimeRange range;
@@ -234,6 +278,71 @@ int _toInt(dynamic v) {
   return 0;
 }
 
+List<Map<String, dynamic>> _aggregateProductSales(List<dynamic> orders, List<dynamic> products) {
+  final Map<String, Map<String, dynamic>> aggregated = {};
+
+  for (final order in orders) {
+    final orderMap = _normalizeOrder(order);
+    final details = orderMap['details'] as List<dynamic>? ?? [];
+    for (final detail in details) {
+      final map = detail as Map<String, dynamic>;
+      final productId = map['product_id']?.toString() ?? '';
+      if (productId.isEmpty) continue;
+
+      final qty = _toInt(map['quantity']);
+      if (qty <= 0) continue;
+
+      final unitPrice = _toDouble(map['unit_price'] ?? (qty > 0 ? _toDouble(map['total_price']) / qty : 0.0));
+      final totalAmount = _toDouble(map['total_price'] ?? (unitPrice * qty));
+
+      double costPrice = 0.0;
+      String barcode = productId;
+      String unit = map['unit']?.toString() ?? 'VND';
+      String name = map['product_name']?.toString() ?? 'Sản phẩm';
+
+      final prod = products.firstWhere(
+        (p) => p['id']?.toString() == productId,
+        orElse: () => null,
+      );
+      if (prod != null) {
+        costPrice = _toDouble(prod['cost_price']);
+        barcode = prod['barcode']?.toString() ?? prod['id']?.toString() ?? barcode;
+        if (prod['unit'] != null && prod['unit'].toString().isNotEmpty) {
+          unit = prod['unit'].toString();
+        }
+        if (prod['product_name'] != null && prod['product_name'].toString().isNotEmpty) {
+          name = prod['product_name'].toString();
+        }
+      }
+
+      final profit = totalAmount - (qty * costPrice);
+
+      if (aggregated.containsKey(productId)) {
+        final existing = aggregated[productId]!;
+        existing['quantity'] = (existing['quantity'] as int) + qty;
+        existing['amount'] = (existing['amount'] as double) + totalAmount;
+        existing['profit'] = (existing['profit'] as double) + profit;
+      } else {
+        aggregated[productId] = {
+          'product_id': productId,
+          'barcode': barcode,
+          'name': name,
+          'unit': unit,
+          'quantity': qty,
+          'price': unitPrice,
+          'amount': totalAmount,
+          'profit': profit,
+        };
+      }
+    }
+  }
+
+  final resultList = aggregated.values.toList();
+  resultList.sort((a, b) => (b['quantity'] as int).compareTo(a['quantity'] as int));
+  return resultList;
+}
+
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -256,7 +365,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this);
     final now = DateTime.now();
     _dateRange = DateTimeRange(
       start: DateTime(now.year, now.month, now.day),
@@ -352,11 +461,431 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
     );
   }
 
+  Future<void> _exportExcel(
+    BuildContext context,
+    List<dynamic> orders,
+    List<dynamic> users,
+    List<dynamic> products,
+  ) async {
+    if (orders.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không có dữ liệu báo cáo để xuất Excel'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final filtered = orders.map((o) => _normalizeOrder(o)).where((o) {
+      if (_selectedStatus != 'all' && o['status'] != _selectedStatus) {
+        return false;
+      }
+      if (_selectedCashier != 'all') {
+        final creator = o['created_by']?.toString() ?? '';
+        final closer = o['closed_by']?.toString() ?? '';
+        if (creator != _selectedCashier && closer != _selectedCashier) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+
+    if (filtered.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Không có dữ liệu phù hợp với bộ lọc để xuất Excel'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final activeTab = _tabCtrl.index;
+    final excel = ex.Excel.createExcel();
+    final sheet = excel['Sheet1'];
+
+    final now = DateTime.now();
+    final timeStr = "${_fmtDate(now)}   ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')} ${now.hour >= 12 ? 'PM' : 'AM'}";
+    final dateSignStr = "Ngày ${now.day.toString().padLeft(2, '0')} tháng ${now.month.toString().padLeft(2, '0')} năm ${now.year}";
+
+    final dateFromText = _fmtDate(_dateRange.start);
+    final dateToText = _fmtDate(_dateRange.end);
+
+    String filename = "";
+
+    if (activeTab == 0) {
+      filename = "HDCT_NGAY_${_fmtDateFilename(_dateRange.start)}_${_fmtDateFilename(_dateRange.end)}.xlsx";
+
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1)).value = ex.TextCellValue("NEW WORLD BILLIARD CLUB");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 3)).value = ex.TextCellValue("TỔNG HỢP HÓA ĐƠN THEO NGÀY - CHI TIẾT");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 5)).value = ex.TextCellValue("Thời gian: $dateFromText 08:00 - $dateToText 08:00 ;Tình trạng thanh toán: ${_selectedStatus == 'all' ? 'Tất cả' : _getStatusLabel(_selectedStatus)}");
+
+      final headers = [
+        "STT", "Số\nHĐ", "Giờ\nvào", "Mã bàn", "Tên khách hàng", "Tiền\nbàn", 
+        "Tiền\ndịch vụ", "Tiền\nkhuyến mại", "Tổng\nthanh toán", "Nhân viên\nthanh toán", 
+        "Ghi chú", "Tình trạng"
+      ];
+      for (int c = 0; c < headers.length; c++) {
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 9)).value = ex.TextCellValue(headers[c]);
+      }
+
+      final Map<String, List<Map<String, dynamic>>> grouped = {};
+      for (final order in filtered) {
+        final payDateStr = (order['end_time'] ?? order['created_at'] ?? '').toString();
+        String groupKey = "N/A";
+        if (payDateStr.isNotEmpty) {
+          try {
+            final dt = DateTime.parse(payDateStr.replaceAll(' ', 'T'));
+            groupKey = "${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}";
+          } catch (_) {}
+        }
+        grouped.putIfAbsent(groupKey, () => []).add(order);
+      }
+
+      int curRow = 13;
+      double grandPlay = 0.0;
+      double grandService = 0.0;
+      double grandDiscount = 0.0;
+      double grandTotal = 0.0;
+      int grandCount = 0;
+      int customerCount = 0;
+
+      final sortedKeys = grouped.keys.toList()..sort((a, b) {
+        try {
+          final aParts = a.split('/');
+          final bParts = b.split('/');
+          final aDate = DateTime(int.parse(aParts[2]), int.parse(aParts[1]), int.parse(aParts[0]));
+          final bDate = DateTime(int.parse(bParts[2]), int.parse(bParts[1]), int.parse(bParts[0]));
+          return aDate.compareTo(bDate);
+        } catch (_) {}
+        return a.compareTo(b);
+      });
+
+      for (final dateKey in sortedKeys) {
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue("Ngày: $dateKey");
+        curRow += 2;
+
+        final list = grouped[dateKey]!;
+        double dayPlay = 0.0;
+        double dayService = 0.0;
+        double dayDiscount = 0.0;
+        double dayTotal = 0.0;
+        int dayCount = 0;
+
+        for (int i = 0; i < list.length; i++) {
+          final order = list[i];
+          final stt = i + 1;
+          final idStr = order['id']?.toString() ?? '';
+          final shortId = idStr.length > 8 ? idStr.substring(idStr.length - 8) : idStr;
+          
+          final startStr = order['start_time']?.toString() ?? '';
+          String startText = "";
+          if (startStr.isNotEmpty) {
+            try {
+              final dt = DateTime.parse(startStr.replaceAll(' ', 'T'));
+              startText = "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
+            } catch (_) {}
+          }
+
+          final tableName = order['table_name']?.toString() ?? '';
+          final memberName = order['member']?['full_name']?.toString() ?? '';
+          if (memberName.isNotEmpty) {
+            customerCount++;
+          }
+
+          final playAmt = _toDouble(order['total_play_time_amount']);
+          final servAmt = _toDouble(order['total_product_amount']);
+          final discAmt = _toDouble(order['discount_amount']);
+          final netAmt = _toDouble(order['total_amount']);
+
+          final cashierName = _getCashierName(
+            order['closed_by']?.toString() ?? order['created_by']?.toString(),
+            users,
+          );
+          final noteText = order['note']?.toString() ?? '';
+          final statusLabel = _getStatusLabel(order['status']?.toString() ?? '');
+
+          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue("$stt");
+          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.TextCellValue(shortId);
+          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.TextCellValue(startText);
+          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.TextCellValue(tableName);
+          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.TextCellValue(memberName);
+          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.DoubleCellValue(playAmt);
+          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: curRow)).value = ex.DoubleCellValue(servAmt);
+          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.DoubleCellValue(discAmt);
+          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: curRow)).value = ex.DoubleCellValue(netAmt);
+          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: curRow)).value = ex.TextCellValue(cashierName);
+          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 10, rowIndex: curRow)).value = ex.TextCellValue(noteText);
+          sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 11, rowIndex: curRow)).value = ex.TextCellValue(statusLabel);
+
+          dayPlay += playAmt;
+          dayService += servAmt;
+          dayDiscount += discAmt;
+          dayTotal += netAmt;
+          dayCount++;
+
+          curRow += 2;
+        }
+
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.TextCellValue("Cộng ngày:");
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.IntCellValue(dayCount);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.DoubleCellValue(dayPlay);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: curRow)).value = ex.DoubleCellValue(dayService);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.DoubleCellValue(dayDiscount);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: curRow)).value = ex.DoubleCellValue(dayTotal);
+
+        grandPlay += dayPlay;
+        grandService += dayService;
+        grandDiscount += dayDiscount;
+        grandTotal += dayTotal;
+        grandCount += dayCount;
+
+        curRow += 2;
+      }
+
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.TextCellValue("Tổng cộng:");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.IntCellValue(grandCount);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.IntCellValue(customerCount);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.DoubleCellValue(grandPlay);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: curRow)).value = ex.DoubleCellValue(grandService);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.DoubleCellValue(grandDiscount);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: curRow)).value = ex.DoubleCellValue(grandTotal);
+
+      curRow += 2;
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: curRow)).value = ex.TextCellValue(dateSignStr);
+      curRow += 1;
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.TextCellValue("KẾ TOÁN");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: curRow)).value = ex.TextCellValue("GIÁM ĐỐC");
+      curRow += 2;
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.TextCellValue("(Ký, họ tên)");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: curRow)).value = ex.TextCellValue("(Ký, họ tên, đóng dấu)");
+
+      curRow += 4;
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue(timeStr);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.TextCellValue("Billiard POS CRM V1.0");
+
+    } else if (activeTab == 1) {
+      filename = "DTHU_NGAY_${_fmtDateFilename(_dateRange.start)}_${_fmtDateFilename(_dateRange.end)}.xlsx";
+
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1)).value = ex.TextCellValue("NEW WORLD BILLIARD CLUB");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 3)).value = ex.TextCellValue("TỔNG HỢP HÓA ĐƠN THEO NGÀY - TỔNG HỢP");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 5)).value = ex.TextCellValue("Thời gian: $dateFromText 08:00 - $dateToText 08:00 ;Tình trạng thanh toán: ${_selectedStatus == 'all' ? 'Tất cả' : _getStatusLabel(_selectedStatus)}");
+
+      final headers = ["Ngày", "Số HĐ", "Tiền\nBàn/Phòng", "Tiền\nĐồ ăn / Đồ uống", "Tiền\nkhuyến mại", "Tổng\nthanh toán"];
+      for (int c = 0; c < headers.length; c++) {
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 9)).value = ex.TextCellValue(headers[c]);
+      }
+
+      final Map<String, List<Map<String, dynamic>>> grouped = {};
+      for (final order in filtered) {
+        final payDateStr = (order['end_time'] ?? order['created_at'] ?? '').toString();
+        String groupKey = "N/A";
+        if (payDateStr.isNotEmpty) {
+          try {
+            final dt = DateTime.parse(payDateStr.replaceAll(' ', 'T'));
+            groupKey = "${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}";
+          } catch (_) {}
+        }
+        grouped.putIfAbsent(groupKey, () => []).add(order);
+      }
+
+      final sortedKeys = grouped.keys.toList()..sort((a, b) {
+        try {
+          final aParts = a.split('/');
+          final bParts = b.split('/');
+          final aDate = DateTime(int.parse(aParts[2]), int.parse(aParts[1]), int.parse(aParts[0]));
+          final bDate = DateTime(int.parse(bParts[2]), int.parse(bParts[1]), int.parse(bParts[0]));
+          return aDate.compareTo(bDate);
+        } catch (_) {}
+        return a.compareTo(b);
+      });
+
+      int curRow = 10;
+      double grandPlay = 0.0;
+      double grandService = 0.0;
+      double grandDiscount = 0.0;
+      double grandTotal = 0.0;
+      int grandCount = 0;
+
+      for (final dateKey in sortedKeys) {
+        final list = grouped[dateKey]!;
+        double dayPlay = 0.0;
+        double dayService = 0.0;
+        double dayDiscount = 0.0;
+        double dayTotal = 0.0;
+
+        for (final order in list) {
+          dayPlay += _toDouble(order['total_play_time_amount']);
+          dayService += _toDouble(order['total_product_amount']);
+          dayDiscount += _toDouble(order['discount_amount']);
+          dayTotal += _toDouble(order['total_amount']);
+        }
+
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue(dateKey);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.IntCellValue(list.length);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.DoubleCellValue(dayPlay);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.DoubleCellValue(dayService);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.DoubleCellValue(dayDiscount);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.DoubleCellValue(dayTotal);
+
+        grandPlay += dayPlay;
+        grandService += dayService;
+        grandDiscount += dayDiscount;
+        grandTotal += dayTotal;
+        grandCount += list.length;
+
+        curRow++;
+      }
+
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue("Tổng cộng:");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.IntCellValue(grandCount);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.DoubleCellValue(grandPlay);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.DoubleCellValue(grandService);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.DoubleCellValue(grandDiscount);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.DoubleCellValue(grandTotal);
+
+      curRow += 2;
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.TextCellValue(dateSignStr);
+      curRow += 1;
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.TextCellValue("KẾ TOÁN");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.TextCellValue("GIÁM ĐỐC");
+      curRow += 2;
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.TextCellValue("(Ký, họ tên)");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.TextCellValue("(Ký, họ tên, đóng dấu)");
+
+      curRow += 4;
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue(timeStr);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.TextCellValue("Billiard POS CRM V1.0");
+
+    } else {
+      filename = "HANG_XUAT_${_fmtDateFilename(_dateRange.start)}_${_fmtDateFilename(_dateRange.end)}.xlsx";
+
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1)).value = ex.TextCellValue("NEW WORLD BILLIARD CLUB");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 3)).value = ex.TextCellValue("TỔNG HỢP HÀNG XUẤT");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 5)).value = ex.TextCellValue("Thời gian: $dateFromText 08:00 - $dateToText 08:00");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: 7)).value = ex.TextCellValue("Đơn vị tính: VNĐ");
+
+      final headers = ["STT", "Mã hàng", "Tên hàng", "ĐVT", "Số lượng", "Đơn giá", "Thành tiền", "Lợi nhuận"];
+      for (int c = 0; c < headers.length; c++) {
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: 9)).value = ex.TextCellValue(headers[c]);
+      }
+
+      final aggregatedSales = _aggregateProductSales(filtered, products);
+
+      int curRow = 10;
+      double grandQty = 0.0;
+      double grandAmount = 0.0;
+      double grandProfit = 0.0;
+
+      for (int idx = 0; idx < aggregatedSales.length; idx++) {
+        final item = aggregatedSales[idx];
+        final stt = idx + 1;
+        final barcode = item['barcode']?.toString() ?? '';
+        final name = item['name']?.toString() ?? 'N/A';
+        final unit = item['unit']?.toString() ?? 'VND';
+        final qty = item['quantity'] as int;
+        final price = item['price'] as double;
+        final amount = item['amount'] as double;
+        final profit = item['profit'] as double;
+
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue("$stt");
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: curRow)).value = ex.TextCellValue(barcode);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.TextCellValue(name);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: curRow)).value = ex.TextCellValue(unit);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.IntCellValue(qty);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: curRow)).value = ex.DoubleCellValue(price);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: curRow)).value = ex.DoubleCellValue(amount);
+        sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.DoubleCellValue(profit);
+
+        grandQty += qty;
+        grandAmount += amount;
+        grandProfit += profit;
+
+        curRow++;
+      }
+
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue("Tổng cộng:");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.DoubleCellValue(grandQty);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: curRow)).value = ex.DoubleCellValue(grandAmount);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.DoubleCellValue(grandProfit);
+
+      curRow += 2;
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.TextCellValue(dateSignStr);
+      curRow += 1;
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.TextCellValue("KẾ TOÁN");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.TextCellValue("GIÁM ĐỐC");
+      curRow += 2;
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: curRow)).value = ex.TextCellValue("(Ký, họ tên)");
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: curRow)).value = ex.TextCellValue("(Ký, họ tên, đóng dấu)");
+
+      curRow += 4;
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: curRow)).value = ex.TextCellValue(timeStr);
+      sheet.cell(ex.CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: curRow)).value = ex.TextCellValue("Billiard POS CRM V1.0");
+    }
+
+    try {
+      final fileBytes = excel.save();
+      if (fileBytes == null) {
+        throw Exception("Không thể lưu cấu trúc Excel");
+      }
+
+      final downloadsDir = await getDownloadsDirectory();
+      final targetDir = downloadsDir ?? await getApplicationDocumentsDirectory();
+      final fullPath = p.join(targetDir.path, filename);
+      final file = File(fullPath);
+      await file.writeAsBytes(fileBytes);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Đã xuất Excel thành công: $filename'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 8),
+            action: SnackBarAction(
+              label: 'Mở thư mục',
+              textColor: Colors.white,
+              onPressed: () => _openDirectory(targetDir.path),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi xuất Excel: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  String _fmtDateFilename(DateTime d) =>
+      "${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}";
+
+  Future<void> _openDirectory(String path) async {
+    try {
+      if (Platform.isMacOS) {
+        await Process.run('open', [path]);
+      } else if (Platform.isWindows) {
+        await Process.run('explorer.exe', [path]);
+      } else if (Platform.isLinux) {
+        await Process.run('xdg-open', [path]);
+      }
+    } catch (_) {}
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final syncState = ref.watch(syncStateProvider);
     final reportAsync = ref.watch(_reportDataProvider(_dateRange));
     final cashiersAsync = ref.watch(_cashiersProvider);
+    final productsAsync = ref.watch(_allProductsProvider);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -603,6 +1132,31 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                       ),
                     ),
                   ),
+                  const SizedBox(width: 10),
+                  // Export Excel button
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      _exportExcel(
+                        context,
+                        reportAsync.value?.orders ?? [],
+                        cashiersAsync.value ?? [],
+                        productsAsync.value ?? [],
+                      );
+                    },
+                    icon: const Icon(Icons.file_download_outlined, size: 16),
+                    label: const Text('Xuất Excel'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.green,
+                      side: const BorderSide(color: Colors.green),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
@@ -615,6 +1169,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                 tabs: const [
                   Tab(text: 'Chi tiết hóa đơn'),
                   Tab(text: 'Tổng hợp hóa đơn'),
+                  Tab(text: 'Báo cáo sản phẩm dịch vụ'),
                 ],
               ),
             ],
@@ -691,6 +1246,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                   .toList();
 
               final users = cashiersAsync.value ?? [];
+              final productsList = productsAsync.value ?? [];
 
               return TabBarView(
                 controller: _tabCtrl,
@@ -706,6 +1262,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen>
                     dateRange: _dateRange,
                     status: _selectedStatus,
                     cashier: _selectedCashier,
+                  ),
+                  _ProductServiceSummaryTab(
+                    orders: filteredOrders,
+                    isOffline: data.isOffline,
+                    products: productsList,
                   ),
                 ],
               );
@@ -1332,6 +1893,213 @@ class _InvoiceSummaryTab extends ConsumerWidget {
     );
   }
 }
+
+class _ProductServiceSummaryTab extends StatelessWidget {
+  final List<dynamic> orders;
+  final bool isOffline;
+  final List<dynamic> products;
+
+  const _ProductServiceSummaryTab({
+    required this.orders,
+    required this.isOffline,
+    required this.products,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final aggregatedSales = _aggregateProductSales(orders, products);
+
+    if (aggregatedSales.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.restaurant_menu_outlined,
+              size: 48,
+              color: AppColors.textMuted,
+            ),
+            SizedBox(height: 12),
+            Text('Không có dữ liệu sản phẩm dịch vụ phù hợp với bộ lọc'),
+          ],
+        ),
+      );
+    }
+
+    final double totalQty = aggregatedSales.fold(
+      0.0,
+      (sum, p) => sum + _toDouble(p['quantity']),
+    );
+    final double totalAmount = aggregatedSales.fold(
+      0.0,
+      (sum, p) => sum + _toDouble(p['amount']),
+    );
+    final double totalProfit = aggregatedSales.fold(
+      0.0,
+      (sum, p) => sum + _toDouble(p['profit']),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          if (isOffline) _OfflineNotice(),
+          if (isOffline) const SizedBox(height: 12),
+          // Metric Cards
+          Row(
+            children: [
+              _ReportCard(
+                'Tổng số lượng xuất',
+                '${totalQty.toInt()} sản phẩm',
+                AppColors.info,
+              ),
+              const SizedBox(width: 12),
+              _ReportCard(
+                'Tổng doanh thu dịch vụ',
+                _fmtCurrency(totalAmount),
+                AppColors.success,
+              ),
+              const SizedBox(width: 12),
+              _ReportCard(
+                'Tổng lợi nhuận dịch vụ',
+                _fmtCurrency(totalProfit),
+                AppColors.accent,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // Table
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    color: AppColors.background,
+                    child: const Row(
+                      children: [
+                        _TH('STT', flex: 1),
+                        _TH('Mã hàng', flex: 2),
+                        _TH('Tên hàng', flex: 3),
+                        _TH('ĐVT', flex: 1),
+                        _TH('Số lượng', flex: 2),
+                        _TH('Đơn giá', flex: 2),
+                        _TH('Thành tiền', flex: 2),
+                        _TH('Lợi nhuận', flex: 2),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      itemCount: aggregatedSales.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (ctx, idx) {
+                        final item = aggregatedSales[idx];
+                        final stt = idx + 1;
+                        final barcode = item['barcode']?.toString() ?? '';
+                        final name = item['name']?.toString() ?? 'N/A';
+                        final unit = item['unit']?.toString() ?? 'VND';
+                        final qty = item['quantity'] as int;
+                        final price = item['price'] as double;
+                        final amount = item['amount'] as double;
+                        final profit = item['profit'] as double;
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 14,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 1,
+                                child: Text(
+                                  '$stt',
+                                  style: AppTextStyles.bodyMedium,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  barcode,
+                                  style: AppTextStyles.bodySmall,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 3,
+                                child: Text(
+                                  name,
+                                  style: AppTextStyles.labelLarge,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 1,
+                                child: Text(
+                                  unit,
+                                  style: AppTextStyles.bodySmall,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  '$qty',
+                                  style: AppTextStyles.bodyMedium,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  _fmtCurrency(price),
+                                  style: AppTextStyles.bodySmall,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  _fmtCurrency(amount),
+                                  style: AppTextStyles.bodySmall,
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  _fmtCurrency(profit),
+                                  style: AppTextStyles.labelLarge.copyWith(
+                                    color: profit >= 0
+                                        ? AppColors.primary
+                                        : AppColors.error,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 
 // ─── Dialog: Invoice Detailed View ─────────────────────────────────────────────
 
