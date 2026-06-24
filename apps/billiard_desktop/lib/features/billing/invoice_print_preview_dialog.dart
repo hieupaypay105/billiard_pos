@@ -396,10 +396,10 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
         pageFormat: PdfPageFormat(
           68 * PdfPageFormat.mm,
           Platform.isWindows ? 250 * PdfPageFormat.mm : double.infinity,
-          marginTop: 2 * PdfPageFormat.mm,
+          marginTop: 0 * PdfPageFormat.mm,
           marginBottom: 15 * PdfPageFormat.mm,
-          marginLeft: 2 * PdfPageFormat.mm,
-          marginRight: 2 * PdfPageFormat.mm,
+          marginLeft: 5 * PdfPageFormat.mm,
+          marginRight: 5 * PdfPageFormat.mm,
         ),
         build: (pw.Context context) {
           return pw.Column(
@@ -697,7 +697,7 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
                   ),
                 ),
               ],
-              pw.SizedBox(height: 8),
+              pw.SizedBox(height: 35 * PdfPageFormat.mm),
             ],
           );
         },
@@ -811,10 +811,10 @@ class InvoicePrintPreviewDialog extends ConsumerWidget {
       final targetFormat = PdfPageFormat(
         68 * PdfPageFormat.mm,
         Platform.isWindows ? 250 * PdfPageFormat.mm : double.infinity,
-        marginTop: 2 * PdfPageFormat.mm,
+        marginTop: 0 * PdfPageFormat.mm,
         marginBottom: 15 * PdfPageFormat.mm,
-        marginLeft: 2 * PdfPageFormat.mm,
-        marginRight: 2 * PdfPageFormat.mm,
+        marginLeft: 5 * PdfPageFormat.mm,
+        marginRight: 5 * PdfPageFormat.mm,
       );
 
       if (defaultPrinterName != null && defaultPrinterUrl != null) {
