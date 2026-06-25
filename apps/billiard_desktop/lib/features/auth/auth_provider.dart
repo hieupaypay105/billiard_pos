@@ -48,25 +48,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _tryRestoreSession();
   }
 
-  /// Phương án B: Tự động khôi phục session từ SharedPreferences.
-  /// Chỉ yêu cầu login lại khi không có token hoặc token hết hạn.
+  /// Xóa phiên đăng nhập cũ khi khởi chạy ứng dụng để yêu cầu đăng nhập lại.
   Future<void> _tryRestoreSession() async {
     state = state.copyWith(isLoading: true);
     try {
       final prefs = await SharedPreferences.getInstance();
-      if (!mounted) return;
-      final token = prefs.getString('auth_token') ?? '';
-      final userJson = prefs.getString('current_user') ?? '';
-
-      if (token.isNotEmpty && userJson.isNotEmpty) {
-        final userMap = jsonDecode(userJson) as Map<String, dynamic>;
-        final user = _userFromMap(userMap);
-        state = AuthState(
-          user: user,
-          isAuthenticated: true,
-          isLoading: false,
-        );
-      } else {
+      await prefs.remove('auth_token');
+      await prefs.remove('refresh_token');
+      await prefs.remove('current_user');
+      
+      if (mounted) {
         state = const AuthState(isLoading: false);
       }
     } catch (_) {
