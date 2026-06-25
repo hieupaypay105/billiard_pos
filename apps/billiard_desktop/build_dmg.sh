@@ -19,7 +19,7 @@ rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
 
 # Copy the app to the staging directory
-cp -R "build/macos/Build/Products/Release/billiard_desktop.app" "$STAGING_DIR/"
+cp -R "build/macos/Build/Products/Release/New World Pos.app" "$STAGING_DIR/"
 
 # Copy the installation instructions
 cp "Huong_dan_Cai_dat.txt" "$STAGING_DIR/"
@@ -28,7 +28,7 @@ cp "Huong_dan_Cai_dat.txt" "$STAGING_DIR/"
 ln -s /Applications "$STAGING_DIR/Applications"
 
 echo "=== STEP 4: Creating DMG package ==="
-DMG_NAME="billiard_desktop_installer.dmg"
+DMG_NAME="New World Pos.dmg"
 rm -f "$DMG_NAME"
 
 hdiutil create -volname "Billiard POS Installer" -srcfolder "$STAGING_DIR" -ov -format UDZO "$DMG_NAME"
