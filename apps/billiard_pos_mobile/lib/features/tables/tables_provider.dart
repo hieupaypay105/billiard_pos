@@ -164,6 +164,7 @@ class TablesState {
   final Map<String, double> tableExtraPlayAmounts;
   final Map<String, int> tableExtraPlayMinutes;
   final Map<String, String> tableNotes;
+  final bool isDesktopConnected;
 
   const TablesState({
     this.tables = const [],
@@ -197,6 +198,7 @@ class TablesState {
     this.tableExtraPlayAmounts = const {},
     this.tableExtraPlayMinutes = const {},
     this.tableNotes = const {},
+    this.isDesktopConnected = false,
   });
 
   // Sử dụng Object? sentinel để phân biệt "không truyền" và "truyền null"
@@ -228,6 +230,7 @@ class TablesState {
     Map<String, double>? tableExtraPlayAmounts,
     Map<String, int>? tableExtraPlayMinutes,
     Map<String, String>? tableNotes,
+    bool? isDesktopConnected,
   }) {
     return TablesState(
       tables: tables ?? this.tables,
@@ -264,6 +267,7 @@ class TablesState {
       tableExtraPlayMinutes:
           tableExtraPlayMinutes ?? this.tableExtraPlayMinutes,
       tableNotes: tableNotes ?? this.tableNotes,
+      isDesktopConnected: isDesktopConnected ?? this.isDesktopConnected,
     );
   }
 
@@ -413,6 +417,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       ).then((socket) {
         _ws = socket;
         print("Đã kết nối WebSocket tới Desktop Server");
+        state = state.copyWith(isDesktopConnected: true);
         
         socket.listen((message) {
           try {
@@ -426,17 +431,21 @@ class TablesNotifier extends StateNotifier<TablesState> {
           }
         }, onDone: () {
           print("Mất kết nối WebSocket tới Desktop, đang kết nối lại...");
+          state = state.copyWith(isDesktopConnected: false);
           _scheduleReconnect();
         }, onError: (e) {
           print("Lỗi kết nối WebSocket: $e, đang kết nối lại...");
+          state = state.copyWith(isDesktopConnected: false);
           _scheduleReconnect();
         });
       }).catchError((e) {
         print("Lỗi kết nối WebSocket tới Desktop: $e");
+        state = state.copyWith(isDesktopConnected: false);
         _scheduleReconnect();
       });
     } catch (e) {
       print("Lỗi khởi tạo kết nối WebSocket: $e");
+      state = state.copyWith(isDesktopConnected: false);
       _scheduleReconnect();
     }
   }
@@ -474,10 +483,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
           await prefs?.remove('desktop_server_ip');
           _connectedIp = null;
           _ws?.close();
-          state = state.copyWith(connectedIp: null);
+          state = state.copyWith(connectedIp: null, isDesktopConnected: false);
           return;
         }
         if (response.statusCode == 200) {
+          state = state.copyWith(isDesktopConnected: true);
           final body = await utf8.decodeStream(response);
           final res = jsonDecode(body) as Map<String, dynamic>;
           if (res['status'] == 1 && _localDb != null) {
@@ -548,7 +558,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
         }
       } catch (e) {
         print("Lỗi đồng bộ từ Desktop: $e");
+        state = state.copyWith(isDesktopConnected: false);
       }
+    } else {
+      state = state.copyWith(connectedIp: null, isDesktopConnected: false);
     }
 
     // ── Nguồn duy nhất: SQLite local DB ──────────────────────────────────────
