@@ -11,8 +11,6 @@ class RealBilliardIoTController implements BilliardIoTController {
   bool _isOn = false;
   Socket? _tcpSocket;
   SerialPort? _serialPort;
-  SerialPortReader? _serialPortReader;
-  StreamSubscription<Uint8List>? _serialPortSubscription;
 
   final _statusController = StreamController<bool>.broadcast();
   final _logController = StreamController<String>.broadcast();
@@ -27,7 +25,6 @@ class RealBilliardIoTController implements BilliardIoTController {
   }
 
   List<int> _hexToBytes(String hex) {
-    // Strip space or non-hex characters
     final cleanHex = hex.replaceAll(RegExp(r'[^0-9a-fA-F]'), '');
     final bytes = <int>[];
     for (int i = 0; i < cleanHex.length; i += 2) {
@@ -52,14 +49,55 @@ class RealBilliardIoTController implements BilliardIoTController {
     return buffer.toString();
   }
 
+  Future<bool> _openSerial() async {
+    if (_serialPort != null) return true;
+    final config = _config;
+    if (config == null) return false;
+
+    var comPort = config.port ?? 'COM3';
+    if (!Platform.isWindows && !comPort.startsWith('/dev/')) {
+      comPort = '/dev/$comPort';
+    }
+    _log('Opening Serial COM Port $comPort...');
+
+    try {
+      _serialPort = SerialPort(comPort);
+      if (!_serialPort!.openReadWrite()) {
+        final err = SerialPort.lastError;
+        _log('ERROR Serial Open: Failed to open $comPort. Error: $err');
+        _serialPort = null;
+        return false;
+      }
+
+      final serialConfig = SerialPortConfig();
+      serialConfig.baudRate = 9600;
+      serialConfig.bits = 8;
+      serialConfig.stopBits = 1;
+      serialConfig.parity = SerialPortParity.none;
+      _serialPort!.config = serialConfig;
+
+      return true;
+    } catch (e) {
+      _log('ERROR Serial Open Exception: $e');
+      _serialPort = null;
+      return false;
+    }
+  }
+
+  Future<void> _closeSerial() async {
+    if (_serialPort != null) {
+      try {
+        _serialPort!.close();
+        _serialPort!.dispose();
+      } catch (_) {}
+      _serialPort = null;
+    }
+  }
+
   @override
   Future<bool> connect(IotConfigModel config) async {
-    if (_isConnected) {
-      return true;
-    }
-
     _config = config;
-    _log('Attempting Real Connection to Table ${config.tableId} via: ${config.connectionType.toUpperCase()}...');
+    _log('IoT Controller initialized for Table ${config.tableId} via ${config.connectionType.toUpperCase()}');
 
     if (config.connectionType == 'tcp_ip') {
       final ip = config.ipAddress ?? '192.168.1.100';
@@ -70,7 +108,6 @@ class RealBilliardIoTController implements BilliardIoTController {
         _tcpSocket = await Socket.connect(ip, port, timeout: const Duration(seconds: 5));
         _isConnected = true;
 
-        // Set up socket listener
         _tcpSocket!.listen(
           (List<int> data) {
             final hexResp = data.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(' ');
@@ -94,57 +131,15 @@ class RealBilliardIoTController implements BilliardIoTController {
         return false;
       }
     } else if (config.connectionType == 'serial') {
-      var comPort = config.port ?? 'COM3';
-      if (!Platform.isWindows && !comPort.startsWith('/dev/')) {
-        comPort = '/dev/$comPort';
-      }
-      _log('Connecting to Serial/RS485 COM Port $comPort...');
-      
-      try {
-        final available = SerialPort.availablePorts;
-        _log('Available system serial ports: $available');
-        
-        _serialPort = SerialPort(comPort);
-        if (!_serialPort!.openReadWrite()) {
-          final err = SerialPort.lastError;
-          _log('ERROR Serial Open: Failed to open $comPort. Error: $err');
-          _serialPort = null;
-          _isConnected = false;
-          return false;
-        }
-
-        // Apply standard configs
-        final config = SerialPortConfig();
-        config.baudRate = 9600;
-        config.bits = 8;
-        config.stopBits = 1;
-        config.parity = SerialPortParity.none;
-        _serialPort!.config = config;
-        // Note: Do not call config.dispose() here as _serialPort takes ownership
-        // and will automatically dispose of it when _serialPort.dispose() is called.
-        
+      // Short-lived connection test
+      final ok = await _openSerial();
+      if (ok) {
+        await _closeSerial();
         _isConnected = true;
-        _log('Serial COM ($comPort) connected successfully.');
-        
-        // Listen to reader
-        _serialPortReader = SerialPortReader(_serialPort!);
-        _serialPortSubscription = _serialPortReader!.stream.listen(
-          (Uint8List data) {
-            final hexResp = data.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(' ');
-            _log('RX Serial: Received bytes -> $hexResp');
-          },
-          onError: (Object error) {
-            _log('ERROR Serial Reader: $error');
-            disconnect();
-          },
-        );
         return true;
-      } catch (e) {
-        _log('ERROR Serial Init: $e');
-        _serialPort = null;
-        _isConnected = false;
-        return false;
       }
+      _isConnected = false;
+      return false;
     } else {
       _log('ERROR: Unsupported connection type ${config.connectionType}');
       return false;
@@ -153,10 +148,6 @@ class RealBilliardIoTController implements BilliardIoTController {
 
   @override
   Future<bool> disconnect() async {
-    if (!_isConnected) {
-      return true;
-    }
-
     _log('Disconnecting table IoT controller...');
     
     if (_tcpSocket != null) {
@@ -166,30 +157,7 @@ class RealBilliardIoTController implements BilliardIoTController {
       _tcpSocket = null;
     }
 
-    if (_serialPortSubscription != null) {
-      try {
-        await _serialPortSubscription!.cancel();
-      } catch (_) {}
-      _serialPortSubscription = null;
-    }
-
-    if (_serialPortReader != null) {
-      try {
-        _serialPortReader!.close();
-      } catch (_) {}
-      _serialPortReader = null;
-    }
-
-    // Give a brief delay for the background port reader thread to shut down cleanly
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    if (_serialPort != null) {
-      try {
-        _serialPort!.close();
-        _serialPort!.dispose();
-      } catch (_) {}
-      _serialPort = null;
-    }
+    await _closeSerial();
 
     _isConnected = false;
     if (_isOn) {
@@ -205,8 +173,8 @@ class RealBilliardIoTController implements BilliardIoTController {
 
   @override
   Future<bool> turnOn() async {
-    if (!_isConnected || _config == null) {
-      _log('ERROR: Cannot send turnOn command, controller is disconnected.');
+    if (_config == null) {
+      _log('ERROR: Cannot send turnOn command, controller not initialized.');
       return false;
     }
 
@@ -227,18 +195,19 @@ class RealBilliardIoTController implements BilliardIoTController {
         return false;
       }
     } else if (_config!.connectionType == 'serial') {
-      if (_serialPort == null) {
-        _log('ERROR Serial: Port is not opened.');
-        return false;
-      }
+      final opened = await _openSerial();
+      if (!opened) return false;
       try {
         final bytesWritten = _serialPort!.write(Uint8List.fromList(cmdBytes));
         _log('Serial TX: Sent $bytesWritten bytes.');
+        await Future.delayed(const Duration(milliseconds: 50));
+        await _closeSerial();
         _isOn = true;
         _statusController.add(true);
         return true;
       } catch (e) {
         _log('ERROR Serial Write: $e');
+        await _closeSerial();
         return false;
       }
     }
@@ -248,8 +217,8 @@ class RealBilliardIoTController implements BilliardIoTController {
 
   @override
   Future<bool> turnOff() async {
-    if (!_isConnected || _config == null) {
-      _log('ERROR: Cannot send turnOff command, controller is disconnected.');
+    if (_config == null) {
+      _log('ERROR: Cannot send turnOff command, controller not initialized.');
       return false;
     }
 
@@ -270,18 +239,19 @@ class RealBilliardIoTController implements BilliardIoTController {
         return false;
       }
     } else if (_config!.connectionType == 'serial') {
-      if (_serialPort == null) {
-        _log('ERROR Serial: Port is not opened.');
-        return false;
-      }
+      final opened = await _openSerial();
+      if (!opened) return false;
       try {
         final bytesWritten = _serialPort!.write(Uint8List.fromList(cmdBytes));
         _log('Serial TX: Sent $bytesWritten bytes.');
+        await Future.delayed(const Duration(milliseconds: 50));
+        await _closeSerial();
         _isOn = false;
         _statusController.add(false);
         return true;
       } catch (e) {
         _log('ERROR Serial Write: $e');
+        await _closeSerial();
         return false;
       }
     }
@@ -302,19 +272,14 @@ class RealBilliardIoTController implements BilliardIoTController {
   Stream<String> get logStream => _logController.stream;
 
   void dispose() {
-    _serialPortSubscription?.cancel();
-    _serialPortReader?.close();
-    if (_serialPort != null) {
+    _closeSerial();
+    if (_tcpSocket != null) {
       try {
-        _serialPort!.close();
-        _serialPort!.dispose();
+        _tcpSocket!.close();
       } catch (_) {}
-      _serialPort = null;
+      _tcpSocket = null;
     }
-    _tcpSocket?.close();
     _statusController.close();
     _logController.close();
-    _isConnected = false;
-    _isOn = false;
   }
 }
