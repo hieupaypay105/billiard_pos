@@ -193,7 +193,7 @@ class TablesState {
     this.tableMembers = const {},
     this.isLoading = false,
     this.error,
-    this.useSimulator = true,
+    this.useSimulator = false,
     this.tableTypes = const [
       TableTypeModel(id: 1, typeName: 'Pool (Bàn lỗ)'),
       // TableTypeModel(id: 2, typeName: 'Carom (Băng)'),
@@ -639,11 +639,26 @@ class TablesNotifier extends StateNotifier<TablesState> {
             final t = restoredTables[i];
             if (statusesMap.containsKey(t.id)) {
               final tData = statusesMap[t.id] as Map<String, dynamic>;
+              final oldStatus = t.status;
+              final newStatus = tData['status']?.toString() ?? 'idle';
+              
               restoredTables[i] = t.copyWith(
-                status: tData['status']?.toString() ?? 'idle',
+                status: newStatus,
                 currentOrderId: tData['currentOrderId']?.toString(),
                 clearCurrentOrderId: tData['currentOrderId'] == null,
               );
+
+              // Sync relay state based on status change from mobile
+              if (oldStatus != newStatus) {
+                if (newStatus == 'active') {
+                  _syncRelayState(t.id, true);
+                } else if (oldStatus == 'active') {
+                  _syncRelayState(t.id, false);
+                }
+              } else if (newStatus == 'active' && !_controllers.containsKey(t.id)) {
+                // On first load/restore or if controller was lost, make sure active table has relay ON
+                _syncRelayState(t.id, true);
+              }
             }
           }
         }
@@ -971,6 +986,43 @@ class TablesNotifier extends StateNotifier<TablesState> {
 
   void toggleSimulator(bool useSimulator) {
     state = state.copyWith(useSimulator: useSimulator);
+  }
+
+  Future<void> _syncRelayState(String tableId, bool turnOn) async {
+    final iotConfig = state.iotConfigs[tableId];
+    if (iotConfig == null) return;
+
+    if (turnOn) {
+      if (_controllers.containsKey(tableId) && _controllers[tableId]!.isConnected) {
+        try {
+          await _controllers[tableId]!.turnOn();
+        } catch (_) {}
+        return;
+      }
+      final controller = state.useSimulator
+          ? SimulatedBilliardIoTController() as BilliardIoTController
+          : RealBilliardIoTController();
+      _controllers[tableId] = controller;
+      try {
+        final connected = await controller.connect(iotConfig);
+        if (connected) {
+          await controller.turnOn();
+        }
+      } catch (e) {
+        print('Lỗi bật relay khi đồng bộ từ mobile: $e');
+      }
+    } else {
+      final controller = _controllers[tableId];
+      if (controller != null) {
+        try {
+          await controller.turnOff();
+          await controller.disconnect();
+        } catch (e) {
+          print('Lỗi tắt relay khi đồng bộ từ mobile: $e');
+        }
+        _controllers.remove(tableId);
+      }
+    }
   }
 
   Future<bool> activateTable(
@@ -2274,10 +2326,19 @@ class TablesNotifier extends StateNotifier<TablesState> {
     _saveSessionState();
   }
 
-  void updateIotConfig(String tableId, IotConfigModel config) {
+  Future<void> updateIotConfig(String tableId, IotConfigModel config) async {
     final updated = Map<String, IotConfigModel>.from(state.iotConfigs);
     updated[tableId] = config;
     state = state.copyWith(iotConfigs: updated);
+    if (_localDb != null) {
+      try {
+        await _localDb!.cacheIotConfigs(
+          updated.values.map((c) => c.toJson()).toList(),
+        );
+      } catch (e) {
+        print('Lỗi lưu cấu hình IoT vào DB: $e');
+      }
+    }
   }
 
   @override

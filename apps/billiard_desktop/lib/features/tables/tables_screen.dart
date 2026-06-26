@@ -23,6 +23,7 @@ import '../update/update_dialog.dart';
 import 'package:uuid/uuid.dart';
 import 'package:audioplayers/audioplayers.dart';
 import '../../core/providers/device_connection_provider.dart';
+import 'package:iot_controller/iot_controller.dart';
 
 
 class TablesScreen extends ConsumerStatefulWidget {
@@ -299,9 +300,6 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
           )
         : null;
 
-    final isTargetActive = selectedTable != null && selectedTable.status == 'active';
-    final isTargetUnpaid = selectedUnpaid != null;
-    final targetId = isTargetActive ? selectedTable.id : (isTargetUnpaid ? selectedUnpaid.id : null);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -586,34 +584,25 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                 left: BorderSide(color: AppColors.border, width: 1),
               ),
             ),
-            child: targetId != null
+            child: selectedUnpaid != null
                 ? Stack(
                     clipBehavior: Clip.none,
                     children: [
                       Column(
                         children: [
-                          // Quick product search suggest bar
-                          _buildQuickSearchField(targetId),
+                          _buildQuickSearchField(selectedUnpaid.id),
                           const Divider(height: 1),
-                          // Invoice detailed info
                           Expanded(
-                            child: isTargetActive
-                                ? _InvoicePanel(
-                                    table: selectedTable!,
-                                    tablesState: tablesState,
-                                  )
-                                : _InvoicePanelForUnpaid(
-                                    invoice: selectedUnpaid!,
-                                    tablesState: tablesState,
-                                  ),
+                            child: _InvoicePanelForUnpaid(
+                              invoice: selectedUnpaid,
+                              tablesState: tablesState,
+                            ),
                           ),
                         ],
                       ),
-                      
-                      // Floating suggestions dropdown overlay
                       if (_filteredSuggestions.isNotEmpty)
                         Positioned(
-                          top: 48, // Floating right below search field
+                          top: 48,
                           left: 16,
                           right: 16,
                           child: Material(
@@ -702,7 +691,120 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                         ),
                     ],
                   )
-                : const _NoActiveTablePlaceholder(message: 'Vui lòng chọn bàn hoặc hóa đơn chờ để thực hiện dịch vụ'),
+                : selectedTable != null
+                    ? (selectedTable.status == 'active'
+                        ? Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Column(
+                                children: [
+                                  _buildQuickSearchField(selectedTable.id),
+                                  const Divider(height: 1),
+                                  Expanded(
+                                    child: _InvoicePanel(
+                                      table: selectedTable,
+                                      tablesState: tablesState,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_filteredSuggestions.isNotEmpty)
+                                Positioned(
+                                  top: 48,
+                                  left: 16,
+                                  right: 16,
+                                  child: Material(
+                                    elevation: 8,
+                                    borderRadius: BorderRadius.circular(8),
+                                    color: Colors.white,
+                                    child: Container(
+                                      constraints: const BoxConstraints(maxHeight: 250),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(color: AppColors.border),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: ListView.separated(
+                                        shrinkWrap: true,
+                                        padding: EdgeInsets.zero,
+                                        itemCount: _filteredSuggestions.length,
+                                        separatorBuilder: (_, __) => const Divider(height: 1),
+                                        itemBuilder: (context, index) {
+                                          final product = _filteredSuggestions[index];
+                                          final isHighlighted = index == _highlightedIndex;
+                                          return InkWell(
+                                            onTap: () {
+                                              setState(() {
+                                                _highlightedIndex = index;
+                                              });
+                                              _addHighlightedProduct();
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                              color: isHighlighted
+                                                  ? AppColors.primarySurface
+                                                  : Colors.white,
+                                              child: Row(
+                                                children: [
+                                                  Icon(
+                                                    Icons.restaurant_menu_outlined,
+                                                    size: 16,
+                                                    color: isHighlighted ? AppColors.primary : AppColors.textSecondary,
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        Text(
+                                                          product['name'] as String,
+                                                          style: TextStyle(
+                                                            fontFamily: 'Inter',
+                                                            fontSize: 14,
+                                                            fontWeight: isHighlighted ? FontWeight.w600 : FontWeight.w400,
+                                                            color: isHighlighted ? AppColors.primary : AppColors.textPrimary,
+                                                          ),
+                                                        ),
+                                                        if (product['barcode'] != null && (product['barcode'] as String).isNotEmpty) ...[
+                                                          const SizedBox(height: 2),
+                                                          Text(
+                                                            'Mã: ${product['barcode']}',
+                                                            style: TextStyle(
+                                                              fontFamily: 'Inter',
+                                                              fontSize: 11,
+                                                              color: isHighlighted ? AppColors.primary.withOpacity(0.8) : AppColors.textSecondary,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    _fmtCurrency(product['price'] as double),
+                                                    style: TextStyle(
+                                                      fontFamily: 'Inter',
+                                                      fontSize: 13,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: isHighlighted ? AppColors.primary : AppColors.textSecondary,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          )
+                        : _IdleTablePanel(
+                            table: selectedTable,
+                            tablesState: tablesState,
+                            onTogglePower: () => _handleTogglePower(selectedTable),
+                          ))
+                    : const _NoActiveTablePlaceholder(message: 'Vui lòng chọn bàn hoặc hóa đơn chờ để thực hiện dịch vụ'),
           ),
         ),
       ],
@@ -1343,16 +1445,6 @@ class _TableCard extends StatelessWidget {
       ),
     );
   }
-
-  String _statusLabel(String status) {
-    return switch (status) {
-      'idle' => '● Trống',
-      'active' => '● Đang chơi',
-      'booked' => '● Đặt trước',
-      'maintenance' => '● Bảo trì',
-      _ => status,
-    };
-  }
 }
 
 // ─── Pulsing Status Dot ───────────────────────────────────────────────────────
@@ -1474,6 +1566,17 @@ class _InvoicePanel extends ConsumerWidget {
                     onTap: () => showDialog(
                         context: context,
                         builder: (_) => TableTransferDialog(sourceTableId: table.id)),
+                  ),
+                  const SizedBox(width: 8),
+                  _ActionButton(
+                    icon: Icons.settings_remote,
+                    label: 'IoT',
+                    onTap: () => showDialog(
+                        context: context,
+                        builder: (_) => IotConfigDialog(
+                              table: table,
+                              initialConfig: tablesState.iotConfigs[table.id],
+                            )),
                   ),
                 ],
               ),
@@ -3421,6 +3524,1100 @@ class MobileProductsNotificationDialog extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+
+// ─── Helpers for Modbus RTU CRC16 & LCUS Protocol ─────────────────────────────
+
+int _calculateModbusCRC(List<int> bytes) {
+  int crc = 0xFFFF;
+  for (int pos = 0; pos < bytes.length; pos++) {
+    crc ^= bytes[pos];
+    for (int i = 8; i != 0; i--) {
+      if ((crc & 0x0001) != 0) {
+        crc >>= 1;
+        crc ^= 0xA001;
+      } else {
+        crc >>= 1;
+      }
+    }
+  }
+  return crc;
+}
+
+String _generateModbusCommand(int deviceId, int channel, bool turnOn) {
+  final regHigh = 0;
+  final regLow = (channel - 1).clamp(0, 255);
+  final dataHigh = turnOn ? 0xFF : 0x00;
+  final dataLow = 0x00;
+
+  final bytes = [deviceId, 5, regHigh, regLow, dataHigh, dataLow];
+  final crc = _calculateModbusCRC(bytes);
+  final crcLow = crc & 0xFF;
+  final crcHigh = (crc >> 8) & 0xFF;
+
+  final allBytes = [...bytes, crcLow, crcHigh];
+  return allBytes.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join('');
+}
+
+bool _isStandardModbus(IotConfigModel config, {int deviceId = 1}) {
+  final expectedOn = _generateModbusCommand(deviceId, config.relayChannel, true);
+  final expectedOff = _generateModbusCommand(deviceId, config.relayChannel, false);
+  return config.commandOn.replaceAll(' ', '').toUpperCase() == expectedOn &&
+         config.commandOff.replaceAll(' ', '').toUpperCase() == expectedOff;
+}
+
+String _generateLcusCommand(int channel, bool turnOn) {
+  final start = 0xA0;
+  final switchAddr = channel;
+  final op = turnOn ? 0x01 : 0x00;
+  final checksum = (start + switchAddr + op) & 0xFF;
+  final bytes = [start, switchAddr, op, checksum];
+  return bytes.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join('');
+}
+
+bool _isStandardLcus(IotConfigModel config) {
+  final expectedOn = _generateLcusCommand(config.relayChannel, true);
+  final expectedOff = _generateLcusCommand(config.relayChannel, false);
+  return config.commandOn.replaceAll(' ', '').toUpperCase() == expectedOn &&
+         config.commandOff.replaceAll(' ', '').toUpperCase() == expectedOff;
+}
+
+// ─── Idle Table Details Panel ──────────────────────────────────────────────────
+
+class _IdleTablePanel extends ConsumerWidget {
+  final TableModel table;
+  final TablesState tablesState;
+  final VoidCallback onTogglePower;
+
+  const _IdleTablePanel({
+    required this.table,
+    required this.tablesState,
+    required this.onTogglePower,
+  });
+
+  String _fmtCurrency(double v) {
+    final s = v.toStringAsFixed(0);
+    final buf = StringBuffer();
+    int count = 0;
+    for (int i = s.length - 1; i >= 0; i--) {
+      if (count > 0 && count % 3 == 0) buf.write('.');
+      buf.write(s[i]);
+      count++;
+    }
+    return '${buf.toString().split('').reversed.join('')} đ';
+  }
+
+  Widget _buildStatusBadge(String status) {
+    Color bg;
+    Color fg;
+    String text;
+
+    switch (status) {
+      case 'idle':
+        bg = AppColors.successLight;
+        fg = AppColors.success;
+        text = 'Trống (Sẵn sàng)';
+        break;
+      case 'booked':
+        bg = AppColors.warningLight;
+        fg = AppColors.warning;
+        text = 'Đặt trước';
+        break;
+      case 'maintenance':
+        bg = AppColors.errorLight;
+        fg = AppColors.error;
+        text = 'Đang bảo trì';
+        break;
+      default:
+        bg = AppColors.surfaceVariant;
+        fg = AppColors.textSecondary;
+        text = status.toUpperCase();
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        style: AppTextStyles.labelLarge.copyWith(color: fg),
+      ),
+    );
+  }
+
+  Widget _buildIotStatusCard(BuildContext context, IotConfigModel? config) {
+    if (config == null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 28),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Chưa cấu hình Relay IoT', style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Đèn bàn sẽ không tự động bật/tắt khi bắt đầu/kết thúc tính giờ chơi.',
+                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final connInfo = config.connectionType == 'serial'
+        ? 'Cổng Serial USB: ${config.port}'
+        : 'Địa chỉ mạng LAN/Wifi: ${config.ipAddress}:${config.port}';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.primarySurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                config.connectionType == 'serial' ? Icons.usb : Icons.lan,
+                color: AppColors.primary,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      config.connectionType == 'serial' ? 'Kết nối USB Serial (COM)' : 'Kết nối TCP/IP LAN',
+                      style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(connInfo, style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Kênh Relay', style: AppTextStyles.labelSmall),
+                    const SizedBox(height: 2),
+                    Text('Cổng ${config.relayChannel}', style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Lệnh bật', style: AppTextStyles.labelSmall),
+                    const SizedBox(height: 2),
+                    Text(config.commandOn, style: AppTextStyles.mono.copyWith(fontSize: 12, color: AppColors.success, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Lệnh tắt', style: AppTextStyles.labelSmall),
+                    const SizedBox(height: 2),
+                    Text(config.commandOff, style: AppTextStyles.mono.copyWith(fontSize: 12, color: AppColors.error, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final typeModel = tablesState.tableTypes.firstWhere(
+      (t) => t.id == table.tableTypeId,
+      orElse: () => TableTypeModel(
+        id: table.tableTypeId,
+        typeName: switch (table.tableTypeId) {
+          1 => 'Pool (Bàn lỗ)',
+          2 => 'Carom (Băng)',
+          3 => 'Snooker',
+          _ => 'Bàn Bida',
+        },
+      ),
+    );
+    final rate = tablesState.getTableHourlyRate(table);
+    final iotConfig = tablesState.iotConfigs[table.id];
+
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(table.tableName, style: AppTextStyles.displayMedium),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Loại bàn: ${typeModel.typeName}',
+                      style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Tiền giờ: ${_fmtCurrency(rate)} /giờ',
+                      style: AppTextStyles.titleMedium.copyWith(color: AppColors.accent, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              _buildStatusBadge(table.status),
+            ],
+          ),
+          const SizedBox(height: 24),
+          const Divider(height: 1),
+          const SizedBox(height: 20),
+          
+          Text('Cấu hình Relay tự động bật/tắt đèn', style: AppTextStyles.headlineSmall),
+          const SizedBox(height: 12),
+          _buildIotStatusCard(context, iotConfig),
+          
+          const Spacer(),
+          
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => showDialog(
+                    context: context,
+                    builder: (_) => IotConfigDialog(table: table, initialConfig: iotConfig),
+                  ),
+                  icon: const Icon(Icons.settings_remote, size: 18),
+                  label: const Text('Cài đặt Relay IoT'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.border, width: 1.5),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                onPressed: () {
+                  ref.read(tablesProvider.notifier).setTableMaintenance(
+                    table.id,
+                    table.status != 'maintenance',
+                  );
+                },
+                icon: Icon(
+                  table.status == 'maintenance' ? Icons.check_circle_outline : Icons.build_outlined,
+                  size: 18,
+                ),
+                label: Text(table.status == 'maintenance' ? 'Bỏ bảo trì' : 'Bảo trì'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                  foregroundColor: table.status == 'maintenance' ? AppColors.success : AppColors.error,
+                  side: BorderSide(
+                    color: table.status == 'maintenance' ? AppColors.success : AppColors.error,
+                    width: 1.5,
+                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: table.status == 'maintenance' ? null : onTogglePower,
+              icon: const Icon(Icons.power_settings_new_rounded, size: 20),
+              label: const Text('Bật bàn chơi (Bắt đầu tính giờ)'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── IoT Config Dialog ────────────────────────────────────────────────────────
+
+class IotConfigDialog extends ConsumerStatefulWidget {
+  final TableModel table;
+  final IotConfigModel? initialConfig;
+  
+  const IotConfigDialog({
+    super.key,
+    required this.table,
+    this.initialConfig,
+  });
+
+  @override
+  ConsumerState<IotConfigDialog> createState() => _IotConfigDialogState();
+}
+
+class _IotConfigDialogState extends ConsumerState<IotConfigDialog> {
+  String _connectionType = 'serial';
+  String _selectedPort = 'COM1';
+  int _relayChannel = 1;
+  String _protocol = 'modbus'; // 'modbus', 'lcus', 'manual'
+  
+  bool _customPort = false;
+  
+  final _ipController = TextEditingController(text: '192.168.1.100');
+  final _tcpPortController = TextEditingController(text: '8080');
+  final _customPortController = TextEditingController();
+  final _deviceIdController = TextEditingController(text: '1');
+  final _cmdOnController = TextEditingController();
+  final _cmdOffController = TextEditingController();
+  
+  List<String> _availablePorts = [];
+  bool _isLoadingPorts = false;
+  bool _isTesting = false;
+  String _testLog = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _deviceIdController.addListener(_updateCommands);
+    _loadAvailablePorts();
+    _initValues();
+  }
+
+  @override
+  void dispose() {
+    _deviceIdController.removeListener(_updateCommands);
+    _ipController.dispose();
+    _tcpPortController.dispose();
+    _customPortController.dispose();
+    _deviceIdController.dispose();
+    _cmdOnController.dispose();
+    _cmdOffController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAvailablePorts() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingPorts = true;
+    });
+    try {
+      final ports = SerialPort.availablePorts;
+      if (!mounted) return;
+      setState(() {
+        _availablePorts = ports;
+        _isLoadingPorts = false;
+        if (ports.isNotEmpty && !_availablePorts.contains(_selectedPort)) {
+          _selectedPort = ports.first;
+          _updateCommands();
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingPorts = false;
+      });
+    }
+  }
+
+  void _initValues() {
+    final cfg = widget.initialConfig;
+    if (cfg != null) {
+      _connectionType = cfg.connectionType;
+      _relayChannel = cfg.relayChannel;
+      
+      if (cfg.connectionType == 'serial') {
+        final port = cfg.port ?? 'COM1';
+        _selectedPort = port;
+        _customPortController.text = port;
+        if (!_availablePorts.contains(port) && port.isNotEmpty) {
+          _customPort = true;
+        }
+      } else {
+        _ipController.text = cfg.ipAddress ?? '192.168.1.100';
+        _tcpPortController.text = cfg.port ?? '8080';
+      }
+
+      if (_isStandardLcus(cfg)) {
+        _protocol = 'lcus';
+        _deviceIdController.text = '1';
+        _updateCommands();
+      } else {
+        int matchedId = 1;
+        bool isStandard = false;
+        for (int i = 1; i <= 32; i++) {
+          if (_isStandardModbus(cfg, deviceId: i)) {
+            matchedId = i;
+            isStandard = true;
+            break;
+          }
+        }
+
+        if (isStandard) {
+          _protocol = 'modbus';
+          _deviceIdController.text = matchedId.toString();
+          _updateCommands();
+        } else {
+          _protocol = 'manual';
+          _cmdOnController.text = cfg.commandOn;
+          _cmdOffController.text = cfg.commandOff;
+        }
+      }
+    } else {
+      _connectionType = 'serial';
+      _relayChannel = 1;
+      _protocol = 'modbus';
+      _updateCommands();
+    }
+  }
+
+  void _updateCommands() {
+    if (_protocol == 'manual') return;
+    if (_protocol == 'lcus') {
+      final cmdOn = _generateLcusCommand(_relayChannel, true);
+      final cmdOff = _generateLcusCommand(_relayChannel, false);
+      setState(() {
+        _cmdOnController.text = cmdOn;
+        _cmdOffController.text = cmdOff;
+      });
+    } else if (_protocol == 'modbus') {
+      final devId = int.tryParse(_deviceIdController.text) ?? 1;
+      final cmdOn = _generateModbusCommand(devId, _relayChannel, true);
+      final cmdOff = _generateModbusCommand(devId, _relayChannel, false);
+      setState(() {
+        _cmdOnController.text = cmdOn;
+        _cmdOffController.text = cmdOff;
+      });
+    }
+  }
+
+  void _appendLog(String text) {
+    if (!mounted) return;
+    setState(() {
+      _testLog += '$text\n';
+    });
+  }
+
+  Future<void> _runTest(bool turnOn) async {
+    if (_isTesting) return;
+    setState(() {
+      _isTesting = true;
+      _testLog = '🚀 Khởi tạo lệnh kiểm tra...\n';
+    });
+
+    final portVal = _connectionType == 'serial'
+        ? (_customPort ? _customPortController.text : _selectedPort)
+        : _tcpPortController.text;
+
+    final testConfig = IotConfigModel(
+      id: widget.table.id.hashCode,
+      tableId: widget.table.id,
+      connectionType: _connectionType,
+      ipAddress: _connectionType == 'tcp_ip' ? _ipController.text : null,
+      port: portVal,
+      relayChannel: _relayChannel,
+      commandOn: _cmdOnController.text,
+      commandOff: _cmdOffController.text,
+    );
+
+    final tablesState = ref.read(tablesProvider);
+    final useSim = tablesState.useSimulator;
+
+    BilliardIoTController controller;
+    if (useSim) {
+      _appendLog('[Chế độ: GIẢ LẬP IoT]');
+      controller = SimulatedBilliardIoTController();
+    } else {
+      _appendLog('[Chế độ: KẾT NỐI THỰC TẾ]');
+      controller = RealBilliardIoTController();
+    }
+
+    final logSub = controller.logStream.listen((line) {
+      _appendLog(line);
+    });
+
+    try {
+      final target = _connectionType == 'serial' ? portVal : '${testConfig.ipAddress}:$portVal';
+      _appendLog('Đang kết nối tới $target...');
+      final connected = await controller.connect(testConfig);
+      if (!connected) {
+        _appendLog('❌ KẾT NỐI THẤT BẠI!');
+        setState(() { _isTesting = false; });
+        logSub.cancel();
+        return;
+      }
+
+      _appendLog('✅ Kết nối thành công. Gửi lệnh...');
+      final ok = turnOn ? await controller.turnOn() : await controller.turnOff();
+      if (ok) {
+        _appendLog('✅ Thực thi lệnh thành công!');
+      } else {
+        _appendLog('❌ Thực thi lệnh thất bại!');
+      }
+
+      await Future.delayed(const Duration(milliseconds: 600));
+      _appendLog('Đang đóng kết nối...');
+      await controller.disconnect();
+      _appendLog('✅ Kết nối đã ngắt sạch sẽ.');
+    } catch (e) {
+      _appendLog('❌ LỖI HỆ THỐNG: $e');
+    } finally {
+      logSub.cancel();
+      setState(() {
+        _isTesting = false;
+      });
+    }
+  }
+
+  void _save() {
+    final portVal = _connectionType == 'serial'
+        ? (_customPort ? _customPortController.text : _selectedPort)
+        : _tcpPortController.text;
+
+    if (_connectionType == 'tcp_ip' && _ipController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Vui lòng điền địa chỉ IP hợp lệ.'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+
+    if (portVal.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Vui lòng điền cổng kết nối.'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+
+    final cleanCmdOn = _cmdOnController.text.replaceAll(' ', '').trim();
+    final cleanCmdOff = _cmdOffController.text.replaceAll(' ', '').trim();
+
+    if (cleanCmdOn.isEmpty || cleanCmdOff.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Mã Hex bật/tắt không được bỏ trống.'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
+    }
+
+    final newConfig = IotConfigModel(
+      id: widget.initialConfig?.id ?? widget.table.id.hashCode,
+      tableId: widget.table.id,
+      connectionType: _connectionType,
+      ipAddress: _connectionType == 'tcp_ip' ? _ipController.text.trim() : null,
+      port: portVal.trim(),
+      relayChannel: _relayChannel,
+      commandOn: cleanCmdOn,
+      commandOff: cleanCmdOff,
+    );
+
+    ref.read(tablesProvider.notifier).updateIotConfig(widget.table.id, newConfig);
+    Navigator.of(context).pop();
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Đã lưu cấu hình IoT cho bàn ${widget.table.tableName}'),
+      backgroundColor: AppColors.success,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tablesState = ref.watch(tablesProvider);
+    final isSim = tablesState.useSimulator;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 12,
+      child: Container(
+        width: 580,
+        constraints: const BoxConstraints(maxHeight: 700),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.settings_remote, color: AppColors.primary, size: 28),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Cấu hình Relay IoT - ${widget.table.tableName}', style: AppTextStyles.headlineMedium),
+                    const SizedBox(height: 2),
+                    Text('Thiết lập thông số kết nối và rơ-le để bật tắt đèn tự động', style: AppTextStyles.bodySmall),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _connectionType = 'serial';
+                        _updateCommands();
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _connectionType == 'serial' ? AppColors.primary.withOpacity(0.08) : Colors.white,
+                        border: Border.all(
+                          color: _connectionType == 'serial' ? AppColors.primary : AppColors.border,
+                          width: 1.5,
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.usb, color: _connectionType == 'serial' ? AppColors.primary : AppColors.textSecondary),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Cổng Serial (USB)',
+                            style: AppTextStyles.labelLarge.copyWith(
+                              color: _connectionType == 'serial' ? AppColors.primary : AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _connectionType = 'tcp_ip';
+                        _updateCommands();
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: _connectionType == 'tcp_ip' ? AppColors.primary.withOpacity(0.08) : Colors.white,
+                        border: Border.all(
+                          color: _connectionType == 'tcp_ip' ? AppColors.primary : AppColors.border,
+                          width: 1.5,
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.lan, color: _connectionType == 'tcp_ip' ? AppColors.primary : AppColors.textSecondary),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Mạng TCP/IP LAN',
+                            style: AppTextStyles.labelLarge.copyWith(
+                              color: _connectionType == 'tcp_ip' ? AppColors.primary : AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (_connectionType == 'serial') ...[
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: _customPort
+                                ? TextField(
+                                    controller: _customPortController,
+                                    decoration: InputDecoration(
+                                      labelText: 'Nhập cổng COM / Tên cổng USB',
+                                      hintText: 'ví dụ: COM3 hoặc /dev/cu.usbserial...',
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                    ),
+                                  )
+                                : Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Chọn Cổng Serial', style: AppTextStyles.labelLarge),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                                              decoration: BoxDecoration(
+                                                border: Border.all(color: AppColors.border),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: DropdownButtonHideUnderline(
+                                                child: DropdownButton<String>(
+                                                  value: _availablePorts.contains(_selectedPort) ? _selectedPort : null,
+                                                  hint: const Text('Chọn cổng...'),
+                                                  isExpanded: true,
+                                                  items: _availablePorts.map((port) {
+                                                    return DropdownMenuItem<String>(
+                                                      value: port,
+                                                      child: Text(port),
+                                                    );
+                                                  }).toList(),
+                                                  onChanged: (val) {
+                                                    if (val != null) {
+                                                      setState(() {
+                                                        _selectedPort = val;
+                                                        _updateCommands();
+                                                      });
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          IconButton(
+                                            onPressed: _loadAvailablePorts,
+                                            icon: _isLoadingPorts
+                                                ? const SizedBox(
+                                                    width: 18,
+                                                    height: 18,
+                                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                                  )
+                                                : const Icon(Icons.refresh, color: AppColors.primary),
+                                            tooltip: 'Tải lại danh sách cổng',
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: Row(
+                              children: [
+                                Checkbox(
+                                  value: _customPort,
+                                  onChanged: (v) {
+                                    setState(() {
+                                      _customPort = v ?? false;
+                                    });
+                                  },
+                                ),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _customPort = !_customPort;
+                                      });
+                                    },
+                                    child: Text('Nhập thủ công', style: AppTextStyles.bodyMedium),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: TextField(
+                              controller: _ipController,
+                              decoration: InputDecoration(
+                                labelText: 'Địa chỉ IP Relay',
+                                hintText: 'ví dụ: 192.168.1.100',
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: TextField(
+                              controller: _tcpPortController,
+                              decoration: InputDecoration(
+                                labelText: 'Cổng (TCP Port)',
+                                hintText: 'ví dụ: 8080',
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              keyboardType: TextInputType.number,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    
+                    const SizedBox(height: 20),
+                    
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Kênh Relay', style: AppTextStyles.labelLarge),
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: AppColors.border),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<int>(
+                                    value: _relayChannel,
+                                    isExpanded: true,
+                                    items: List.generate(16, (index) => index + 1).map((ch) {
+                                      return DropdownMenuItem<int>(
+                                        value: ch,
+                                        child: Text('Kênh $ch'),
+                                      );
+                                    }).toList(),
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setState(() {
+                                          _relayChannel = val;
+                                          _updateCommands();
+                                        });
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Giao thức', style: AppTextStyles.labelLarge),
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: AppColors.border),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: _protocol,
+                                    isExpanded: true,
+                                    items: const [
+                                      DropdownMenuItem(value: 'modbus', child: Text('Modbus RTU')),
+                                      DropdownMenuItem(value: 'lcus', child: Text('LCUS UART')),
+                                      DropdownMenuItem(value: 'manual', child: Text('Tự nhập mã HEX')),
+                                    ],
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        setState(() {
+                                          _protocol = val;
+                                          _updateCommands();
+                                        });
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    
+                    if (_protocol == 'modbus') ...[
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: 250,
+                        child: TextField(
+                          controller: _deviceIdController,
+                          decoration: InputDecoration(
+                            labelText: 'Địa chỉ thiết bị Modbus (Device ID)',
+                            hintText: 'thường là 1',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          ),
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                    ],
+                    
+                    const SizedBox(height: 20),
+                    
+                    TextField(
+                      controller: _cmdOnController,
+                      readOnly: _protocol != 'manual',
+                      decoration: InputDecoration(
+                        labelText: 'Mã HEX lệnh Bật đèn (ON Command)',
+                        hintText: 'ví dụ: A00101A2 hoặc 01050000FF008C3A',
+                        filled: _protocol != 'manual',
+                        fillColor: _protocol != 'manual' ? AppColors.surfaceVariant : Colors.white,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      style: AppTextStyles.mono.copyWith(color: AppColors.success, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _cmdOffController,
+                      readOnly: _protocol != 'manual',
+                      decoration: InputDecoration(
+                        labelText: 'Mã HEX lệnh Tắt đèn (OFF Command)',
+                        hintText: 'ví dụ: A00100A1 hoặc 010500000000CDCA',
+                        filled: _protocol != 'manual',
+                        fillColor: _protocol != 'manual' ? AppColors.surfaceVariant : Colors.white,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      style: AppTextStyles.mono.copyWith(color: AppColors.error, fontWeight: FontWeight.bold),
+                    ),
+                    
+                    const SizedBox(height: 24),
+                    const Divider(height: 1),
+                    const SizedBox(height: 20),
+                    
+                    Text('Chẩn đoán kết nối thử nghiệm', style: AppTextStyles.headlineSmall),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Kiểm tra rơ-le tức thời ${isSim ? "(Đang bật Giả lập)" : "(Kết nối phần cứng thực tế)"}',
+                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _isTesting ? null : () => _runTest(true),
+                          icon: const Icon(Icons.lightbulb, size: 16),
+                          label: const Text('Bật đèn thử'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.success,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 0,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        ElevatedButton.icon(
+                          onPressed: _isTesting ? null : () => _runTest(false),
+                          icon: const Icon(Icons.lightbulb_outline, size: 16),
+                          label: const Text('Tắt đèn thử'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.error,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            elevation: 0,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_testLog.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceDark,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _testLog,
+                          style: TextStyle(
+                            fontFamily: 'Courier',
+                            fontSize: 12,
+                            color: Colors.lightGreenAccent.shade400,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            
+            const SizedBox(height: 20),
+            
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Huỷ', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: _save,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    elevation: 0,
+                  ),
+                  child: const Text('Lưu cấu hình', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

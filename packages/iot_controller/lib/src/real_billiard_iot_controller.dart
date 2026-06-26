@@ -12,6 +12,7 @@ class RealBilliardIoTController implements BilliardIoTController {
   Socket? _tcpSocket;
   SerialPort? _serialPort;
   SerialPortReader? _serialPortReader;
+  StreamSubscription<Uint8List>? _serialPortSubscription;
 
   final _statusController = StreamController<bool>.broadcast();
   final _logController = StreamController<String>.broadcast();
@@ -20,7 +21,9 @@ class RealBilliardIoTController implements BilliardIoTController {
 
   void _log(String message) {
     final timestamp = DateTime.now().toIso8601String().substring(11, 19);
-    _logController.add('[$timestamp] $message');
+    if (!_logController.isClosed) {
+      _logController.add('[$timestamp] $message');
+    }
   }
 
   List<int> _hexToBytes(String hex) {
@@ -91,7 +94,10 @@ class RealBilliardIoTController implements BilliardIoTController {
         return false;
       }
     } else if (config.connectionType == 'serial') {
-      final comPort = config.port ?? 'COM3';
+      var comPort = config.port ?? 'COM3';
+      if (!Platform.isWindows && !comPort.startsWith('/dev/')) {
+        comPort = '/dev/$comPort';
+      }
       _log('Connecting to Serial/RS485 COM Port $comPort...');
       
       try {
@@ -108,17 +114,21 @@ class RealBilliardIoTController implements BilliardIoTController {
         }
 
         // Apply standard configs
-        _serialPort!.config.baudRate = 9600;
-        _serialPort!.config.bits = 8;
-        _serialPort!.config.stopBits = 1;
-        _serialPort!.config.parity = SerialPortParity.none;
+        final config = SerialPortConfig();
+        config.baudRate = 9600;
+        config.bits = 8;
+        config.stopBits = 1;
+        config.parity = SerialPortParity.none;
+        _serialPort!.config = config;
+        // Note: Do not call config.dispose() here as _serialPort takes ownership
+        // and will automatically dispose of it when _serialPort.dispose() is called.
         
         _isConnected = true;
         _log('Serial COM ($comPort) connected successfully.');
         
         // Listen to reader
         _serialPortReader = SerialPortReader(_serialPort!);
-        _serialPortReader!.stream.listen(
+        _serialPortSubscription = _serialPortReader!.stream.listen(
           (Uint8List data) {
             final hexResp = data.map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase()).join(' ');
             _log('RX Serial: Received bytes -> $hexResp');
@@ -156,10 +166,22 @@ class RealBilliardIoTController implements BilliardIoTController {
       _tcpSocket = null;
     }
 
+    if (_serialPortSubscription != null) {
+      try {
+        await _serialPortSubscription!.cancel();
+      } catch (_) {}
+      _serialPortSubscription = null;
+    }
+
     if (_serialPortReader != null) {
-      // Stream is automatically closed when port closes or stream is cancelled
+      try {
+        _serialPortReader!.close();
+      } catch (_) {}
       _serialPortReader = null;
     }
+
+    // Give a brief delay for the background port reader thread to shut down cleanly
+    await Future.delayed(const Duration(milliseconds: 100));
 
     if (_serialPort != null) {
       try {
@@ -172,7 +194,9 @@ class RealBilliardIoTController implements BilliardIoTController {
     _isConnected = false;
     if (_isOn) {
       _isOn = false;
-      _statusController.add(false);
+      if (!_statusController.isClosed) {
+        _statusController.add(false);
+      }
     }
     
     _log('Disconnected.');
@@ -278,8 +302,19 @@ class RealBilliardIoTController implements BilliardIoTController {
   Stream<String> get logStream => _logController.stream;
 
   void dispose() {
-    disconnect();
+    _serialPortSubscription?.cancel();
+    _serialPortReader?.close();
+    if (_serialPort != null) {
+      try {
+        _serialPort!.close();
+        _serialPort!.dispose();
+      } catch (_) {}
+      _serialPort = null;
+    }
+    _tcpSocket?.close();
     _statusController.close();
     _logController.close();
+    _isConnected = false;
+    _isOn = false;
   }
 }
