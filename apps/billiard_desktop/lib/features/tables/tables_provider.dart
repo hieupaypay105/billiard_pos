@@ -374,11 +374,26 @@ class TablesState {
 
 class TablesNotifier extends StateNotifier<TablesState> {
   final Map<String, BilliardIoTController> _controllers = {};
+  final Map<String, Future<void>> _tableSyncLocks = {};
   final LocalDbService? _localDb;
   final ApiClient? _apiClient;
   final SyncService? _syncService;
   final Ref? _ref;
   bool _isSessionRestoredOnce = false;
+
+  Future<T> _executeWithTableLock<T>(String tableId, Future<T> Function() action) async {
+    final previous = _tableSyncLocks[tableId] ?? Future.value();
+    final completer = Completer<void>();
+    _tableSyncLocks[tableId] = completer.future;
+    try {
+      await previous;
+    } catch (_) {}
+    try {
+      return await action();
+    } finally {
+      completer.complete();
+    }
+  }
 
   bool get _isOnline => _syncService?.isOnline ?? true;
 
@@ -396,6 +411,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   Future<void> loadTables({bool preventAutoPull = false}) async {
+    final previousTables = state.tables;
     state = state.copyWith(isLoading: true);
 
     // ── Nguồn duy nhất: SQLite local DB ──────────────────────────────────────
@@ -510,7 +526,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       _initMockData();
     }
 
-    await _restoreSessionState();
+    await _restoreSessionState(previousTables);
     if (!mounted) return;
     state = state.copyWith(isLoading: false);
   }
@@ -553,7 +569,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
   }
 
-  Future<void> _restoreSessionState() async {
+  Future<void> _restoreSessionState([List<TableModel>? previousTables]) async {
     if (_localDb == null) return;
     try {
       final sessionJson = await _localDb!.getSetting('billiard_active_session');
@@ -639,7 +655,17 @@ class TablesNotifier extends StateNotifier<TablesState> {
             final t = restoredTables[i];
             if (statusesMap.containsKey(t.id)) {
               final tData = statusesMap[t.id] as Map<String, dynamic>;
-              final oldStatus = t.status;
+              
+              // Get actual old status from previousTables if available
+              String oldStatus = t.status;
+              if (previousTables != null && previousTables.isNotEmpty) {
+                final oldTable = previousTables.firstWhere(
+                  (pt) => pt.id == t.id,
+                  orElse: () => t,
+                );
+                oldStatus = oldTable.status;
+              }
+              
               final newStatus = tData['status']?.toString() ?? 'idle';
               
               restoredTables[i] = t.copyWith(
@@ -989,40 +1015,42 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   Future<void> _syncRelayState(String tableId, bool turnOn) async {
-    final iotConfig = state.iotConfigs[tableId];
-    if (iotConfig == null) return;
+    await _executeWithTableLock(tableId, () async {
+      final iotConfig = state.iotConfigs[tableId];
+      if (iotConfig == null) return;
 
-    if (turnOn) {
-      if (_controllers.containsKey(tableId) && _controllers[tableId]!.isConnected) {
-        try {
-          await _controllers[tableId]!.turnOn();
-        } catch (_) {}
-        return;
-      }
-      final controller = state.useSimulator
-          ? SimulatedBilliardIoTController() as BilliardIoTController
-          : RealBilliardIoTController();
-      _controllers[tableId] = controller;
-      try {
-        final connected = await controller.connect(iotConfig);
-        if (connected) {
-          await controller.turnOn();
+      if (turnOn) {
+        if (_controllers.containsKey(tableId) && _controllers[tableId]!.isConnected) {
+          try {
+            await _controllers[tableId]!.turnOn();
+          } catch (_) {}
+          return;
         }
-      } catch (e) {
-        print('Lỗi bật relay khi đồng bộ từ mobile: $e');
-      }
-    } else {
-      final controller = _controllers[tableId];
-      if (controller != null) {
+        final controller = state.useSimulator
+            ? SimulatedBilliardIoTController() as BilliardIoTController
+            : RealBilliardIoTController();
+        _controllers[tableId] = controller;
         try {
-          await controller.turnOff();
-          await controller.disconnect();
+          final connected = await controller.connect(iotConfig);
+          if (connected) {
+            await controller.turnOn();
+          }
         } catch (e) {
-          print('Lỗi tắt relay khi đồng bộ từ mobile: $e');
+          print('Lỗi bật relay khi đồng bộ từ mobile: $e');
         }
-        _controllers.remove(tableId);
+      } else {
+        final controller = _controllers[tableId];
+        if (controller != null) {
+          try {
+            await controller.turnOff();
+            await controller.disconnect();
+          } catch (e) {
+            print('Lỗi tắt relay khi đồng bộ từ mobile: $e');
+          }
+          _controllers.remove(tableId);
+        }
       }
-    }
+    });
   }
 
   Future<bool> activateTable(
@@ -1036,22 +1064,27 @@ class TablesNotifier extends StateNotifier<TablesState> {
 
     final iotConfig = state.iotConfigs[tableId];
     if (iotConfig != null) {
-      final controller = state.useSimulator
-          ? SimulatedBilliardIoTController() as BilliardIoTController
-          : RealBilliardIoTController();
-      _controllers[tableId] = controller;
+      final success = await _executeWithTableLock(tableId, () async {
+        final controller = state.useSimulator
+            ? SimulatedBilliardIoTController() as BilliardIoTController
+            : RealBilliardIoTController();
+        _controllers[tableId] = controller;
 
-      try {
-        final connected = await controller.connect(iotConfig);
-        if (!connected && !ignoreIotError) return false;
+        try {
+          final connected = await controller.connect(iotConfig);
+          if (!connected && !ignoreIotError) return false;
 
-        if (connected) {
-          final turnedOn = await controller.turnOn();
-          if (!turnedOn && !ignoreIotError) return false;
+          if (connected) {
+            final turnedOn = await controller.turnOn();
+            if (!turnedOn && !ignoreIotError) return false;
+          }
+          return true;
+        } catch (e) {
+          if (!ignoreIotError) return false;
+          return true;
         }
-      } catch (e) {
-        if (!ignoreIotError) return false;
-      }
+      });
+      if (!success) return false;
     }
 
     // 1. Tạo order trên backend (nếu online)
@@ -1116,16 +1149,18 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   Future<bool> deactivateTable(String tableId) async {
-    final controller = _controllers[tableId];
-    if (controller != null) {
-      try {
-        await controller.turnOff();
-        await controller.disconnect();
-      } catch (e) {
-        print('Lỗi tắt IoT controller khi tắt bàn: $e');
+    await _executeWithTableLock(tableId, () async {
+      final controller = _controllers[tableId];
+      if (controller != null) {
+        try {
+          await controller.turnOff();
+          await controller.disconnect();
+        } catch (e) {
+          print('Lỗi tắt IoT controller khi tắt bàn: $e');
+        }
+        _controllers.remove(tableId);
       }
-      _controllers.remove(tableId);
-    }
+    });
 
     if (_apiClient != null && _isOnline) {
       try {

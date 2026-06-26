@@ -1034,8 +1034,13 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final tableIndex = state.tables.indexWhere((t) => t.id == tableId);
     if (tableIndex < 0) return false;
 
+    // Prevent activation if table is under maintenance
+    if (state.tables[tableIndex].status == 'maintenance') {
+      return false;
+    }
+
     final iotConfig = state.iotConfigs[tableId];
-    if (iotConfig != null) {
+    if (iotConfig != null && state.useSimulator) {
       final controller = state.useSimulator
           ? SimulatedBilliardIoTController() as BilliardIoTController
           : RealBilliardIoTController();
@@ -1525,7 +1530,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       return false;
 
     final iotConfig = state.iotConfigs[targetTableId];
-    if (iotConfig != null) {
+    if (iotConfig != null && state.useSimulator) {
       final controller = state.useSimulator
           ? SimulatedBilliardIoTController() as BilliardIoTController
           : RealBilliardIoTController();
@@ -1863,7 +1868,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
     if (targetTable.status != 'idle') return false;
 
     final iotConfig = state.iotConfigs[targetTableId];
-    if (iotConfig != null) {
+    if (iotConfig != null && state.useSimulator) {
       final controller = state.useSimulator
           ? SimulatedBilliardIoTController() as BilliardIoTController
           : RealBilliardIoTController();

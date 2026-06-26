@@ -131,15 +131,18 @@ class RealBilliardIoTController implements BilliardIoTController {
         return false;
       }
     } else if (config.connectionType == 'serial') {
-      // Short-lived connection test
-      final ok = await _openSerial();
-      if (ok) {
-        await _closeSerial();
-        _isConnected = true;
-        return true;
-      }
-      _isConnected = false;
-      return false;
+      final portKey = config.port ?? 'COM3';
+      return SerialLock.synchronized(portKey, () async {
+        // Short-lived connection test
+        final ok = await _openSerial();
+        if (ok) {
+          await _closeSerial();
+          _isConnected = true;
+          return true;
+        }
+        _isConnected = false;
+        return false;
+      });
     } else {
       _log('ERROR: Unsupported connection type ${config.connectionType}');
       return false;
@@ -157,7 +160,10 @@ class RealBilliardIoTController implements BilliardIoTController {
       _tcpSocket = null;
     }
 
-    await _closeSerial();
+    final portKey = _config?.port ?? 'COM3';
+    await SerialLock.synchronized(portKey, () async {
+      await _closeSerial();
+    });
 
     _isConnected = false;
     if (_isOn) {
@@ -195,21 +201,24 @@ class RealBilliardIoTController implements BilliardIoTController {
         return false;
       }
     } else if (_config!.connectionType == 'serial') {
-      final opened = await _openSerial();
-      if (!opened) return false;
-      try {
-        final bytesWritten = _serialPort!.write(Uint8List.fromList(cmdBytes));
-        _log('Serial TX: Sent $bytesWritten bytes.');
-        await Future.delayed(const Duration(milliseconds: 50));
-        await _closeSerial();
-        _isOn = true;
-        _statusController.add(true);
-        return true;
-      } catch (e) {
-        _log('ERROR Serial Write: $e');
-        await _closeSerial();
-        return false;
-      }
+      final portKey = _config!.port ?? 'COM3';
+      return SerialLock.synchronized(portKey, () async {
+        final opened = await _openSerial();
+        if (!opened) return false;
+        try {
+          final bytesWritten = _serialPort!.write(Uint8List.fromList(cmdBytes));
+          _log('Serial TX: Sent $bytesWritten bytes.');
+          await Future.delayed(const Duration(milliseconds: 50));
+          await _closeSerial();
+          _isOn = true;
+          _statusController.add(true);
+          return true;
+        } catch (e) {
+          _log('ERROR Serial Write: $e');
+          await _closeSerial();
+          return false;
+        }
+      });
     }
 
     return false;
@@ -239,21 +248,24 @@ class RealBilliardIoTController implements BilliardIoTController {
         return false;
       }
     } else if (_config!.connectionType == 'serial') {
-      final opened = await _openSerial();
-      if (!opened) return false;
-      try {
-        final bytesWritten = _serialPort!.write(Uint8List.fromList(cmdBytes));
-        _log('Serial TX: Sent $bytesWritten bytes.');
-        await Future.delayed(const Duration(milliseconds: 50));
-        await _closeSerial();
-        _isOn = false;
-        _statusController.add(false);
-        return true;
-      } catch (e) {
-        _log('ERROR Serial Write: $e');
-        await _closeSerial();
-        return false;
-      }
+      final portKey = _config!.port ?? 'COM3';
+      return SerialLock.synchronized(portKey, () async {
+        final opened = await _openSerial();
+        if (!opened) return false;
+        try {
+          final bytesWritten = _serialPort!.write(Uint8List.fromList(cmdBytes));
+          _log('Serial TX: Sent $bytesWritten bytes.');
+          await Future.delayed(const Duration(milliseconds: 50));
+          await _closeSerial();
+          _isOn = false;
+          _statusController.add(false);
+          return true;
+        } catch (e) {
+          _log('ERROR Serial Write: $e');
+          await _closeSerial();
+          return false;
+        }
+      });
     }
 
     return false;
@@ -281,5 +293,23 @@ class RealBilliardIoTController implements BilliardIoTController {
     }
     _statusController.close();
     _logController.close();
+  }
+}
+
+class SerialLock {
+  static final Map<String, Future<void>> _locks = {};
+
+  static Future<T> synchronized<T>(String port, Future<T> Function() action) async {
+    final previous = _locks[port] ?? Future.value();
+    final completer = Completer<void>();
+    _locks[port] = completer.future;
+    try {
+      await previous;
+    } catch (_) {}
+    try {
+      return await action();
+    } finally {
+      completer.complete();
+    }
   }
 }

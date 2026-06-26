@@ -139,6 +139,7 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
             itemBuilder: (context, index) {
               final table = tables[index];
               final isActive = table.status == 'active';
+              final isMaintenance = table.status == 'maintenance';
               
               // Scale components if the cards are compressed
               final isCompact = computedHeight < 125;
@@ -150,6 +151,16 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
               
               return InkWell(
                 onTap: () {
+                  if (isMaintenance) {
+                    ScaffoldMessenger.of(context).clearSnackBars();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Bàn đang bảo trì, không thể sử dụng!'),
+                        backgroundColor: AppColors.tableMaintenanceAccent,
+                      ),
+                    );
+                    return;
+                  }
                   context.push('${AppRoutes.billing}/${table.id}');
                 },
                 borderRadius: BorderRadius.circular(16),
@@ -159,10 +170,18 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                       width: double.infinity,
                       height: double.infinity,
                       decoration: BoxDecoration(
-                        color: isActive ? AppColors.primary.withValues(alpha: 0.1) : Colors.white,
+                        color: isActive 
+                            ? AppColors.primary.withValues(alpha: 0.1) 
+                            : (isMaintenance 
+                                ? AppColors.tableMaintenance 
+                                : Colors.white),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: isActive ? AppColors.primary : Colors.grey.shade300,
+                          color: isActive 
+                              ? AppColors.primary 
+                              : (isMaintenance 
+                                  ? AppColors.tableMaintenanceAccent 
+                                  : Colors.grey.shade300),
                           width: 2,
                         ),
                         boxShadow: const [
@@ -177,9 +196,13 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
-                            Icons.table_bar,
+                            isMaintenance ? Icons.build : Icons.table_bar,
                             size: iconSize,
-                            color: isActive ? AppColors.primary : Colors.grey.shade400,
+                            color: isActive 
+                                ? AppColors.primary 
+                                : (isMaintenance 
+                                    ? AppColors.tableMaintenanceAccent 
+                                    : Colors.grey.shade400),
                           ),
                           SizedBox(height: spacing),
                           Text(
@@ -187,7 +210,11 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: titleSize,
-                              color: isActive ? AppColors.primary : Colors.black87,
+                              color: isActive 
+                                  ? AppColors.primary 
+                                  : (isMaintenance 
+                                      ? AppColors.tableMaintenanceAccent 
+                                      : Colors.black87),
                             ),
                           ),
                           if (isActive) ...[
@@ -207,13 +234,30 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                                 ),
                               ),
                             ),
+                          ] else if (isMaintenance) ...[
+                            SizedBox(height: spacing),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.tableMaintenanceAccent,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Text(
+                                'Bảo trì',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
                           ] else ...[
                             SizedBox(height: spacing),
                             Text(
                               'Bàn trống',
                               style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade500,
+                                  fontSize: 12,
+                                  color: Colors.grey.shade500,
                               ),
                             ),
                           ]
