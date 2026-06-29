@@ -60,28 +60,34 @@ class RealBilliardIoTController implements BilliardIoTController {
     }
     _log('Opening Serial COM Port $comPort...');
 
-    try {
-      _serialPort = SerialPort(comPort);
-      if (!_serialPort!.openReadWrite()) {
+    int retries = 3;
+    while (retries > 0) {
+      try {
+        _serialPort = SerialPort(comPort);
+        if (_serialPort!.openReadWrite()) {
+          final serialConfig = SerialPortConfig();
+          serialConfig.baudRate = 9600;
+          serialConfig.bits = 8;
+          serialConfig.stopBits = 1;
+          serialConfig.parity = SerialPortParity.none;
+          _serialPort!.config = serialConfig;
+          return true;
+        }
+
         final err = SerialPort.lastError;
-        _log('ERROR Serial Open: Failed to open $comPort. Error: $err');
+        _log('ERROR Serial Open: Failed to open $comPort (Retries left: ${retries - 1}). Error: $err');
         _serialPort = null;
-        return false;
+      } catch (e) {
+        _log('ERROR Serial Open Exception: $e (Retries left: ${retries - 1})');
+        _serialPort = null;
       }
 
-      final serialConfig = SerialPortConfig();
-      serialConfig.baudRate = 9600;
-      serialConfig.bits = 8;
-      serialConfig.stopBits = 1;
-      serialConfig.parity = SerialPortParity.none;
-      _serialPort!.config = serialConfig;
-
-      return true;
-    } catch (e) {
-      _log('ERROR Serial Open Exception: $e');
-      _serialPort = null;
-      return false;
+      retries--;
+      if (retries > 0) {
+        await Future.delayed(const Duration(milliseconds: 150));
+      }
     }
+    return false;
   }
 
   Future<void> _closeSerial() async {
@@ -133,9 +139,12 @@ class RealBilliardIoTController implements BilliardIoTController {
     } else if (config.connectionType == 'serial') {
       final portKey = config.port ?? 'COM3';
       return SerialLock.synchronized(portKey, () async {
+        // Cool-down delay to allow OS serial driver to settle/release
+        await Future.delayed(const Duration(milliseconds: 100));
         // Short-lived connection test
         final ok = await _openSerial();
         if (ok) {
+          await Future.delayed(const Duration(milliseconds: 50));
           await _closeSerial();
           _isConnected = true;
           return true;
@@ -203,13 +212,36 @@ class RealBilliardIoTController implements BilliardIoTController {
     } else if (_config!.connectionType == 'serial') {
       final portKey = _config!.port ?? 'COM3';
       return SerialLock.synchronized(portKey, () async {
+        // Cool-down delay to allow OS serial driver to settle/release
+        await Future.delayed(const Duration(milliseconds: 100));
+        
         final opened = await _openSerial();
         if (!opened) return false;
         try {
-          final bytesWritten = _serialPort!.write(Uint8List.fromList(cmdBytes));
-          _log('Serial TX: Sent $bytesWritten bytes.');
-          await Future.delayed(const Duration(milliseconds: 50));
+          // Stabilization delay after opening port before sending command
+          await Future.delayed(const Duration(milliseconds: 150));
+
+          // First command attempt
+          var bytesWritten = _serialPort!.write(Uint8List.fromList(cmdBytes));
+          _log('Serial TX (1): Sent $bytesWritten bytes.');
+
+          // Small delay before sending redundant command to verify delivery
+          await Future.delayed(const Duration(milliseconds: 100));
+
+          // Second command attempt (idempotent write for reliability)
+          bytesWritten = _serialPort!.write(Uint8List.fromList(cmdBytes));
+          _log('Serial TX (2): Sent $bytesWritten bytes.');
+
+          // Drain data to ensure all bits physically left UART before closing
+          try {
+            _serialPort!.drain();
+          } catch (e) {
+            _log('Serial drain warning (ignored): $e');
+          }
+
+          await Future.delayed(const Duration(milliseconds: 100));
           await _closeSerial();
+          
           _isOn = true;
           _statusController.add(true);
           return true;
@@ -250,13 +282,36 @@ class RealBilliardIoTController implements BilliardIoTController {
     } else if (_config!.connectionType == 'serial') {
       final portKey = _config!.port ?? 'COM3';
       return SerialLock.synchronized(portKey, () async {
+        // Cool-down delay to allow OS serial driver to settle/release
+        await Future.delayed(const Duration(milliseconds: 100));
+        
         final opened = await _openSerial();
         if (!opened) return false;
         try {
-          final bytesWritten = _serialPort!.write(Uint8List.fromList(cmdBytes));
-          _log('Serial TX: Sent $bytesWritten bytes.');
-          await Future.delayed(const Duration(milliseconds: 50));
+          // Stabilization delay after opening port before sending command
+          await Future.delayed(const Duration(milliseconds: 150));
+
+          // First command attempt
+          var bytesWritten = _serialPort!.write(Uint8List.fromList(cmdBytes));
+          _log('Serial TX (1): Sent $bytesWritten bytes.');
+
+          // Small delay before sending redundant command to verify delivery
+          await Future.delayed(const Duration(milliseconds: 100));
+
+          // Second command attempt (idempotent write for reliability)
+          bytesWritten = _serialPort!.write(Uint8List.fromList(cmdBytes));
+          _log('Serial TX (2): Sent $bytesWritten bytes.');
+
+          // Drain data to ensure all bits physically left UART before closing
+          try {
+            _serialPort!.drain();
+          } catch (e) {
+            _log('Serial drain warning (ignored): $e');
+          }
+
+          await Future.delayed(const Duration(milliseconds: 100));
           await _closeSerial();
+          
           _isOn = false;
           _statusController.add(false);
           return true;
