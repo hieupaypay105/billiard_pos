@@ -16,6 +16,8 @@ void main() {
               )),
         ],
       );
+      // Force simulator mode to true by default for all test cases to avoid real COM port failures on macOS host
+      container.read(tablesProvider.notifier).toggleSimulator(true);
     });
 
     tearDown(() {

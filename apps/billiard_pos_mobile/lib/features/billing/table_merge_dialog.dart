@@ -252,55 +252,11 @@ class TableTransferDialog extends ConsumerWidget {
                                           behavior: SnackBarBehavior.floating,
                                         ));
                                       } else {
-                                        if (navigator.mounted) {
-                                          final force = await showDialog<bool>(
-                                            context: context,
-                                            builder: (context) => AlertDialog(
-                                              title: const Row(
-                                                children: [
-                                                  Icon(Icons.warning_amber_rounded, color: AppColors.error),
-                                                  SizedBox(width: 8),
-                                                  Text('Lỗi kết nối IoT'),
-                                                ],
-                                              ),
-                                              content: Text(
-                                                'Không thể kết nối đến Relay IoT cho bàn trống này.\n'
-                                                'Bạn có muốn bật bàn thủ công (không sử dụng IoT rơ-le) để tiếp tục '
-                                                '${sourceInvoiceId != null ? "chuyển hóa đơn" : "chuyển bàn"} không?'
-                                              ),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () => Navigator.of(context).pop(false),
-                                                  child: const Text('Hủy', style: TextStyle(color: AppColors.textSecondary)),
-                                                ),
-                                                ElevatedButton(
-                                                  onPressed: () => Navigator.of(context).pop(true),
-                                                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.white),
-                                                  child: const Text('Bật thủ công'),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                          if (force == true && navigator.mounted) {
-                                            final forceOk = sourceInvoiceId != null
-                                                ? await notifier.transferUnpaidInvoiceToTable(sourceInvoiceId!, t.id, ignoreIotError: true)
-                                                : await notifier.transferTable(sourceTableId!, t.id, ignoreIotError: true);
-                                            if (forceOk && navigator.mounted) {
-                                              navigator.pop();
-                                              messenger.showSnackBar(SnackBar(
-                                                content: Text('Đã chuyển $sourceName → ${t.tableName} thủ công'),
-                                                backgroundColor: AppColors.success,
-                                                behavior: SnackBarBehavior.floating,
-                                              ));
-                                              return;
-                                            }
-                                          }
-                                          messenger.showSnackBar(const SnackBar(
-                                            content: Text('Chuyển bàn thất bại!'),
-                                            backgroundColor: AppColors.error,
-                                            behavior: SnackBarBehavior.floating,
-                                          ));
-                                        }
+                                        messenger.showSnackBar(const SnackBar(
+                                          content: Text('Chuyển bàn thất bại vì kết nối hoặc gửi lệnh đến Relay IoT thất bại.'),
+                                          backgroundColor: AppColors.error,
+                                          behavior: SnackBarBehavior.floating,
+                                        ));
                                       }
                                     },
                                     style: ElevatedButton.styleFrom(

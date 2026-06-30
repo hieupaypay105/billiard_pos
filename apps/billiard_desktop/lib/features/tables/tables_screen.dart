@@ -318,38 +318,13 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // ── HEADER ──
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 8,
-                        alignment: WrapAlignment.spaceBetween,
-                        crossAxisAlignment: WrapCrossAlignment.center,
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Sơ đồ bàn', style: AppTextStyles.headlineLarge),
-                              Text(
-                                '$activeCnt đang chơi · $idleCnt trống',
-                                style: AppTextStyles.bodySmall,
-                              ),
-                            ],
-                          ),
-                          // Simulator Toggle
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.memory_outlined,
-                                  size: 16, color: AppColors.textSecondary),
-                              const SizedBox(width: 6),
-                              Text('Giả lập IoT', style: AppTextStyles.labelMedium),
-                              const SizedBox(width: 8),
-                              Switch.adaptive(
-                                value: tablesState.useSimulator,
-                                onChanged: (v) =>
-                                    ref.read(tablesProvider.notifier).toggleSimulator(v),
-                                activeColor: AppColors.accent,
-                              ),
-                            ],
+                          Text('Sơ đồ bàn', style: AppTextStyles.headlineLarge),
+                          Text(
+                            '$activeCnt đang chơi · $idleCnt trống',
+                            style: AppTextStyles.bodySmall,
                           ),
                         ],
                       ),
@@ -848,49 +823,12 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
 
       final ok = await notifier.activateTable(table.id);
       if (!ok && mounted) {
-        final forceActivate = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.warning_amber_rounded, color: AppColors.error),
-                SizedBox(width: 8),
-                Text('Lỗi kết nối IoT'),
-              ],
-            ),
-            content: const Text(
-              'Không thể kết nối đến Relay IoT cho bàn này.\n'
-              'Bạn có muốn bật bàn thủ công (không sử dụng IoT rơ-le) để tiếp tục tính giờ không?'
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text(
-                  'Huỷ',
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Bật thủ công'),
-              ),
-            ],
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Không thể bật bàn vì kết nối hoặc gửi lệnh đến Relay IoT thất bại.'),
+            backgroundColor: AppColors.error,
           ),
         );
-
-        if (forceActivate == true && mounted) {
-          final forceOk = await notifier.activateTable(table.id, ignoreIotError: true);
-          if (forceOk && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Đã bật bàn thủ công thành công.'),
-              backgroundColor: AppColors.success,
-            ));
-          }
-        }
       }
     } else if (table.status == 'active') {
       final forceDeactivate = await showDialog<bool>(
@@ -918,6 +856,11 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Đã tắt bàn thành công. Hóa đơn đã được đưa vào danh sách chờ thanh toán.'),
             backgroundColor: AppColors.success,
+          ));
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Không thể tắt bàn vì gửi lệnh tắt đến Relay IoT thất bại.'),
+            backgroundColor: AppColors.error,
           ));
         }
       }
@@ -2097,6 +2040,15 @@ class _InvoicePanel extends ConsumerWidget {
             member: member,
           );
         }
+      } else {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Không thể tắt bàn vì gửi lệnh tắt đến Relay IoT thất bại.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
       }
     } else if (action == 'bypass') {
       if (context.mounted) {
@@ -2260,7 +2212,15 @@ class _InvoicePanel extends ConsumerWidget {
             rethrow;
           }
 
-          await tablesNotifier.deactivateTable(table.id);
+          final ok = await tablesNotifier.deactivateTable(table.id);
+          if (!ok && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Không thể tắt bàn vì gửi lệnh tắt đến Relay IoT thất bại.'),
+                backgroundColor: AppColors.error,
+              ),
+            );
+          }
         },
       ),
     );

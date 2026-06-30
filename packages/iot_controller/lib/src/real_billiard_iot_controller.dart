@@ -146,6 +146,8 @@ class RealBilliardIoTController implements BilliardIoTController {
         if (ok) {
           await Future.delayed(const Duration(milliseconds: 50));
           await _closeSerial();
+          // Delay to let OS completely release resource
+          await Future.delayed(const Duration(milliseconds: 400));
           _isConnected = true;
           return true;
         }
@@ -172,6 +174,7 @@ class RealBilliardIoTController implements BilliardIoTController {
     final portKey = _config?.port ?? 'COM3';
     await SerialLock.synchronized(portKey, () async {
       await _closeSerial();
+      await Future.delayed(const Duration(milliseconds: 400));
     });
 
     _isConnected = false;
@@ -242,12 +245,16 @@ class RealBilliardIoTController implements BilliardIoTController {
           await Future.delayed(const Duration(milliseconds: 100));
           await _closeSerial();
           
+          // Delay to let OS completely release resource before lock release
+          await Future.delayed(const Duration(milliseconds: 400));
+          
           _isOn = true;
           _statusController.add(true);
           return true;
         } catch (e) {
           _log('ERROR Serial Write: $e');
           await _closeSerial();
+          await Future.delayed(const Duration(milliseconds: 400));
           return false;
         }
       });
@@ -312,12 +319,16 @@ class RealBilliardIoTController implements BilliardIoTController {
           await Future.delayed(const Duration(milliseconds: 100));
           await _closeSerial();
           
+          // Delay to let OS completely release resource before lock release
+          await Future.delayed(const Duration(milliseconds: 400));
+          
           _isOn = false;
           _statusController.add(false);
           return true;
         } catch (e) {
           _log('ERROR Serial Write: $e');
           await _closeSerial();
+          await Future.delayed(const Duration(milliseconds: 400));
           return false;
         }
       });

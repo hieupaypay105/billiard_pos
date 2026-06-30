@@ -363,6 +363,7 @@ class TablesState {
 
 class TablesNotifier extends StateNotifier<TablesState> {
   final Map<String, BilliardIoTController> _controllers = {};
+  final Map<String, Future<void>> _tableSyncLocks = {};
   final LocalDbService? _localDb;
   final ApiClient? _apiClient;
   final SyncService? _syncService;
@@ -374,6 +375,20 @@ class TablesNotifier extends StateNotifier<TablesState> {
   String? _lastSessionStr;
 
   bool get _isOnline => _syncService?.isOnline ?? true;
+
+  Future<T> _executeWithTableLock<T>(String tableId, Future<T> Function() action) async {
+    final previous = _tableSyncLocks[tableId] ?? Future.value();
+    final completer = Completer<void>();
+    _tableSyncLocks[tableId] = completer.future;
+    try {
+      await previous;
+    } catch (_) {}
+    try {
+      return await action();
+    } finally {
+      completer.complete();
+    }
+  }
 
   TablesNotifier({
     LocalDbService? localDb,
@@ -1040,12 +1055,16 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
 
     final iotConfig = state.iotConfigs[tableId];
-    if (iotConfig != null && state.useSimulator) {
+    if (iotConfig == null) {
+      print('Bàn chưa cấu hình IoT, không thể bật bàn.');
+      return false;
+    }
+
+    final success = await _executeWithTableLock(tableId, () async {
       final controller = state.useSimulator
           ? SimulatedBilliardIoTController() as BilliardIoTController
           : RealBilliardIoTController();
       _controllers[tableId] = controller;
-
       try {
         final connected = await controller.connect(iotConfig);
         if (!connected && !ignoreIotError) return false;
@@ -1054,10 +1073,13 @@ class TablesNotifier extends StateNotifier<TablesState> {
           final turnedOn = await controller.turnOn();
           if (!turnedOn && !ignoreIotError) return false;
         }
+        return true;
       } catch (e) {
         if (!ignoreIotError) return false;
+        return true;
       }
-    }
+    });
+    if (!success) return false;
 
     // 1. Tạo order trên backend (nếu online)
     String serverOrderId = 'ord-${DateTime.now().millisecondsSinceEpoch}';
@@ -1120,16 +1142,46 @@ class TablesNotifier extends StateNotifier<TablesState> {
     return true;
   }
 
-  Future<bool> deactivateTable(String tableId) async {
-    final controller = _controllers[tableId];
-    if (controller != null) {
+  Future<bool> deactivateTable(String tableId, {bool ignoreIotError = false}) async {
+    final iotConfig = state.iotConfigs[tableId];
+    if (iotConfig == null) {
+      print('Bàn chưa cấu hình IoT, không thể tắt bàn.');
+      return false;
+    }
+
+    final success = await _executeWithTableLock(tableId, () async {
+      var controller = _controllers[tableId];
+      if (controller == null) {
+        controller = state.useSimulator
+            ? SimulatedBilliardIoTController() as BilliardIoTController
+            : RealBilliardIoTController();
+        _controllers[tableId] = controller;
+        try {
+          final connected = await controller.connect(iotConfig);
+          if (!connected && !ignoreIotError) return false;
+        } catch (e) {
+          print('Lỗi kết nối IoT khi tắt bàn: $e');
+          if (!ignoreIotError) return false;
+        }
+      }
+
       try {
-        await controller.turnOff();
+        final turnedOff = await controller.turnOff();
+        if (!turnedOff && !ignoreIotError) return false;
+
         await controller.disconnect();
+        _controllers.remove(tableId);
+        return true;
       } catch (e) {
         print('Lỗi tắt IoT controller khi tắt bàn: $e');
+        if (!ignoreIotError) return false;
+        return true;
       }
-      _controllers.remove(tableId);
+    });
+
+    if (!success) {
+      print('Tắt bàn thất bại vì không gửi được lệnh tắt qua relay.');
+      return false;
     }
 
     if (_apiClient != null && _isOnline) {
@@ -1208,16 +1260,46 @@ class TablesNotifier extends StateNotifier<TablesState> {
     return true;
   }
 
-  Future<bool> deactivateTableAndFreezeInvoice(String tableId) async {
-    final controller = _controllers[tableId];
-    if (controller != null) {
+  Future<bool> deactivateTableAndFreezeInvoice(String tableId, {bool ignoreIotError = false}) async {
+    final iotConfig = state.iotConfigs[tableId];
+    if (iotConfig == null) {
+      print('Bàn chưa cấu hình IoT, không thể tắt bàn và treo hóa đơn.');
+      return false;
+    }
+
+    final success = await _executeWithTableLock(tableId, () async {
+      var controller = _controllers[tableId];
+      if (controller == null) {
+        controller = state.useSimulator
+            ? SimulatedBilliardIoTController() as BilliardIoTController
+            : RealBilliardIoTController();
+        _controllers[tableId] = controller;
+        try {
+          final connected = await controller.connect(iotConfig);
+          if (!connected && !ignoreIotError) return false;
+        } catch (e) {
+          print('Lỗi kết nối IoT khi tắt bàn và treo hóa đơn: $e');
+          if (!ignoreIotError) return false;
+        }
+      }
+
       try {
-        await controller.turnOff();
+        final turnedOff = await controller.turnOff();
+        if (!turnedOff && !ignoreIotError) return false;
+
         await controller.disconnect();
+        _controllers.remove(tableId);
+        return true;
       } catch (e) {
         print('Lỗi tắt IoT controller khi tắt bàn và treo hóa đơn: $e');
+        if (!ignoreIotError) return false;
+        return true;
       }
-      _controllers.remove(tableId);
+    });
+
+    if (!success) {
+      print('Treo hóa đơn thất bại vì không gửi được lệnh tắt qua relay.');
+      return false;
     }
 
     final tableIndex = state.tables.indexWhere((t) => t.id == tableId);
