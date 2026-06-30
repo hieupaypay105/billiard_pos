@@ -3768,6 +3768,8 @@ class _IdleTablePanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final currentUser = ref.watch(currentUserProvider);
+    final isAdmin = currentUser?.role == 'admin';
     final typeModel = tablesState.tableTypes.firstWhere(
       (t) => t.id == table.tableTypeId,
       orElse: () => TableTypeModel(
@@ -3817,78 +3819,82 @@ class _IdleTablePanel extends ConsumerWidget {
           const Divider(height: 1),
           const SizedBox(height: 20),
           
-          Text('Cấu hình Relay tự động bật/tắt đèn', style: AppTextStyles.headlineSmall),
-          const SizedBox(height: 12),
-          _buildIotStatusCard(context, iotConfig),
+          if (isAdmin) ...[
+            Text('Cấu hình Relay tự động bật/tắt đèn', style: AppTextStyles.headlineSmall),
+            const SizedBox(height: 12),
+            _buildIotStatusCard(context, iotConfig),
+          ],
           
           const Spacer(),
           
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
+          if (isAdmin) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      final currentUser = ref.read(currentUserProvider);
+                      if (currentUser?.role != 'admin') {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Chỉ tài khoản Admin mới được cài đặt Relay IoT!'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                        return;
+                      }
+                      showDialog(
+                        context: context,
+                        builder: (_) => IotConfigDialog(table: table, initialConfig: iotConfig),
+                      );
+                    },
+                    icon: const Icon(Icons.settings_remote, size: 18),
+                    label: const Text('Cài đặt Relay IoT'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.border, width: 1.5),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
                   onPressed: () {
                     final currentUser = ref.read(currentUserProvider);
                     if (currentUser?.role != 'admin') {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Chỉ tài khoản Admin mới được cài đặt Relay IoT!'),
+                          content: Text('Chỉ tài khoản Admin mới được thay đổi trạng thái bảo trì!'),
                           backgroundColor: AppColors.error,
                         ),
                       );
                       return;
                     }
-                    showDialog(
-                      context: context,
-                      builder: (_) => IotConfigDialog(table: table, initialConfig: iotConfig),
+                    ref.read(tablesProvider.notifier).setTableMaintenance(
+                      table.id,
+                      table.status != 'maintenance',
                     );
                   },
-                  icon: const Icon(Icons.settings_remote, size: 18),
-                  label: const Text('Cài đặt Relay IoT'),
+                  icon: Icon(
+                    table.status == 'maintenance' ? Icons.check_circle_outline : Icons.build_outlined,
+                    size: 18,
+                  ),
+                  label: Text(table.status == 'maintenance' ? 'Bỏ bảo trì' : 'Bảo trì'),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    foregroundColor: AppColors.primary,
-                    side: const BorderSide(color: AppColors.border, width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                    foregroundColor: table.status == 'maintenance' ? AppColors.success : AppColors.error,
+                    side: BorderSide(
+                      color: table.status == 'maintenance' ? AppColors.success : AppColors.error,
+                      width: 1.5,
+                    ),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              OutlinedButton.icon(
-                onPressed: () {
-                  final currentUser = ref.read(currentUserProvider);
-                  if (currentUser?.role != 'admin') {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Chỉ tài khoản Admin mới được thay đổi trạng thái bảo trì!'),
-                        backgroundColor: AppColors.error,
-                      ),
-                    );
-                    return;
-                  }
-                  ref.read(tablesProvider.notifier).setTableMaintenance(
-                    table.id,
-                    table.status != 'maintenance',
-                  );
-                },
-                icon: Icon(
-                  table.status == 'maintenance' ? Icons.check_circle_outline : Icons.build_outlined,
-                  size: 18,
-                ),
-                label: Text(table.status == 'maintenance' ? 'Bỏ bảo trì' : 'Bảo trì'),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                  foregroundColor: table.status == 'maintenance' ? AppColors.success : AppColors.error,
-                  side: BorderSide(
-                    color: table.status == 'maintenance' ? AppColors.success : AppColors.error,
-                    width: 1.5,
-                  ),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
