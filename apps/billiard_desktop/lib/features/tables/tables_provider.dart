@@ -9,6 +9,7 @@ import '../../core/services/local_db_service.dart';
 import '../../core/services/sync_service.dart';
 import '../../core/providers/providers.dart';
 import '../sync/sync_provider.dart';
+import '../auth/auth_provider.dart';
 import 'shift_provider.dart';
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -674,7 +675,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
                 clearCurrentOrderId: tData['currentOrderId'] == null,
               );
 
-              // Sync relay state based on status change from mobile
+              // Sync relay state based on status change from mobile - Bỏ qua đồng bộ IoT từ server theo yêu cầu
+              /*
               if (oldStatus != newStatus) {
                 if (newStatus == 'active') {
                   _syncRelayState(t.id, true);
@@ -685,6 +687,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
                 // On first load/restore or if controller was lost, make sure active table has relay ON
                 _syncRelayState(t.id, true);
               }
+              */
             }
           }
         }
@@ -989,6 +992,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       hourlyRates: hourlyRates,
       tableCustomRates: tableCustomRates,
       selectedTableId: tables.first.id,
+      useSimulator: true,
     );
   }
 
@@ -1069,7 +1073,6 @@ class TablesNotifier extends StateNotifier<TablesState> {
             ? SimulatedBilliardIoTController() as BilliardIoTController
             : RealBilliardIoTController();
         _controllers[tableId] = controller;
-
         try {
           final connected = await controller.connect(iotConfig);
           if (!connected && !ignoreIotError) return false;
@@ -2173,6 +2176,13 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   void setTableMaintenance(String tableId, bool isMaintenance) {
+    if (_ref != null) {
+      final user = _ref!.read(currentUserProvider);
+      if (user?.role != 'admin') {
+        print('Cảnh báo: Chỉ tài khoản admin mới được phép bảo trì bàn.');
+        return;
+      }
+    }
     final index = state.tables.indexWhere((t) => t.id == tableId);
     if (index < 0) return;
     final updated = List<TableModel>.from(state.tables);
@@ -2362,6 +2372,13 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   Future<void> updateIotConfig(String tableId, IotConfigModel config) async {
+    if (_ref != null) {
+      final user = _ref!.read(currentUserProvider);
+      if (user?.role != 'admin') {
+        print('Cảnh báo: Chỉ tài khoản admin mới được phép cài đặt IoT.');
+        return;
+      }
+    }
     final updated = Map<String, IotConfigModel>.from(state.iotConfigs);
     updated[tableId] = config;
     state = state.copyWith(iotConfigs: updated);

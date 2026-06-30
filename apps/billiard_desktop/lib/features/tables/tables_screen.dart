@@ -1517,6 +1517,8 @@ class _InvoicePanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final currentUser = ref.watch(currentUserProvider);
+    final isAdmin = currentUser?.role == 'admin';
     final products = tablesState.tableOrders[table.id] ?? [];
     final startTime = tablesState.tableStartTimes[table.id] ?? DateTime.now();
     final rate = tablesState.getTableHourlyRate(table);
@@ -1567,17 +1569,19 @@ class _InvoicePanel extends ConsumerWidget {
                         context: context,
                         builder: (_) => TableTransferDialog(sourceTableId: table.id)),
                   ),
-                  const SizedBox(width: 8),
-                  _ActionButton(
-                    icon: Icons.settings_remote,
-                    label: 'IoT',
-                    onTap: () => showDialog(
-                        context: context,
-                        builder: (_) => IotConfigDialog(
-                              table: table,
-                              initialConfig: tablesState.iotConfigs[table.id],
-                            )),
-                  ),
+                  if (isAdmin) ...[
+                    const SizedBox(width: 8),
+                    _ActionButton(
+                      icon: Icons.settings_remote,
+                      label: 'IoT',
+                      onTap: () => showDialog(
+                          context: context,
+                          builder: (_) => IotConfigDialog(
+                                table: table,
+                                initialConfig: tablesState.iotConfigs[table.id],
+                              )),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 6),
@@ -3823,10 +3827,22 @@ class _IdleTablePanel extends ConsumerWidget {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => showDialog(
-                    context: context,
-                    builder: (_) => IotConfigDialog(table: table, initialConfig: iotConfig),
-                  ),
+                  onPressed: () {
+                    final currentUser = ref.read(currentUserProvider);
+                    if (currentUser?.role != 'admin') {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Chỉ tài khoản Admin mới được cài đặt Relay IoT!'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                      return;
+                    }
+                    showDialog(
+                      context: context,
+                      builder: (_) => IotConfigDialog(table: table, initialConfig: iotConfig),
+                    );
+                  },
                   icon: const Icon(Icons.settings_remote, size: 18),
                   label: const Text('Cài đặt Relay IoT'),
                   style: OutlinedButton.styleFrom(
@@ -3840,6 +3856,16 @@ class _IdleTablePanel extends ConsumerWidget {
               const SizedBox(width: 10),
               OutlinedButton.icon(
                 onPressed: () {
+                  final currentUser = ref.read(currentUserProvider);
+                  if (currentUser?.role != 'admin') {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Chỉ tài khoản Admin mới được thay đổi trạng thái bảo trì!'),
+                        backgroundColor: AppColors.error,
+                      ),
+                    );
+                    return;
+                  }
                   ref.read(tablesProvider.notifier).setTableMaintenance(
                     table.id,
                     table.status != 'maintenance',
