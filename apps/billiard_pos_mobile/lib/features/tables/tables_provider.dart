@@ -845,10 +845,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
             final t = restoredTables[i];
             if (statusesMap.containsKey(t.id)) {
               final tData = statusesMap[t.id] as Map<String, dynamic>;
+              final bool keepActive = t.status == 'active' && t.currentOrderId != null;
               restoredTables[i] = t.copyWith(
-                status: tData['status']?.toString() ?? 'idle',
-                currentOrderId: tData['currentOrderId']?.toString(),
-                clearCurrentOrderId: tData['currentOrderId'] == null,
+                status: keepActive ? 'active' : (tData['status']?.toString() ?? 'idle'),
+                currentOrderId: keepActive ? t.currentOrderId : tData['currentOrderId']?.toString(),
+                clearCurrentOrderId: !keepActive && tData['currentOrderId'] == null,
               );
             }
           }
@@ -892,6 +893,21 @@ class TablesNotifier extends StateNotifier<TablesState> {
           (data['tableNotes'] as Map<String, dynamic>).forEach((k, v) {
             restoredNotes[k] = v.toString();
           });
+        }
+
+        // Ensure all active tables have a start time and order list initialized
+        for (final t in restoredTables) {
+          if (t.status == 'active') {
+            if (!restoredStartTimes.containsKey(t.id)) {
+              restoredStartTimes[t.id] = t.updatedAt ?? DateTime.now();
+            }
+            if (!restoredOrders.containsKey(t.id)) {
+              restoredOrders[t.id] = [];
+            }
+            if (!restoredPendingOrders.containsKey(t.id)) {
+              restoredPendingOrders[t.id] = [];
+            }
+          }
         }
 
         final currentSelectedUnpaidId = state.selectedUnpaidInvoiceId;
@@ -1054,28 +1070,38 @@ class TablesNotifier extends StateNotifier<TablesState> {
       return false;
     }
 
-    final iotConfig = state.iotConfigs[tableId];
-    if (iotConfig == null) {
-      print('Bàn chưa cấu hình IoT, không thể bật bàn.');
-      return false;
-    }
+    final prefs = _prefs;
+    final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
 
     final success = await _executeWithTableLock(tableId, () async {
-      final controller = state.useSimulator
-          ? SimulatedBilliardIoTController() as BilliardIoTController
-          : RealBilliardIoTController();
-      _controllers[tableId] = controller;
-      try {
-        final connected = await controller.connect(iotConfig);
-        if (!connected && !ignoreIotError) return false;
-
-        if (connected) {
-          final turnedOn = await controller.turnOn();
-          if (!turnedOn && !ignoreIotError) return false;
+      if (desktopIp.isNotEmpty) {
+        try {
+          final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+          final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/iot/control'));
+          request.headers.contentType = ContentType.json;
+          final deviceId = prefs?.getString('device_id') ?? '';
+          if (deviceId.isNotEmpty) {
+            request.headers.add('x-device-id', deviceId);
+          }
+          request.write(jsonEncode({
+            'tableId': tableId,
+            'turnOn': true,
+          }));
+          final response = await request.close();
+          if (response.statusCode == 200) {
+            final body = await utf8.decodeStream(response);
+            final res = jsonDecode(body) as Map<String, dynamic>;
+            if (res['status'] == 1) {
+              return true;
+            }
+          }
+          return ignoreIotError;
+        } catch (e) {
+          print('Lỗi gửi lệnh bật relay tới desktop: $e');
+          return ignoreIotError;
         }
-        return true;
-      } catch (e) {
-        if (!ignoreIotError) return false;
+      } else {
+        print('Không có kết nối tới desktop, không thực thi điều khiển relay IoT cục bộ.');
         return true;
       }
     });
@@ -1143,38 +1169,38 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   Future<bool> deactivateTable(String tableId, {bool ignoreIotError = false}) async {
-    final iotConfig = state.iotConfigs[tableId];
-    if (iotConfig == null) {
-      print('Bàn chưa cấu hình IoT, không thể tắt bàn.');
-      return false;
-    }
+    final prefs = _prefs;
+    final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
 
     final success = await _executeWithTableLock(tableId, () async {
-      var controller = _controllers[tableId];
-      if (controller == null) {
-        controller = state.useSimulator
-            ? SimulatedBilliardIoTController() as BilliardIoTController
-            : RealBilliardIoTController();
-        _controllers[tableId] = controller;
+      if (desktopIp.isNotEmpty) {
         try {
-          final connected = await controller.connect(iotConfig);
-          if (!connected && !ignoreIotError) return false;
+          final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+          final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/iot/control'));
+          request.headers.contentType = ContentType.json;
+          final deviceId = prefs?.getString('device_id') ?? '';
+          if (deviceId.isNotEmpty) {
+            request.headers.add('x-device-id', deviceId);
+          }
+          request.write(jsonEncode({
+            'tableId': tableId,
+            'turnOn': false,
+          }));
+          final response = await request.close();
+          if (response.statusCode == 200) {
+            final body = await utf8.decodeStream(response);
+            final res = jsonDecode(body) as Map<String, dynamic>;
+            if (res['status'] == 1) {
+              return true;
+            }
+          }
+          return ignoreIotError;
         } catch (e) {
-          print('Lỗi kết nối IoT khi tắt bàn: $e');
-          if (!ignoreIotError) return false;
+          print('Lỗi gửi lệnh tắt relay tới desktop: $e');
+          return ignoreIotError;
         }
-      }
-
-      try {
-        final turnedOff = await controller.turnOff();
-        if (!turnedOff && !ignoreIotError) return false;
-
-        await controller.disconnect();
-        _controllers.remove(tableId);
-        return true;
-      } catch (e) {
-        print('Lỗi tắt IoT controller khi tắt bàn: $e');
-        if (!ignoreIotError) return false;
+      } else {
+        print('Không có kết nối tới desktop, không thực thi điều khiển relay IoT cục bộ.');
         return true;
       }
     });
@@ -1261,38 +1287,45 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   Future<bool> deactivateTableAndFreezeInvoice(String tableId, {bool ignoreIotError = false}) async {
-    final iotConfig = state.iotConfigs[tableId];
-    if (iotConfig == null) {
-      print('Bàn chưa cấu hình IoT, không thể tắt bàn và treo hóa đơn.');
-      return false;
-    }
+    final prefs = _prefs;
+    final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
 
     final success = await _executeWithTableLock(tableId, () async {
-      var controller = _controllers[tableId];
-      if (controller == null) {
-        controller = state.useSimulator
-            ? SimulatedBilliardIoTController() as BilliardIoTController
-            : RealBilliardIoTController();
-        _controllers[tableId] = controller;
-        try {
-          final connected = await controller.connect(iotConfig);
-          if (!connected && !ignoreIotError) return false;
-        } catch (e) {
-          print('Lỗi kết nối IoT khi tắt bàn và treo hóa đơn: $e');
-          if (!ignoreIotError) return false;
+      if (desktopIp.isNotEmpty) {
+        while (true) {
+          try {
+            final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+            final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/iot/control'));
+            request.headers.contentType = ContentType.json;
+            final deviceId = prefs?.getString('device_id') ?? '';
+            if (deviceId.isNotEmpty) {
+              request.headers.add('x-device-id', deviceId);
+            }
+            request.write(jsonEncode({
+              'tableId': tableId,
+              'turnOn': false,
+            }));
+            final response = await request.close();
+            if (response.statusCode == 200) {
+              final body = await utf8.decodeStream(response);
+              final res = jsonDecode(body) as Map<String, dynamic>;
+              if (res['status'] == 1) {
+                return true;
+              }
+            }
+            if (ignoreIotError) return true;
+            print('Lỗi gửi lệnh tắt relay tới desktop khi treo, đang thử lại sau 2 giây...');
+            await Future.delayed(const Duration(seconds: 2));
+            continue;
+          } catch (e) {
+            print('Lỗi gửi lệnh tắt relay tới desktop khi treo: $e, đang thử lại sau 2 giây...');
+            if (ignoreIotError) return true;
+            await Future.delayed(const Duration(seconds: 2));
+            continue;
+          }
         }
-      }
-
-      try {
-        final turnedOff = await controller.turnOff();
-        if (!turnedOff && !ignoreIotError) return false;
-
-        await controller.disconnect();
-        _controllers.remove(tableId);
-        return true;
-      } catch (e) {
-        print('Lỗi tắt IoT controller khi tắt bàn và treo hóa đơn: $e');
-        if (!ignoreIotError) return false;
+      } else {
+        print('Không có kết nối tới desktop, không thực thi điều khiển relay IoT cục bộ.');
         return true;
       }
     });

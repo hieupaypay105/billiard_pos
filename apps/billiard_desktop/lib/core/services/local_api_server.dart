@@ -177,6 +177,19 @@ class LocalApiServer {
             } else {
               await _sendError(request, HttpStatus.badRequest, 'Missing method');
             }
+          } else if (path == '/api/iot/control' && request.method == 'POST') {
+            final body = await _readBody(request);
+            final tableId = body['tableId'] as String?;
+            final turnOn = body['turnOn'] as bool?;
+            if (tableId != null && turnOn != null) {
+              final success = await _ref.read(tablesProvider.notifier).controlRelay(tableId, turnOn);
+              await _sendJson(request, {
+                'status': success ? 1 : 0,
+                'message': success ? 'Relay command executed' : 'Failed to execute relay command',
+              });
+            } else {
+              await _sendError(request, HttpStatus.badRequest, 'Missing tableId or turnOn');
+            }
           } else {
             await _sendError(request, HttpStatus.notFound, 'Not Found');
           }

@@ -668,11 +668,12 @@ class TablesNotifier extends StateNotifier<TablesState> {
               }
               
               final newStatus = tData['status']?.toString() ?? 'idle';
+              final bool keepActive = t.status == 'active' && t.currentOrderId != null;
               
               restoredTables[i] = t.copyWith(
-                status: newStatus,
-                currentOrderId: tData['currentOrderId']?.toString(),
-                clearCurrentOrderId: tData['currentOrderId'] == null,
+                status: keepActive ? 'active' : newStatus,
+                currentOrderId: keepActive ? t.currentOrderId : tData['currentOrderId']?.toString(),
+                clearCurrentOrderId: !keepActive && tData['currentOrderId'] == null,
               );
 
               // Sync relay state based on status change from mobile - Bỏ qua đồng bộ IoT từ server theo yêu cầu
@@ -730,6 +731,21 @@ class TablesNotifier extends StateNotifier<TablesState> {
           (data['tableNotes'] as Map<String, dynamic>).forEach((k, v) {
             restoredNotes[k] = v.toString();
           });
+        }
+
+        // Ensure all active tables have a start time and order list initialized
+        for (final t in restoredTables) {
+          if (t.status == 'active') {
+            if (!restoredStartTimes.containsKey(t.id)) {
+              restoredStartTimes[t.id] = t.updatedAt ?? DateTime.now();
+            }
+            if (!restoredOrders.containsKey(t.id)) {
+              restoredOrders[t.id] = [];
+            }
+            if (!restoredPendingOrders.containsKey(t.id)) {
+              restoredPendingOrders[t.id] = [];
+            }
+          }
         }
 
         final currentSelectedUnpaidId = state.selectedUnpaidInvoiceId;
@@ -1057,6 +1073,52 @@ class TablesNotifier extends StateNotifier<TablesState> {
     });
   }
 
+  Future<bool> controlRelay(String tableId, bool turnOn) async {
+    var success = false;
+    await _executeWithTableLock(tableId, () async {
+      final iotConfig = state.iotConfigs[tableId];
+      if (iotConfig == null) {
+        print('Bàn chưa cấu hình IoT trên desktop: $tableId');
+        return;
+      }
+
+      if (turnOn) {
+        if (_controllers.containsKey(tableId) && _controllers[tableId]!.isConnected) {
+          try {
+            success = await _controllers[tableId]!.turnOn();
+          } catch (_) {}
+          return;
+        }
+        final controller = state.useSimulator
+            ? SimulatedBilliardIoTController() as BilliardIoTController
+            : RealBilliardIoTController();
+        _controllers[tableId] = controller;
+        try {
+          final connected = await controller.connect(iotConfig);
+          if (connected) {
+            success = await controller.turnOn();
+          }
+        } catch (e) {
+          print('Lỗi bật relay khi điều khiển từ mobile: $e');
+        }
+      } else {
+        final controller = _controllers[tableId];
+        if (controller != null) {
+          try {
+            success = await controller.turnOff();
+            await controller.disconnect();
+          } catch (e) {
+            print('Lỗi tắt relay khi điều khiển từ mobile: $e');
+          }
+          _controllers.remove(tableId);
+        } else {
+          success = true;
+        }
+      }
+    });
+    return success;
+  }
+
   Future<bool> activateTable(
     String tableId, {
     bool ignoreIotError = false,
@@ -1280,32 +1342,53 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
 
     final success = await _executeWithTableLock(tableId, () async {
-      var controller = _controllers[tableId];
-      if (controller == null) {
-        controller = state.useSimulator
-            ? SimulatedBilliardIoTController() as BilliardIoTController
-            : RealBilliardIoTController();
-        _controllers[tableId] = controller;
-        try {
-          final connected = await controller.connect(iotConfig);
-          if (!connected && !ignoreIotError) return false;
-        } catch (e) {
-          print('Lỗi kết nối IoT khi tắt bàn và treo hóa đơn: $e');
-          if (!ignoreIotError) return false;
+      while (true) {
+        var controller = _controllers[tableId];
+        if (controller == null) {
+          controller = state.useSimulator
+              ? SimulatedBilliardIoTController() as BilliardIoTController
+              : RealBilliardIoTController();
+          _controllers[tableId] = controller;
+          try {
+            final connected = await controller.connect(iotConfig);
+            if (!connected) {
+              if (ignoreIotError) return true;
+              print('Lỗi kết nối IoT khi tắt bàn và treo hóa đơn, đang thử lại sau 2 giây...');
+              await Future.delayed(const Duration(seconds: 2));
+              continue;
+            }
+          } catch (e) {
+            print('Lỗi kết nối IoT khi tắt bàn và treo hóa đơn: $e, đang thử lại sau 2 giây...');
+            if (ignoreIotError) return true;
+            await Future.delayed(const Duration(seconds: 2));
+            continue;
+          }
         }
-      }
 
-      try {
-        final turnedOff = await controller.turnOff();
-        if (!turnedOff && !ignoreIotError) return false;
+        try {
+          final turnedOff = await controller.turnOff();
+          if (!turnedOff) {
+            if (ignoreIotError) return true;
+            print('Lỗi tắt IoT controller khi tắt bàn và treo hóa đơn, đang thử lại sau 2 giây...');
+            await controller.disconnect();
+            _controllers.remove(tableId);
+            await Future.delayed(const Duration(seconds: 2));
+            continue;
+          }
 
-        await controller.disconnect();
-        _controllers.remove(tableId);
-        return true;
-      } catch (e) {
-        print('Lỗi tắt IoT controller khi tắt bàn và treo hóa đơn: $e');
-        if (!ignoreIotError) return false;
-        return true;
+          await controller.disconnect();
+          _controllers.remove(tableId);
+          return true;
+        } catch (e) {
+          print('Lỗi tắt IoT controller khi tắt bàn và treo hóa đơn: $e, đang thử lại sau 2 giây...');
+          if (ignoreIotError) return true;
+          try {
+            await controller.disconnect();
+          } catch (_) {}
+          _controllers.remove(tableId);
+          await Future.delayed(const Duration(seconds: 2));
+          continue;
+        }
       }
     });
 
