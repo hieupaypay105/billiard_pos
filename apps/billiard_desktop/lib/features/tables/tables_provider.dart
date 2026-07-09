@@ -2353,7 +2353,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
   Future<void> setTableMaintenance(String tableId, bool isMaintenance) async {
     if (_ref != null) {
       final user = _ref!.read(currentUserProvider);
-      if (user?.role != 'admin') {
+      final role = user?.role.toLowerCase() ?? '';
+      if (!role.contains('admin') && role != 'manager') {
         print('Cảnh báo: Chỉ tài khoản admin mới được phép bảo trì bàn.');
         return;
       }

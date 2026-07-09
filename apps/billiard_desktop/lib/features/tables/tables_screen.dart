@@ -1461,7 +1461,7 @@ class _InvoicePanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentUser = ref.watch(currentUserProvider);
-    final isAdmin = currentUser?.role == 'admin';
+    final isAdmin = (currentUser?.role.toLowerCase() ?? '').contains('admin') || currentUser?.role.toLowerCase() == 'manager';
     final products = tablesState.tableOrders[table.id] ?? [];
     final startTime = tablesState.tableStartTimes[table.id] ?? DateTime.now();
     final rate = tablesState.getTableHourlyRate(table);
@@ -3729,7 +3729,7 @@ class _IdleTablePanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentUser = ref.watch(currentUserProvider);
-    final isAdmin = currentUser?.role == 'admin';
+    final isAdmin = (currentUser?.role.toLowerCase() ?? '').contains('admin') || currentUser?.role.toLowerCase() == 'manager';
     final typeModel = tablesState.tableTypes.firstWhere(
       (t) => t.id == table.tableTypeId,
       orElse: () => TableTypeModel(
@@ -3794,7 +3794,8 @@ class _IdleTablePanel extends ConsumerWidget {
                   child: OutlinedButton.icon(
                     onPressed: () {
                       final currentUser = ref.read(currentUserProvider);
-                      if (currentUser?.role != 'admin') {
+                      final role = currentUser?.role.toLowerCase() ?? '';
+                      if (!role.contains('admin') && role != 'manager') {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
                             content: Text('Chỉ tài khoản Admin mới được cài đặt Relay IoT!'),
@@ -3822,7 +3823,8 @@ class _IdleTablePanel extends ConsumerWidget {
                 OutlinedButton.icon(
                   onPressed: () {
                     final currentUser = ref.read(currentUserProvider);
-                    if (currentUser?.role != 'admin') {
+                    final role = currentUser?.role.toLowerCase() ?? '';
+                    if (!role.contains('admin') && role != 'manager') {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('Chỉ tài khoản Admin mới được thay đổi trạng thái bảo trì!'),
@@ -4078,7 +4080,7 @@ class _IotConfigDialogState extends ConsumerState<IotConfigDialog> {
       final connected = await controller.connect(testConfig);
       if (!connected) {
         _appendLog('❌ KẾT NỐI THẤT BẠI!');
-        setState(() { _isTesting = false; });
+        if (mounted) setState(() { _isTesting = false; });
         logSub.cancel();
         return;
       }
@@ -4099,9 +4101,11 @@ class _IotConfigDialogState extends ConsumerState<IotConfigDialog> {
       _appendLog('❌ LỖI HỆ THỐNG: $e');
     } finally {
       logSub.cancel();
-      setState(() {
-        _isTesting = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isTesting = false;
+        });
+      }
     }
   }
 

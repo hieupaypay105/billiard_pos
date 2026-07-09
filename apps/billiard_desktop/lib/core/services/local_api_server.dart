@@ -37,6 +37,18 @@ class LocalApiServer {
               final socket = await WebSocketTransformer.upgrade(request);
               _clients.add(socket);
               print("Mobile client connected via WebSocket");
+
+              // Gửi session hiện tại ngay khi Mobile kết nối để đồng bộ trạng thái bàn tức thì
+              try {
+                final currentSession = await _localDb.getSetting('billiard_active_session');
+                socket.add(jsonEncode({
+                  'event': 'session_updated',
+                  'session': currentSession ?? '{}',
+                }));
+              } catch (e) {
+                print("Lỗi gửi session khởi tạo cho Mobile: $e");
+              }
+
               socket.listen((msg) {}, onDone: () {
                 _clients.remove(socket);
                 print("Mobile client disconnected");

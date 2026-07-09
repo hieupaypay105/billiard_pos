@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'local_db_service.dart';
 import 'api_client.dart';
@@ -139,22 +140,46 @@ class SyncService {
               (t['id']?.toString() ?? t['table_id']?.toString() ?? '').isNotEmpty)
           .toList();
 
+      // Đọc session hiện tại để biết bàn nào đang thực sự active theo session local.
+      // Cần giữ lại trạng thái này sau khi xóa + ghi lại SQLite từ server.
+      final Set<String> locallyActiveTables = {};
+      final Map<String, String?> locallyActiveOrderIds = {};
+      try {
+        final sessionStr = await _localDb.getSetting('billiard_active_session');
+        if (sessionStr != null && sessionStr.isNotEmpty && sessionStr != '{}') {
+          final sessionData = jsonDecode(sessionStr) as Map<String, dynamic>;
+          final tableStatuses = sessionData['tableStatuses'] as Map<String, dynamic>?;
+          if (tableStatuses != null) {
+            tableStatuses.forEach((tableId, data) {
+              final tableData = data as Map<String, dynamic>?;
+              if (tableData != null && tableData['status'] == 'active') {
+                locallyActiveTables.add(tableId);
+                locallyActiveOrderIds[tableId] = tableData['currentOrderId']?.toString();
+              }
+            });
+          }
+        }
+      } catch (_) {}
+
       // ⚠️ Xóa cache cũ TRƯỚC khi ghi mới để tránh dữ liệu lỗi thời
       await _localDb.clearCachedTables();
       for (final table in validTables) {
         final id = table['id']?.toString() ?? table['table_id']!.toString();
-        // ⚠️ Luôn reset trạng thái về 'idle' khi tải từ server:
-        // Trạng thái active/playing được quản lý bởi session local trên Desktop,
-        // không phải server. Nếu để trạng thái 'active' từ server ghi vào SQLite,
-        // Desktop sẽ tự động bật bàn đó khi loadTables().
         final sanitized = Map<String, dynamic>.from(table);
-        if (sanitized['status'] == 'active') {
+
+        if (locallyActiveTables.contains(id)) {
+          // Bàn này đang chơi trong session local -> giữ nguyên trạng thái active
+          sanitized['status'] = 'active';
+          sanitized['current_order_id'] = locallyActiveOrderIds[id];
+        } else if (sanitized['status'] == 'active') {
+          // Bàn active trên server nhưng không có trong session local -> dữ liệu bẩn, reset về idle
           sanitized['status'] = 'idle';
           sanitized['current_order_id'] = null;
         }
+
         await _localDb.cacheTable(id, sanitized);
       }
-      _log('Đã lưu offline ${validTables.length} bàn.');
+      _log('Đã lưu offline ${validTables.length} bàn (giữ ${locallyActiveTables.length} bàn đang chơi theo session local).');
       totalPulled += validTables.length;
     } catch (e) {
       _log('LỖI tải danh sách bàn: $e');
