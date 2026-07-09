@@ -1174,30 +1174,37 @@ class TablesNotifier extends StateNotifier<TablesState> {
 
     final success = await _executeWithTableLock(tableId, () async {
       if (desktopIp.isNotEmpty) {
-        try {
-          final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
-          final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/iot/control'));
-          request.headers.contentType = ContentType.json;
-          final deviceId = prefs?.getString('device_id') ?? '';
-          if (deviceId.isNotEmpty) {
-            request.headers.add('x-device-id', deviceId);
-          }
-          request.write(jsonEncode({
-            'tableId': tableId,
-            'turnOn': false,
-          }));
-          final response = await request.close();
-          if (response.statusCode == 200) {
-            final body = await utf8.decodeStream(response);
-            final res = jsonDecode(body) as Map<String, dynamic>;
-            if (res['status'] == 1) {
-              return true;
+        while (true) {
+          try {
+            final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+            final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/iot/control'));
+            request.headers.contentType = ContentType.json;
+            final deviceId = prefs?.getString('device_id') ?? '';
+            if (deviceId.isNotEmpty) {
+              request.headers.add('x-device-id', deviceId);
             }
+            request.write(jsonEncode({
+              'tableId': tableId,
+              'turnOn': false,
+            }));
+            final response = await request.close();
+            if (response.statusCode == 200) {
+              final body = await utf8.decodeStream(response);
+              final res = jsonDecode(body) as Map<String, dynamic>;
+              if (res['status'] == 1) {
+                return true;
+              }
+            }
+            if (ignoreIotError) return true;
+            print('Lỗi gửi lệnh tắt relay tới desktop, đang thử lại sau 2 giây...');
+            await Future.delayed(const Duration(seconds: 2));
+            continue;
+          } catch (e) {
+            print('Lỗi gửi lệnh tắt relay tới desktop: $e, đang thử lại sau 2 giây...');
+            if (ignoreIotError) return true;
+            await Future.delayed(const Duration(seconds: 2));
+            continue;
           }
-          return ignoreIotError;
-        } catch (e) {
-          print('Lỗi gửi lệnh tắt relay tới desktop: $e');
-          return ignoreIotError;
         }
       } else {
         print('Không có kết nối tới desktop, không thực thi điều khiển relay IoT cục bộ.');

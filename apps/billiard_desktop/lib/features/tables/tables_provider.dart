@@ -1224,32 +1224,53 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
 
     final success = await _executeWithTableLock(tableId, () async {
-      var controller = _controllers[tableId];
-      if (controller == null) {
-        controller = state.useSimulator
-            ? SimulatedBilliardIoTController() as BilliardIoTController
-            : RealBilliardIoTController();
-        _controllers[tableId] = controller;
-        try {
-          final connected = await controller.connect(iotConfig);
-          if (!connected && !ignoreIotError) return false;
-        } catch (e) {
-          print('Lỗi kết nối IoT khi tắt bàn: $e');
-          if (!ignoreIotError) return false;
+      while (true) {
+        var controller = _controllers[tableId];
+        if (controller == null) {
+          controller = state.useSimulator
+              ? SimulatedBilliardIoTController() as BilliardIoTController
+              : RealBilliardIoTController();
+          _controllers[tableId] = controller;
+          try {
+            final connected = await controller.connect(iotConfig);
+            if (!connected) {
+              if (ignoreIotError) return true;
+              print('Lỗi kết nối IoT khi tắt bàn, đang thử lại sau 2 giây...');
+              await Future.delayed(const Duration(seconds: 2));
+              continue;
+            }
+          } catch (e) {
+            print('Lỗi kết nối IoT khi tắt bàn: $e, đang thử lại sau 2 giây...');
+            if (ignoreIotError) return true;
+            await Future.delayed(const Duration(seconds: 2));
+            continue;
+          }
         }
-      }
 
-      try {
-        final turnedOff = await controller.turnOff();
-        if (!turnedOff && !ignoreIotError) return false;
+        try {
+          final turnedOff = await controller.turnOff();
+          if (!turnedOff) {
+            if (ignoreIotError) return true;
+            print('Lỗi tắt IoT controller khi tắt bàn, đang thử lại sau 2 giây...');
+            await controller.disconnect();
+            _controllers.remove(tableId);
+            await Future.delayed(const Duration(seconds: 2));
+            continue;
+          }
 
-        await controller.disconnect();
-        _controllers.remove(tableId);
-        return true;
-      } catch (e) {
-        print('Lỗi tắt IoT controller khi tắt bàn: $e');
-        if (!ignoreIotError) return false;
-        return true;
+          await controller.disconnect();
+          _controllers.remove(tableId);
+          return true;
+        } catch (e) {
+          print('Lỗi tắt IoT controller khi tắt bàn: $e, đang thử lại sau 2 giây...');
+          if (ignoreIotError) return true;
+          try {
+            await controller.disconnect();
+          } catch (_) {}
+          _controllers.remove(tableId);
+          await Future.delayed(const Duration(seconds: 2));
+          continue;
+        }
       }
     });
 
