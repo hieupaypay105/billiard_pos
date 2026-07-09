@@ -2360,6 +2360,18 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
     final index = state.tables.indexWhere((t) => t.id == tableId);
     if (index < 0) return;
+
+    if (_apiClient != null && _isOnline) {
+      try {
+        await _apiClient!.updateTableStatus(
+          tableId,
+          isMaintenance ? 'maintenance' : 'idle',
+        );
+      } catch (e) {
+        print('Lỗi đồng bộ trạng thái bảo trì lên backend: $e');
+      }
+    }
+
     final updated = List<TableModel>.from(state.tables);
     updated[index] = state.tables[index].copyWith(
       status: isMaintenance ? 'maintenance' : 'idle',
