@@ -143,7 +143,16 @@ class SyncService {
       await _localDb.clearCachedTables();
       for (final table in validTables) {
         final id = table['id']?.toString() ?? table['table_id']!.toString();
-        await _localDb.cacheTable(id, table);
+        // ⚠️ Luôn reset trạng thái về 'idle' khi tải từ server:
+        // Trạng thái active/playing được quản lý bởi session local trên Desktop,
+        // không phải server. Nếu để trạng thái 'active' từ server ghi vào SQLite,
+        // Desktop sẽ tự động bật bàn đó khi loadTables().
+        final sanitized = Map<String, dynamic>.from(table);
+        if (sanitized['status'] == 'active') {
+          sanitized['status'] = 'idle';
+          sanitized['current_order_id'] = null;
+        }
+        await _localDb.cacheTable(id, sanitized);
       }
       _log('Đã lưu offline ${validTables.length} bàn.');
       totalPulled += validTables.length;

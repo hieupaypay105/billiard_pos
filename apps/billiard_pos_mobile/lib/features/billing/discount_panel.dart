@@ -75,6 +75,7 @@ class _DiscountPanelState extends ConsumerState<DiscountPanel> {
     if (_codeCtrl.text.trim().isEmpty) return;
     setState(() { _isVerifying = true; _errorMsg = null; });
     await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
     // Mock: BIDA10 = 10% off total bill
     if (_codeCtrl.text.trim().toUpperCase() == 'BIDA10') {
       setState(() { 

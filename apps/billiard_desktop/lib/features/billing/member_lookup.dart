@@ -109,23 +109,31 @@ class _MemberLookupDialogState extends ConsumerState<MemberLookupDialog> {
                          double.tryParse(rawMember['discount']?.toString() ?? '') ?? 0.0;
         final totalPoints = int.tryParse(rawMember['total_points']?.toString() ?? '') ?? 0;
 
-        setState(() {
-          _foundMember = {
-            'id': id,
-            'full_name': fullName,
-            'phone_number': phoneNumber,
-            'tier': tier,
-            'total_points': totalPoints,
-            'discount': discount,
-          };
-        });
+        if (mounted) {
+          setState(() {
+            _foundMember = {
+              'id': id,
+              'full_name': fullName,
+              'phone_number': phoneNumber,
+              'tier': tier,
+              'total_points': totalPoints,
+              'discount': discount,
+            };
+          });
+        }
       } else {
-        setState(() => _notFoundMsg = 'Không tìm thấy thành viên');
+        if (mounted) {
+          setState(() => _notFoundMsg = 'Không tìm thấy thành viên');
+        }
       }
     } catch (e) {
-      setState(() => _notFoundMsg = 'Lỗi tra cứu: $e');
+      if (mounted) {
+        setState(() => _notFoundMsg = 'Lỗi tra cứu: $e');
+      }
     } finally {
-      setState(() => _isSearching = false);
+      if (mounted) {
+        setState(() => _isSearching = false);
+      }
     }
   }
 

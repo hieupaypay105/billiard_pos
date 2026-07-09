@@ -513,15 +513,16 @@ class TablesNotifier extends StateNotifier<TablesState> {
             }
             _lastSessionStr = sessionStr;
 
+            if (res['tables'] != null) {
+              await _localDb!.clearCachedTables();
+              for (final t in res['tables'] as List) {
+                final tableMap = Map<String, dynamic>.from(t as Map);
+                await _localDb!.cacheTable(tableMap['id'].toString(), tableMap);
+              }
+            }
+
             // Write caches to local storage only during explicit/initial reload to avoid UI freeze/stutter
             if (!isSilent) {
-              if (res['tables'] != null) {
-                await _localDb!.clearCachedTables();
-                for (final t in res['tables'] as List) {
-                  final tableMap = Map<String, dynamic>.from(t as Map);
-                  await _localDb!.cacheTable(tableMap['id'].toString(), tableMap);
-                }
-              }
               if (res['products'] != null) {
                 await _localDb!.clearCachedProducts();
                 await _localDb!.cacheProducts(List<Map<String, dynamic>>.from(

@@ -127,6 +127,26 @@ class LocalApiServer {
             final body = await _readBody(request);
             final session = body['session'] as String?;
             if (session != null) {
+              try {
+                final decodedSession = jsonDecode(session) as Map<String, dynamic>;
+                final tableStatuses = decodedSession['tableStatuses'] as Map<String, dynamic>?;
+                if (tableStatuses != null) {
+                  final cachedTables = await _localDb.getCachedTables();
+                  for (final tableMap in cachedTables) {
+                    final tableId = tableMap['id']?.toString() ?? '';
+                    if (tableStatuses.containsKey(tableId)) {
+                      final tData = tableStatuses[tableId] as Map<String, dynamic>;
+                      tableMap['status'] = tData['status']?.toString() ?? 'idle';
+                      tableMap['current_order_id'] = tData['currentOrderId']?.toString();
+                      tableMap['updated_at'] = DateTime.now().toIso8601String();
+                      await _localDb.cacheTable(tableId, tableMap);
+                    }
+                  }
+                }
+              } catch (e) {
+                print("Lỗi phân tích và cập nhật table statuses từ mobile session: $e");
+              }
+
               await _localDb.setSetting('billiard_active_session', session);
               // Trigger reload in desktop app
               _ref.read(tablesProvider.notifier).loadTables();
