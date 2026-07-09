@@ -570,6 +570,25 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
   }
 
+  Future<void> _updateTableCache(String tableId, String status, String? orderId) async {
+    if (_localDb == null) return;
+    try {
+      final cachedTables = await _localDb!.getCachedTables();
+      final tableMap = cachedTables.firstWhere(
+        (t) => t['id']?.toString() == tableId,
+        orElse: () => {},
+      );
+      if (tableMap.isNotEmpty) {
+        tableMap['status'] = status;
+        tableMap['current_order_id'] = orderId;
+        tableMap['updated_at'] = DateTime.now().toIso8601String();
+        await _localDb!.cacheTable(tableId, tableMap);
+      }
+    } catch (e) {
+      print('Lỗi cập nhật cache table SQLite: $e');
+    }
+  }
+
   Future<void> _restoreSessionState([List<TableModel>? previousTables]) async {
     if (_localDb == null) return;
     try {
@@ -648,48 +667,19 @@ class TablesNotifier extends StateNotifier<TablesState> {
           });
         }
 
-        // Restore table statuses in tables list
+        // Restore table statuses in tables list (trusting DB status as sole source of truth)
         final restoredTables = List<TableModel>.from(state.tables);
-        if (data['tableStatuses'] != null) {
-          final statusesMap = data['tableStatuses'] as Map<String, dynamic>;
-          for (int i = 0; i < restoredTables.length; i++) {
-            final t = restoredTables[i];
-            if (statusesMap.containsKey(t.id)) {
-              final tData = statusesMap[t.id] as Map<String, dynamic>;
-              
-              // Get actual old status from previousTables if available
-              String oldStatus = t.status;
-              if (previousTables != null && previousTables.isNotEmpty) {
-                final oldTable = previousTables.firstWhere(
-                  (pt) => pt.id == t.id,
-                  orElse: () => t,
-                );
-                oldStatus = oldTable.status;
-              }
-              
-              final newStatus = tData['status']?.toString() ?? 'idle';
-              final bool keepActive = t.status == 'active' && t.currentOrderId != null;
-              
-              restoredTables[i] = t.copyWith(
-                status: keepActive ? 'active' : newStatus,
-                currentOrderId: keepActive ? t.currentOrderId : tData['currentOrderId']?.toString(),
-                clearCurrentOrderId: !keepActive && tData['currentOrderId'] == null,
-              );
-
-              // Sync relay state based on status change from mobile - Bỏ qua đồng bộ IoT từ server theo yêu cầu
-              /*
-              if (oldStatus != newStatus) {
-                if (newStatus == 'active') {
-                  _syncRelayState(t.id, true);
-                } else if (oldStatus == 'active') {
-                  _syncRelayState(t.id, false);
-                }
-              } else if (newStatus == 'active' && !_controllers.containsKey(t.id)) {
-                // On first load/restore or if controller was lost, make sure active table has relay ON
-                _syncRelayState(t.id, true);
-              }
-              */
-            }
+        for (int i = 0; i < restoredTables.length; i++) {
+          final t = restoredTables[i];
+          final bool isDbActive = t.status == 'active' && t.currentOrderId != null;
+          
+          if (isDbActive) {
+            restoredTables[i] = t;
+          } else {
+            restoredTables[i] = t.copyWith(
+              status: 'idle',
+              clearCurrentOrderId: true,
+            );
           }
         }
 
@@ -733,7 +723,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
           });
         }
 
-        // Ensure all active tables have a start time and order list initialized
+        // Synchronize and clean up session data maps based on table status
         for (final t in restoredTables) {
           if (t.status == 'active') {
             if (!restoredStartTimes.containsKey(t.id)) {
@@ -745,6 +735,19 @@ class TablesNotifier extends StateNotifier<TablesState> {
             if (!restoredPendingOrders.containsKey(t.id)) {
               restoredPendingOrders[t.id] = [];
             }
+          } else {
+            // Idle table -> clean up all outdated active session maps
+            restoredStartTimes.remove(t.id);
+            restoredOrders.remove(t.id);
+            restoredPendingOrders.remove(t.id);
+            restoredDiscounts.remove(t.id);
+            restoredPlayDiscounts.remove(t.id);
+            restoredServiceDiscounts.remove(t.id);
+            restoredBillDiscounts.remove(t.id);
+            restoredMembers.remove(t.id);
+            restoredExtraAmounts.remove(t.id);
+            restoredExtraMinutes.remove(t.id);
+            restoredNotes.remove(t.id);
           }
         }
 
@@ -1212,6 +1215,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tablePendingOrders: updatedPending,
       tableServerOrderIds: updatedServerOrderIds,
     );
+    await _updateTableCache(tableId, 'active', serverOrderId);
     await _saveSessionState();
     return true;
   }
@@ -1351,6 +1355,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       tableExtraPlayMinutes: updatedExtraMinutes,
       tableNotes: updatedNotes,
     );
+    await _updateTableCache(tableId, 'idle', null);
     await _saveSessionState();
     return true;
   }
@@ -1601,6 +1606,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       }
     }
 
+    await _updateTableCache(tableId, 'idle', null);
     await _saveSessionState();
     return true;
   }
@@ -1875,6 +1881,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
       }
     }
 
+    await _updateTableCache(sourceTableId, 'idle', null);
+    await _updateTableCache(targetTableId, 'active', targetTable.currentOrderId ?? sourceTable.currentOrderId);
     await _saveSessionState();
     return true;
   }
@@ -2047,6 +2055,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       }
     }
 
+    await _updateTableCache(sourceTableId, 'idle', null);
     await _saveSessionState();
     return true;
   }
@@ -2162,6 +2171,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       }
     }
 
+    await _updateTableCache(targetTableId, 'active', invoiceId);
     await _saveSessionState();
     return true;
   }
@@ -2340,7 +2350,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
   }
 
-  void setTableMaintenance(String tableId, bool isMaintenance) {
+  Future<void> setTableMaintenance(String tableId, bool isMaintenance) async {
     if (_ref != null) {
       final user = _ref!.read(currentUserProvider);
       if (user?.role != 'admin') {
@@ -2355,6 +2365,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       status: isMaintenance ? 'maintenance' : 'idle',
     );
     state = state.copyWith(tables: updated);
+    await _updateTableCache(tableId, isMaintenance ? 'maintenance' : 'idle', null);
     _saveSessionState();
   }
 
