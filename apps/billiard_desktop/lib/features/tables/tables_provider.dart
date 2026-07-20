@@ -194,7 +194,7 @@ class TablesState {
     this.tableMembers = const {},
     this.isLoading = false,
     this.error,
-    this.useSimulator = false,
+    this.useSimulator = true,
     this.tableTypes = const [
       TableTypeModel(id: 1, typeName: 'Pool (Bàn lỗ)'),
       // TableTypeModel(id: 2, typeName: 'Carom (Băng)'),
@@ -1011,7 +1011,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
       hourlyRates: hourlyRates,
       tableCustomRates: tableCustomRates,
       selectedTableId: tables.first.id,
-      useSimulator: false,
+      useSimulator: true,
     );
   }
 
@@ -1037,9 +1037,26 @@ class TablesNotifier extends StateNotifier<TablesState> {
     state = state.copyWith(useSimulator: useSimulator);
   }
 
+  IotConfigModel? _getIotConfigOrMock(String tableId) {
+    final config = state.iotConfigs[tableId];
+    if (config != null) return config;
+    if (state.useSimulator) {
+      return IotConfigModel(
+        id: tableId.hashCode,
+        tableId: tableId,
+        connectionType: 'serial',
+        port: 'COM1',
+        relayChannel: 1,
+        commandOn: '01050000FF008C3A',
+        commandOff: '010500000000CDCA',
+      );
+    }
+    return null;
+  }
+
   Future<void> _syncRelayState(String tableId, bool turnOn) async {
     await _executeWithTableLock(tableId, () async {
-      final iotConfig = state.iotConfigs[tableId];
+      final iotConfig = _getIotConfigOrMock(tableId);
       if (iotConfig == null) return;
 
       if (turnOn) {
@@ -1079,7 +1096,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
   Future<bool> controlRelay(String tableId, bool turnOn) async {
     var success = false;
     await _executeWithTableLock(tableId, () async {
-      final iotConfig = state.iotConfigs[tableId];
+      final iotConfig = _getIotConfigOrMock(tableId);
       if (iotConfig == null) {
         print('Bàn chưa cấu hình IoT trên desktop: $tableId');
         return;
@@ -1131,7 +1148,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final tableIndex = state.tables.indexWhere((t) => t.id == tableId);
     if (tableIndex < 0) return false;
 
-    final iotConfig = state.iotConfigs[tableId];
+    final iotConfig = _getIotConfigOrMock(tableId);
     if (iotConfig == null) {
       print('Bàn chưa cấu hình IoT, không thể bật bàn.');
       return false;
@@ -1221,7 +1238,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   Future<bool> deactivateTable(String tableId, {bool ignoreIotError = false}) async {
-    final iotConfig = state.iotConfigs[tableId];
+    final iotConfig = _getIotConfigOrMock(tableId);
     if (iotConfig == null) {
       print('Bàn chưa cấu hình IoT, không thể tắt bàn.');
       return false;
@@ -1361,7 +1378,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   Future<bool> deactivateTableAndFreezeInvoice(String tableId, {bool ignoreIotError = false}) async {
-    final iotConfig = state.iotConfigs[tableId];
+    final iotConfig = _getIotConfigOrMock(tableId);
     if (iotConfig == null) {
       print('Bàn chưa cấu hình IoT, không thể tắt bàn và treo hóa đơn.');
       return false;
@@ -1733,7 +1750,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
     if (sourceTable.status != 'active' || targetTable.status != 'idle')
       return false;
 
-    final iotConfig = state.iotConfigs[targetTableId];
+    final iotConfig = _getIotConfigOrMock(targetTableId);
     if (iotConfig != null) {
       final controller = state.useSimulator
           ? SimulatedBilliardIoTController() as BilliardIoTController
@@ -2075,7 +2092,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final targetTable = state.tables[targetIndex];
     if (targetTable.status != 'idle') return false;
 
-    final iotConfig = state.iotConfigs[targetTableId];
+    final iotConfig = _getIotConfigOrMock(targetTableId);
     if (iotConfig != null) {
       final controller = state.useSimulator
           ? SimulatedBilliardIoTController() as BilliardIoTController

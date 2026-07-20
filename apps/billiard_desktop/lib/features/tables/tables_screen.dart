@@ -318,13 +318,44 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // ── HEADER ──
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Sơ đồ bàn', style: AppTextStyles.headlineLarge),
-                          Text(
-                            '$activeCnt đang chơi · $idleCnt trống',
-                            style: AppTextStyles.bodySmall,
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Sơ đồ bàn', style: AppTextStyles.headlineLarge),
+                              Text(
+                                '$activeCnt đang chơi · $idleCnt trống',
+                                style: AppTextStyles.bodySmall,
+                              ),
+                            ],
+                          ),
+                          // Global IoT Simulator Toggle
+                          Row(
+                            children: [
+                              Icon(
+                                tablesState.useSimulator ? Icons.sports_esports : Icons.router,
+                                color: tablesState.useSimulator ? AppColors.success : AppColors.textSecondary,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Giả lập IoT',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: tablesState.useSimulator ? AppColors.success : AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Switch(
+                                value: tablesState.useSimulator,
+                                activeColor: AppColors.success,
+                                onChanged: (val) {
+                                  ref.read(tablesProvider.notifier).toggleSimulator(val);
+                                },
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -4266,6 +4297,61 @@ class _IotConfigDialogState extends ConsumerState<IotConfigDialog> {
                 ),
               ],
             ),
+            const SizedBox(height: 20),
+            
+            // IoT Simulator Toggle
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: isSim ? AppColors.successLight.withOpacity(0.4) : AppColors.surfaceVariant.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isSim ? AppColors.success : AppColors.border,
+                  width: 1.5,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    isSim ? Icons.sports_esports : Icons.router,
+                    color: isSim ? AppColors.success : AppColors.textSecondary,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Chế độ giả lập IoT (Simulator)',
+                          style: AppTextStyles.labelLarge.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: isSim ? AppColors.success : AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isSim
+                              ? 'Hệ thống giả lập tín hiệu rơ-le bật/tắt (khuyên dùng khi thử nghiệm)'
+                              : 'Kết nối trực tiếp tới cổng COM/mạng TCP vật lý thực tế',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: isSim ? AppColors.success : AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: isSim,
+                    activeColor: AppColors.success,
+                    onChanged: (val) {
+                      ref.read(tablesProvider.notifier).toggleSimulator(val);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            
             const SizedBox(height: 20),
             
             Expanded(
