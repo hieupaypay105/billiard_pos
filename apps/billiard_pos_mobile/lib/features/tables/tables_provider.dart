@@ -374,7 +374,13 @@ class TablesNotifier extends StateNotifier<TablesState> {
   String? _connectedIp;
   String? _lastSessionStr;
 
-  bool get _isOnline => _syncService?.isOnline ?? true;
+  bool get _isOnline {
+    final desktopIp = _prefs?.getString('desktop_server_ip') ?? '';
+    if (desktopIp.isNotEmpty) {
+      return false;
+    }
+    return _syncService?.isOnline ?? true;
+  }
 
   Future<T> _executeWithTableLock<T>(String tableId, Future<T> Function() action) async {
     final previous = _tableSyncLocks[tableId] ?? Future.value();

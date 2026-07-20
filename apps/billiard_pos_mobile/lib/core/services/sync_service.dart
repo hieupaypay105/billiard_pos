@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'local_db_service.dart';
 import 'api_client.dart';
 
@@ -52,8 +53,14 @@ class SyncService {
           _statusController.add(newStatus);
           _log('Network status changed: ${newStatus.name.toUpperCase()}');
           if (newStatus == ConnectivityStatus.online) {
-            await _syncPendingRecords();
-            await pullOnlineDataToOffline();
+            final prefs = await SharedPreferences.getInstance();
+            final desktopIp = prefs.getString('desktop_server_ip') ?? '';
+            if (desktopIp.isEmpty) {
+              await _syncPendingRecords();
+              await pullOnlineDataToOffline();
+            } else {
+              _log('Connected to Desktop Server. Auto cloud sync bypassed.');
+            }
           }
         }
       },
@@ -73,14 +80,29 @@ class SyncService {
 
     if (_currentStatus == ConnectivityStatus.online) {
       Future.microtask(() async {
-        await _syncPendingRecords();
-        await pullOnlineDataToOffline();
+        final prefs = await SharedPreferences.getInstance();
+        final desktopIp = prefs.getString('desktop_server_ip') ?? '';
+        if (desktopIp.isEmpty) {
+          await _syncPendingRecords();
+          await pullOnlineDataToOffline();
+        } else {
+          _log('Connected to Desktop Server. Initial cloud sync bypassed.');
+        }
       });
     }
   }
 
   /// Kích hoạt sync thủ công.
   Future<SyncResult> syncNow() async {
+    final prefs = await SharedPreferences.getInstance();
+    final desktopIp = prefs.getString('desktop_server_ip') ?? '';
+    if (desktopIp.isNotEmpty) {
+      return const SyncResult(
+        success: true,
+        message: 'Ứng dụng đang kết nối qua Desktop Server. Không cần đồng bộ trực tiếp.',
+        synced: 0,
+      );
+    }
     if (!isOnline) {
       return SyncResult(success: false, message: 'Không có kết nối mạng', synced: 0);
     }
@@ -123,6 +145,15 @@ class SyncService {
   /// Pull toàn bộ dữ liệu từ server (Online) về lưu trữ SQLite (Offline).
   /// Luôn xóa cache cũ trước khi ghi mới để tránh hiển thị dữ liệu lỗi thời.
   Future<SyncResult> pullOnlineDataToOffline() async {
+    final prefs = await SharedPreferences.getInstance();
+    final desktopIp = prefs.getString('desktop_server_ip') ?? '';
+    if (desktopIp.isNotEmpty) {
+      return const SyncResult(
+        success: true,
+        message: 'Ứng dụng đang kết nối qua Desktop Server. Bỏ qua tải dữ liệu trực tiếp.',
+        synced: 0,
+      );
+    }
     if (!isOnline) {
       return SyncResult(success: false, message: 'Không có kết nối mạng', synced: 0);
     }
