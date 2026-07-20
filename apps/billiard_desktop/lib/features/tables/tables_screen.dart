@@ -852,14 +852,25 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
 
       if (confirmActivate != true || !mounted) return;
 
-      final ok = await notifier.activateTable(table.id);
-      if (!ok && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Không thể bật bàn vì kết nối hoặc gửi lệnh đến Relay IoT thất bại.'),
-            backgroundColor: AppColors.error,
-          ),
-        );
+      try {
+        final ok = await notifier.activateTable(table.id);
+        if (!ok && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Không thể bật bàn vì kết nối hoặc gửi lệnh đến Relay IoT thất bại.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(_extractApiError(e)),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
       }
     } else if (table.status == 'active') {
       final forceDeactivate = await showDialog<bool>(
@@ -1208,14 +1219,38 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
                                           builder: (ctx) => _CancelInvoiceDialog(tableName: inv.tableName),
                                         );
                                         if (reason != null && reason.trim().isNotEmpty) {
-                                          ref.read(tablesProvider.notifier).cancelUnpaidInvoice(inv.id, reason.trim());
-                                          messenger.showSnackBar(SnackBar(
-                                            content: Text('Đã huỷ hóa đơn bàn "${inv.tableName}". Đang đồng bộ...'),
-                                            backgroundColor: AppColors.error,
-                                            behavior: SnackBarBehavior.floating,
-                                            width: 380,
-                                            duration: const Duration(seconds: 3),
-                                          ));
+                                          try {
+                                            await ref.read(tablesProvider.notifier).cancelUnpaidInvoice(inv.id, reason.trim());
+                                            messenger.showSnackBar(SnackBar(
+                                              content: Text('Đã huỷ hóa đơn bàn "${inv.tableName}". Đang đồng bộ...'),
+                                              backgroundColor: AppColors.error,
+                                              behavior: SnackBarBehavior.floating,
+                                              width: 380,
+                                              duration: const Duration(seconds: 3),
+                                            ));
+                                          } catch (e) {
+                                            if (context.mounted) {
+                                              showDialog(
+                                                context: context,
+                                                builder: (context) => AlertDialog(
+                                                  title: const Row(
+                                                    children: [
+                                                      Icon(Icons.error_outline, color: AppColors.error),
+                                                      SizedBox(width: 8),
+                                                      Text('Lỗi hủy hóa đơn'),
+                                                    ],
+                                                  ),
+                                                  content: Text(_extractApiError(e)),
+                                                  actions: [
+                                                    TextButton(
+                                                      onPressed: () => Navigator.of(context).pop(),
+                                                      child: const Text('Đóng'),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }
+                                          }
                                         }
                                       },
                                     ),
@@ -2220,18 +2255,49 @@ class _InvoicePanel extends ConsumerWidget {
             if (member != null) 'member': member,
           };
 
+          bool shouldProceed = true;
           try {
             await localDb.saveOrderLocally(orderId, payload);
             final syncResult = await syncService.syncNow();
-            if (!syncResult.success && syncResult.message.isNotEmpty && context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(syncResult.message),
-                backgroundColor: Colors.orange,
-                behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 4),
-              ));
+            if (!syncResult.success) {
+              if (syncResult.isNetworkError || !syncService.isOnline) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: const Text('Mất kết nối mạng. Đã lưu hóa đơn tại local, sẽ tự động đồng bộ khi có mạng trở lại.'),
+                    backgroundColor: Colors.orange,
+                    behavior: SnackBarBehavior.floating,
+                    duration: const Duration(seconds: 4),
+                  ));
+                }
+              } else {
+                shouldProceed = false;
+                await localDb.deletePendingOrder(orderId);
+                if (context.mounted) {
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Row(
+                        children: [
+                          Icon(Icons.error_outline, color: AppColors.error),
+                          SizedBox(width: 8),
+                          Text('Lỗi đồng bộ hóa đơn'),
+                        ],
+                      ),
+                      content: Text(syncResult.message),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Đóng'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              }
             }
           } catch (e) {
+            shouldProceed = false;
+            await localDb.deletePendingOrder(orderId);
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                 content: Text(_extractApiError(e)),
@@ -2240,8 +2306,9 @@ class _InvoicePanel extends ConsumerWidget {
                 duration: const Duration(seconds: 4),
               ));
             }
-            rethrow;
           }
+
+          if (!shouldProceed) return;
 
           final ok = await tablesNotifier.deactivateTable(table.id);
           if (!ok && context.mounted) {
@@ -2862,18 +2929,49 @@ Future<void> _checkoutUnpaidInvoice({
           if (member != null) 'member': member,
         };
 
+        bool shouldProceed = true;
         try {
           await localDb.saveOrderLocally(orderId, payload);
           final syncResult = await syncService.syncNow();
-          if (!syncResult.success && syncResult.message.isNotEmpty && context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(syncResult.message),
-              backgroundColor: Colors.orange,
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 4),
-            ));
+          if (!syncResult.success) {
+            if (syncResult.isNetworkError || !syncService.isOnline) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: const Text('Mất kết nối mạng. Đã lưu hóa đơn tại local, sẽ tự động đồng bộ khi có mạng trở lại.'),
+                  backgroundColor: Colors.orange,
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 4),
+                ));
+              }
+            } else {
+              shouldProceed = false;
+              await localDb.deletePendingOrder(orderId);
+              if (context.mounted) {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Row(
+                      children: [
+                        Icon(Icons.error_outline, color: AppColors.error),
+                        SizedBox(width: 8),
+                        Text('Lỗi đồng bộ hóa đơn'),
+                      ],
+                    ),
+                    content: Text(syncResult.message),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Đóng'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+            }
           }
         } catch (e) {
+          shouldProceed = false;
+          await localDb.deletePendingOrder(orderId);
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(_extractApiError(e)),
@@ -2882,8 +2980,9 @@ Future<void> _checkoutUnpaidInvoice({
               duration: const Duration(seconds: 4),
             ));
           }
-          rethrow;
         }
+
+        if (!shouldProceed) return;
 
         tablesNotifier.completeUnpaidInvoicePayment(invoice.id);
       },

@@ -267,6 +267,15 @@ class LocalDbService {
     );
   }
 
+  Future<void> deletePendingOrder(String id) async {
+    final db = await database;
+    await db.delete(
+      'pending_orders',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   Future<int> getPendingCount() async {
     final db = await database;
     final ordersResult = await db.rawQuery(
@@ -540,6 +549,15 @@ class LocalDbService {
   Future<void> markCancelledInvoiceSynced(String id) async {
     final db = await database;
     await db.update('cancelled_invoices', {'synced': 1}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> deleteCancelledInvoice(String id) async {
+    final db = await database;
+    await db.delete(
+      'cancelled_invoices',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   // ─── Active Shifts ────────────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:dio/dio.dart';
 import 'local_db_service.dart';
 import 'api_client.dart';
 
@@ -446,7 +448,24 @@ class SyncService {
           synced: synced);
     } catch (e) {
       _log('Sync error: $e');
-      return SyncResult(success: false, message: 'Lỗi đồng bộ: $e', synced: synced);
+      bool isNetErr = false;
+      if (e is DioException) {
+        if (e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.sendTimeout ||
+            e.type == DioExceptionType.receiveTimeout ||
+            e.type == DioExceptionType.connectionError ||
+            e.error is SocketException) {
+          isNetErr = true;
+        }
+      } else if (e is SocketException) {
+        isNetErr = true;
+      }
+      return SyncResult(
+        success: false,
+        message: 'Lỗi đồng bộ: $e',
+        synced: synced,
+        isNetworkError: isNetErr,
+      );
     }
   }
 
@@ -473,6 +492,11 @@ class SyncResult {
   final bool success;
   final String message;
   final int synced;
-  const SyncResult(
-      {required this.success, required this.message, required this.synced});
+  final bool isNetworkError;
+  const SyncResult({
+    required this.success,
+    required this.message,
+    required this.synced,
+    this.isNetworkError = false,
+  });
 }

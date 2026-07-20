@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:core_shared/core_shared.dart';
 import 'package:iot_controller/iot_controller.dart';
+import 'package:dio/dio.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/services/api_client.dart';
 import '../../core/services/local_db_service.dart';
@@ -1192,10 +1194,28 @@ class TablesNotifier extends StateNotifier<TablesState> {
           if (backendId != null && backendId.isNotEmpty) {
             serverOrderId = backendId;
           }
+        } else {
+          throw Exception(res['message'] ?? 'Lỗi không xác định từ server');
         }
       } catch (e) {
-        // Offline hoặc lỗi — tiếp tục với local ID
-        print('Lỗi tạo order trên backend (offline?): $e');
+        bool isNetErr = false;
+        if (e is DioException) {
+          if (e.type == DioExceptionType.connectionTimeout ||
+              e.type == DioExceptionType.sendTimeout ||
+              e.type == DioExceptionType.receiveTimeout ||
+              e.type == DioExceptionType.connectionError ||
+              e.error is SocketException) {
+            isNetErr = true;
+          }
+        } else if (e is SocketException) {
+          isNetErr = true;
+        }
+
+        if (isNetErr) {
+          print('Lỗi kết nối mạng khi tạo order (offline): $e');
+        } else {
+          rethrow;
+        }
       }
     }
 
@@ -2299,16 +2319,74 @@ class TablesNotifier extends StateNotifier<TablesState> {
     await _saveSessionState();
     return true;
   }
-
-  void cancelUnpaidInvoice(String invoiceId, String reason) {
+  Future<bool> cancelUnpaidInvoice(String invoiceId, String reason) async {
     final invoiceIndex = state.unpaidInvoices.indexWhere(
       (inv) => inv.id == invoiceId,
     );
-    if (invoiceIndex < 0) return;
+    if (invoiceIndex < 0) return false;
 
     final invoice = state.unpaidInvoices[invoiceIndex];
 
-    // 1. Remove from in-memory state immediately
+    // 1. Nếu online và không phải ID local, thử đồng bộ trực tiếp lên backend trước
+    if (_apiClient != null && _isOnline && !invoiceId.startsWith('ord-')) {
+      try {
+        await _apiClient!.voidOrder(invoiceId, reason);
+      } catch (e) {
+        bool isNetErr = false;
+        if (e is DioException) {
+          if (e.type == DioExceptionType.connectionTimeout ||
+              e.type == DioExceptionType.sendTimeout ||
+              e.type == DioExceptionType.receiveTimeout ||
+              e.type == DioExceptionType.connectionError ||
+              e.error is SocketException) {
+            isNetErr = true;
+          }
+        } else if (e is SocketException) {
+          isNetErr = true;
+        }
+
+        if (isNetErr) {
+          print('Lỗi kết nối khi hủy hóa đơn (offline): $e');
+        } else {
+          rethrow;
+        }
+      }
+    }
+
+    // 2. Lưu trữ log hủy vào SQLite local
+    if (_localDb != null) {
+      final cancelData = {
+        'order_id': invoice.id,
+        'table_id': invoice.tableId,
+        'table_name': invoice.tableName,
+        'start_time': invoice.startTime.toIso8601String(),
+        'end_time': invoice.endTime.toIso8601String(),
+        'play_minutes': invoice.playMinutes,
+        'play_amount': invoice.playAmount,
+        'products': invoice.products,
+        'cancel_reason': reason,
+        'cancelled_at': DateTime.now().toIso8601String(),
+      };
+
+      try {
+        await _localDb!.saveCancelledInvoice(
+          id: 'cancel-${invoice.id}',
+          orderId: invoice.id,
+          tableName: invoice.tableName,
+          cancelReason: reason,
+          data: cancelData,
+        );
+
+        final alreadySynced = _apiClient != null && _isOnline && !invoiceId.startsWith('ord-');
+        if (alreadySynced) {
+          await _localDb!.markCancelledInvoiceSynced('cancel-${invoice.id}');
+        }
+      } catch (e) {
+        print('Lỗi lưu huỷ hóa đơn local: $e');
+      }
+    }
+
+    // 3. Cập nhật state local
     final updatedUnpaid = List<UnpaidInvoice>.from(state.unpaidInvoices)
       ..removeAt(invoiceIndex);
     final newSelectedId = state.selectedUnpaidInvoiceId == invoiceId
@@ -2318,55 +2396,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
       unpaidInvoices: updatedUnpaid,
       selectedUnpaidInvoiceId: newSelectedId,
     );
-    _saveSessionState();
-
-    // 2. Persist to local DB and attempt backend sync
-    _persistCancelledInvoice(invoice, reason);
+    await _saveSessionState();
+    return true;
   }
-
-  Future<void> _persistCancelledInvoice(
-    UnpaidInvoice invoice,
-    String reason,
-  ) async {
-    if (_localDb == null) return;
-
-    final cancelData = {
-      'order_id': invoice.id,
-      'table_id': invoice.tableId,
-      'table_name': invoice.tableName,
-      'start_time': invoice.startTime.toIso8601String(),
-      'end_time': invoice.endTime.toIso8601String(),
-      'play_minutes': invoice.playMinutes,
-      'play_amount': invoice.playAmount,
-      'products': invoice.products,
-      'cancel_reason': reason,
-      'cancelled_at': DateTime.now().toIso8601String(),
-    };
-
-    try {
-      await _localDb!.saveCancelledInvoice(
-        id: 'cancel-${invoice.id}',
-        orderId: invoice.id,
-        tableName: invoice.tableName,
-        cancelReason: reason,
-        data: cancelData,
-      );
-    } catch (e) {
-      print('Lỗi lưu huỷ hóa đơn local: $e');
-    }
-
-    // 3. Attempt immediate backend sync
-    if (_apiClient != null && _isOnline) {
-      try {
-        await _apiClient!.voidOrder(invoice.id, reason);
-        await _localDb!.markCancelledInvoiceSynced('cancel-${invoice.id}');
-      } catch (e) {
-        // Offline or error — record stays as unsynced for later sync
-        print('Lỗi sync huỷ hóa đơn lên backend (sẽ thử lại sau): $e');
-      }
-    }
-  }
-
   Future<void> setTableMaintenance(String tableId, bool isMaintenance) async {
     if (_ref != null) {
       final user = _ref!.read(currentUserProvider);
