@@ -23,6 +23,7 @@ import 'member_lookup.dart';
 import 'invoice_dialog.dart';
 import 'table_merge_dialog.dart';
 import 'invoice_print_preview_dialog.dart';
+import '../../core/widgets/desktop_update_banner.dart';
 
 class BillingScreen extends ConsumerStatefulWidget {
   final String tableId;
@@ -32,7 +33,8 @@ class BillingScreen extends ConsumerStatefulWidget {
   ConsumerState<BillingScreen> createState() => _BillingScreenState();
 }
 
-class _BillingScreenState extends ConsumerState<BillingScreen> {
+class _BillingScreenState extends ConsumerState<BillingScreen>
+    with DesktopUpdateBannerMixin {
   Timer? _ticker;
   String? _selectedUnpaidInvoiceId;
 
@@ -77,98 +79,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final raw = e.toString();
     final match = RegExp(r'^Exception:\s*(.+)$').firstMatch(raw);
     return match?.group(1) ?? raw;
-  }
-
-  // --- Start Table Activation Flow ---
-  Future<void> _handleStartTable(TableModel table) async {
-    final state = ref.read(tablesProvider);
-    if (state.connectedIp == null) {
-      _showConnectionRequiredDialog();
-      return;
-    }
-    final notifier = ref.read(tablesProvider.notifier);
-    final currentShiftId = ref.read(currentShiftIdProvider) ?? 'shift-default';
-
-    final confirmActivate = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Bật bàn chơi'),
-        content: Text('Bạn có chắc chắn muốn mở bàn "${table.tableName}" ngay bây giờ?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Huỷ', style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Bật bàn'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmActivate != true || !mounted) return;
-
-    final ok = await notifier.activateTable(table.id, shiftId: currentShiftId);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Không thể bật bàn vì kết nối hoặc gửi lệnh đến Relay IoT thất bại.'),
-        backgroundColor: AppColors.error,
-        behavior: SnackBarBehavior.floating,
-      ));
-    }
-  }
-
-  // --- Deactivate Active Table Flow ---
-  Future<void> _handleDeactivateTable(TableModel table) async {
-    final state = ref.read(tablesProvider);
-    if (state.connectedIp == null) {
-      _showConnectionRequiredDialog();
-      return;
-    }
-    final notifier = ref.read(tablesProvider.notifier);
-    final forceDeactivate = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Tắt bàn chơi'),
-        content: Text('Bạn có chắc chắn muốn tắt bàn ${table.tableName} và chuyển hóa đơn sang danh sách chờ thanh toán không?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Hủy', style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Xác nhận tắt bàn'),
-          ),
-        ],
-      ),
-    );
-
-    if (forceDeactivate == true && mounted) {
-      final ok = await notifier.deactivateTableAndFreezeInvoice(table.id);
-      if (ok && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Đã tắt bàn thành công. Hóa đơn đã được đưa vào danh sách chờ thanh toán.'),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
-        ));
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Không thể tắt bàn vì gửi lệnh tắt đến Relay IoT thất bại.'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
-    }
   }
 
   void _showConnectionRequiredDialog() {
@@ -225,122 +135,48 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final syncService = ref.read(syncServiceProvider);
     final tablesNotifier = ref.read(tablesProvider.notifier);
 
-    final action = await showDialog<String>(
+    final proceed = await showDialog<bool>(
       context: context,
       barrierDismissible: true,
       builder: (context) => AlertDialog(
-        title: const Text('Bàn chơi chưa tắt'),
-        content: Text('Bàn "${table.tableName}" đang hoạt động. Bạn có chắc chắn muốn tắt bàn trước khi thanh toán không?'),
+        title: const Text('Xác nhận thanh toán'),
+        content: Text('Bạn có chắc chắn muốn tiến hành thanh toán cho bàn "${table.tableName}" không?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop('cancel'),
+            onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Hủy', style: TextStyle(color: AppColors.textSecondary)),
           ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop('bypass'),
-            child: const Text('Bỏ qua'),
-          ),
           ElevatedButton(
-            onPressed: () => Navigator.of(context).pop('deactivate'),
+            onPressed: () => Navigator.of(context).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
+              backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Tắt bàn'),
+            child: const Text('Tiếp tục'),
           ),
         ],
       ),
     );
 
-    if (action == 'deactivate') {
-      final endTime = DateTime.now();
-      final baseMinutes = endTime.difference(startTime).inMinutes + 1;
-      final billedMinutes = ((baseMinutes + 4) ~/ 5) * 5;
-      final playMinutes = billedMinutes + (tablesState.tableExtraPlayMinutes[table.id] ?? 0);
-      final calcPlayAmount = (billedMinutes / 60.0) * rate + (tablesState.tableExtraPlayAmounts[table.id] ?? 0.0);
-      
-      final invProductTotal = products.fold(0.0,
-          (sum, p) => sum + (p['price'] as double) * (p['qty'] as int));
+    if (proceed != true || !context.mounted) return;
 
-      final invMemberDiscountPercent = member != null ? (double.tryParse(member['discount']?.toString() ?? '') ?? 0.0) : 0.0;
-      final invPlayPercent = tablesState.tablePlayDiscounts[table.id] ?? 0.0;
-      final invServicePercent = tablesState.tableServiceDiscounts[table.id] ?? 0.0;
-      final invBillPercent = tablesState.tableBillDiscounts[table.id] ?? 0.0;
-      
-      final invPlayDiscountAmount = calcPlayAmount * (invPlayPercent / 100.0);
-      final invServiceDiscountAmount = invProductTotal * (invServicePercent / 100.0);
-      final invBillDiscountPercentTotal = (invBillPercent + invMemberDiscountPercent).clamp(0.0, 100.0);
-      final invBillDiscountAmount = (calcPlayAmount + invProductTotal - invPlayDiscountAmount - invServiceDiscountAmount) * (invBillDiscountPercentTotal / 100.0);
-      final invDiscountAmount = invPlayDiscountAmount + invServiceDiscountAmount + invBillDiscountAmount;
-      final invNetTotal = (calcPlayAmount + invProductTotal) - invDiscountAmount;
-      final orderId = table.currentOrderId ?? 'ord-${DateTime.now().millisecondsSinceEpoch}';
-
-      final ok = await tablesNotifier.deactivateTableAndFreezeInvoice(table.id);
-      if (ok) {
-        final newInvoice = UnpaidInvoice(
-          id: orderId,
-          tableId: table.id,
-          tableName: table.tableName,
-          startTime: startTime,
-          endTime: endTime,
-          playMinutes: playMinutes,
-          playAmount: calcPlayAmount,
-          hourlyRate: rate,
-          products: List<Map<String, dynamic>>.from(products),
-          discountPlayPercent: invPlayPercent,
-          discountServicePercent: invServicePercent,
-          discountBillPercent: invBillPercent,
-          manualDiscountPercent: invBillPercent,
-          member: member,
-          note: initialNote,
-        );
-
-        tablesNotifier.selectUnpaidInvoice(newInvoice.id);
-
-        if (context.mounted) {
-          await _checkoutUnpaidInvoice(
-            context: context,
-            currentUserId: currentUserId,
-            currentShiftId: currentShiftId,
-            localDb: localDb,
-            syncService: syncService,
-            tablesNotifier: tablesNotifier,
-            invoice: newInvoice,
-            initialStatus: initialStatus,
-            playAmount: calcPlayAmount,
-            productTotal: invProductTotal,
-            discountPlayPercent: invPlayPercent,
-            discountServicePercent: invServicePercent,
-            discountBillPercent: invBillPercent,
-            discountAmount: invDiscountAmount,
-            netTotal: invNetTotal,
-            startTime: newInvoice.startTime,
-            endTime: newInvoice.endTime,
-            products: products,
-            rate: newInvoice.hourlyRate,
-            member: member,
-          );
-        }
-      }
-    } else if (action == 'bypass') {
-      if (context.mounted) {
-        await _checkout(
-          context,
-          table,
-          initialStatus,
-          playAmount,
-          productTotal,
-          discountPlayPercent,
-          discountServicePercent,
-          discountBillPercent,
-          discountAmount,
-          netTotal,
-          startTime,
-          products,
-          rate,
-          member,
-        );
-      }
+    if (context.mounted) {
+      await _checkout(
+        context,
+        table,
+        initialStatus,
+        playAmount,
+        productTotal,
+        discountPlayPercent,
+        discountServicePercent,
+        discountBillPercent,
+        discountAmount,
+        netTotal,
+        startTime,
+        products,
+        rate,
+        member,
+      );
     }
   }
 
@@ -721,6 +557,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Listen for desktop notifications
+    ref.listen<TablesState>(tablesProvider, (previous, next) {
+      handleDesktopNotification(previous, next);
+    });
+
     final state = ref.watch(tablesProvider);
     
     // Find matching table
@@ -744,14 +585,20 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     }
 
     if (selectedInvoice != null) {
-      return _buildUnpaidInvoiceDetailScreen(context, selectedInvoice, state);
+      return buildDesktopBannerOverlay(
+        _buildUnpaidInvoiceDetailScreen(context, selectedInvoice, state),
+      );
     }
 
     if (!isTableActive) {
-      return _buildIdleTableScreen(context, table, state);
+      return buildDesktopBannerOverlay(
+        _buildIdleTableScreen(context, table, state),
+      );
     }
 
-    return _buildActiveTableScreen(context, table, state);
+    return buildDesktopBannerOverlay(
+      _buildActiveTableScreen(context, table, state),
+    );
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -840,39 +687,18 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(table.tableName),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.power_settings_new, color: Colors.red),
-            tooltip: 'Tắt bàn',
-            onPressed: () => _handleDeactivateTable(table),
-          )
-        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _openAddProductPanel(context, table.id),
+        backgroundColor: AppColors.accent,
+        foregroundColor: Colors.white,
+        elevation: 6,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        tooltip: 'Thêm dịch vụ',
+        child: const Icon(Icons.add_shopping_cart_rounded, size: 28),
       ),
       body: Column(
         children: [
-          if (state.connectedIp != null)
-            Container(
-              width: double.infinity,
-              color: Colors.amber.shade100,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(
-                children: [
-                  Icon(Icons.sync, color: Colors.amber.shade900, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Đang đồng bộ với máy thu ngân. Thao tác thanh toán được thực hiện tại quầy.',
-                      style: TextStyle(
-                        color: Colors.amber.shade900,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        fontFamily: 'Inter',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           // ── Timer Ticking Section (Compact Layout) ──
           Container(
             width: double.infinity,
@@ -938,17 +764,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
           // ── Segment Section: Service list ──
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('DỊCH VỤ ĐÃ GỌI', style: AppTextStyles.titleSmall),
-                TextButton.icon(
-                  onPressed: () => _openAddProductPanel(context, table.id),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Thêm'),
-                  style: TextButton.styleFrom(minimumSize: Size.zero, padding: EdgeInsets.zero, foregroundColor: AppColors.primary),
-                )
               ],
             ),
           ),
@@ -1111,119 +931,117 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                 ],
               ),
             ),
-
-          // ── Summary & Payment Buttons (Sticky Bottom) ──
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: Colors.grey.shade200)),
-              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, -2))],
-            ),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+        ],
+      ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Colors.grey.shade200)),
+          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, -2))],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (rate > 0)
+                _buildSummaryRow('Tiền giờ chơi', _fmtCurrency(playAmount)),
+              _buildSummaryRow('Dịch vụ', _fmtCurrency(productTotal)),
+              if (discountPlayPercent > 0)
+                _buildSummaryRow(
+                  'Chiết khấu giờ chơi (${discountPlayPercent.toInt()}%)',
+                  '-${_fmtCurrency(playDiscountAmount)}',
+                  isDiscount: true,
+                ),
+              if (discountServicePercent > 0)
+                _buildSummaryRow(
+                  'Chiết khấu dịch vụ (${discountServicePercent.toInt()}%)',
+                  '-${_fmtCurrency(serviceDiscountAmount)}',
+                  isDiscount: true,
+                ),
+              if (discountBillPercent > 0 || memberDiscountPercent > 0)
+                _buildSummaryRow(
+                  memberDiscountPercent > 0
+                      ? 'Chiết khấu HĐ & TV (${(discountBillPercent + memberDiscountPercent).toInt()}%)'
+                      : 'Chiết khấu hóa đơn (${discountBillPercent.toInt()}%)',
+                  '-${_fmtCurrency(billDiscountAmount)}',
+                  isDiscount: true,
+                ),
+              const Divider(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  if (rate > 0)
-                    _buildSummaryRow('Tiền giờ chơi', _fmtCurrency(playAmount)),
-                  _buildSummaryRow('Dịch vụ', _fmtCurrency(productTotal)),
-                  if (discountPlayPercent > 0)
-                    _buildSummaryRow(
-                      'Chiết khấu giờ chơi (${discountPlayPercent.toInt()}%)',
-                      '-${_fmtCurrency(playDiscountAmount)}',
-                      isDiscount: true,
-                    ),
-                  if (discountServicePercent > 0)
-                    _buildSummaryRow(
-                      'Chiết khấu dịch vụ (${discountServicePercent.toInt()}%)',
-                      '-${_fmtCurrency(serviceDiscountAmount)}',
-                      isDiscount: true,
-                    ),
-                  if (discountBillPercent > 0 || memberDiscountPercent > 0)
-                    _buildSummaryRow(
-                      memberDiscountPercent > 0
-                          ? 'Chiết khấu HĐ & TV (${(discountBillPercent + memberDiscountPercent).toInt()}%)'
-                          : 'Chiết khấu hóa đơn (${discountBillPercent.toInt()}%)',
-                      '-${_fmtCurrency(billDiscountAmount)}',
-                      isDiscount: true,
-                    ),
-                  const Divider(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('TỔNG CỘNG:', style: AppTextStyles.labelLarge.copyWith(fontSize: 14)),
-                      Text(_fmtCurrency(netTotal), style: AppTextStyles.currency.copyWith(fontSize: 22)),
-                    ],
-                  ),
-                  if (state.connectedIp == null) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => _handleCheckoutTap(
-                              context,
-                              table,
-                              'unpaid',
-                              playAmount,
-                              productTotal,
-                              discountPlayPercent,
-                              discountServicePercent,
-                              discountBillPercent,
-                              discountAmount,
-                              netTotal,
-                              startTime,
-                              products,
-                              rate,
-                              member,
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: AppColors.error, width: 1.5),
-                              foregroundColor: AppColors.error,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            ),
-                            child: const Text('Không thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () => _handleCheckoutTap(
-                              context,
-                              table,
-                              'paid',
-                              playAmount,
-                              productTotal,
-                              discountPlayPercent,
-                              discountServicePercent,
-                              discountBillPercent,
-                              discountAmount,
-                              netTotal,
-                              startTime,
-                              products,
-                              rate,
-                              member,
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              elevation: 0,
-                            ),
-                            child: const Text('Thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  Text('TỔNG CỘNG:', style: AppTextStyles.labelLarge.copyWith(fontSize: 14)),
+                  Text(_fmtCurrency(netTotal), style: AppTextStyles.currency.copyWith(fontSize: 22)),
                 ],
               ),
-            ),
-          )
-        ],
+              if (state.connectedIp == null) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => _handleCheckoutTap(
+                          context,
+                          table,
+                          'unpaid',
+                          playAmount,
+                          productTotal,
+                          discountPlayPercent,
+                          discountServicePercent,
+                          discountBillPercent,
+                          discountAmount,
+                          netTotal,
+                          startTime,
+                          products,
+                          rate,
+                          member,
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.error, width: 1.5),
+                          foregroundColor: AppColors.error,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Text('Không thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _handleCheckoutTap(
+                          context,
+                          table,
+                          'paid',
+                          playAmount,
+                          productTotal,
+                          discountPlayPercent,
+                          discountServicePercent,
+                          discountBillPercent,
+                          discountAmount,
+                          netTotal,
+                          startTime,
+                          products,
+                          rate,
+                          member,
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          elevation: 0,
+                        ),
+                        child: const Text('Thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1260,16 +1078,29 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: ElevatedButton.icon(
-                onPressed: () => _handleStartTable(table),
-                icon: const Icon(Icons.play_arrow_rounded, size: 24),
-                label: const Text('Bật bàn', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 52),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  elevation: 0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue.shade700, size: 22),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Bàn đang trống. Thao tác bật bàn chỉ được thực hiện trên máy Desktop.',
+                        style: TextStyle(
+                          color: Colors.blue.shade900,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -1352,7 +1183,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // UI Builder: Unpaid/Suspended Invoice Details Screen
+  // UI Builder: Unpaid/Suspended Invoice Details Screen (Read-Only)
   // ───────────────────────────────────────────────────────────────────────────
   Widget _buildUnpaidInvoiceDetailScreen(BuildContext context, UnpaidInvoice invoice, TablesState state) {
     final products = invoice.products;
@@ -1378,7 +1209,9 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final discountAmount = playDiscountAmount + serviceDiscountAmount + billDiscountAmount;
     final netTotal = (playAmount + productTotal) - discountAmount;
 
-    final buildProductRow = (BuildContext context, Map<String, dynamic> p, {required bool isLocked}) {
+    Widget buildReadOnlyProductRow(Map<String, dynamic> p) {
+      final qty = p['qty'] as int;
+      final price = p['price'] as double;
       return Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         padding: const EdgeInsets.all(12),
@@ -1395,37 +1228,25 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                 children: [
                   Text(p['name'] as String, style: AppTextStyles.labelLarge),
                   const SizedBox(height: 4),
-                  Text(_fmtCurrency(p['price'] as double), style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
+                  Text(_fmtCurrency(price), style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
                 ],
               ),
             ),
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(Icons.remove_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.textSecondary),
-                  onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(invoice.id, p['product_id'] as String, -1),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text('${p['qty']}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isLocked ? AppColors.textMuted : AppColors.textPrimary)),
-                ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(Icons.add_circle_outline, color: isLocked ? AppColors.textMuted : AppColors.primary),
-                  onPressed: isLocked ? null : () => ref.read(tablesProvider.notifier).updateProductQty(invoice.id, p['product_id'] as String, 1),
-                ),
-                const SizedBox(width: 8),
-                InkWell(
-                  onTap: isLocked ? null : () => ref.read(tablesProvider.notifier).removeProductFromTable(invoice.id, p['product_id'] as String),
-                  child: Icon(Icons.delete_outline, color: isLocked ? AppColors.textMuted : Colors.redAccent, size: 20),
+                Text('x$qty', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textPrimary, fontFamily: 'Inter')),
+                const SizedBox(height: 2),
+                Text(
+                  _fmtCurrency(price * qty),
+                  style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.w600, color: AppColors.primary),
                 ),
               ],
             ),
           ],
         ),
       );
-    };
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -1439,32 +1260,44 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             });
           },
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.print_outlined),
+            tooltip: 'Xem / In hóa đơn',
+            onPressed: () {
+              final currentUser = ref.read(currentUserProvider);
+              final cashierName = currentUser?.displayName ?? currentUser?.username ?? 'Hệ thống';
+              final activeShift = ref.read(shiftProvider).activeShift;
+
+              showDialog(
+                context: context,
+                builder: (_) => InvoicePrintPreviewDialog(
+                  tableName: invoice.tableName,
+                  startTime: startTime,
+                  endTime: endTime,
+                  playMinutes: invoice.playMinutes,
+                  playAmount: playAmount,
+                  hourlyRate: rate,
+                  products: products,
+                  totalAmount: playAmount + productTotal,
+                  discountPlayPercent: discountPlayPercent,
+                  discountServicePercent: discountServicePercent,
+                  discountBillPercent: discountBillPercent,
+                  discountPercent: discountBillPercent,
+                  discountAmount: discountAmount,
+                  netTotal: netTotal,
+                  member: member,
+                  cashierName: cashierName,
+                  shiftLabel: activeShift != null ? 'Ca ${activeShift.id.replaceAll('shift-', '')}' : null,
+                  status: 'unpaid',
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
-          if (state.connectedIp != null)
-            Container(
-              width: double.infinity,
-              color: Colors.amber.shade100,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(
-                children: [
-                  Icon(Icons.sync, color: Colors.amber.shade900, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Đang đồng bộ với máy thu ngân. Thao tác thanh toán được thực hiện tại quầy.',
-                      style: TextStyle(
-                        color: Colors.amber.shade900,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        fontFamily: 'Inter',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           // Header Summary Card (Compact Layout)
           Container(
             width: double.infinity,
@@ -1509,7 +1342,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             ),
           ),
 
-          // Member & Discounts Badges
+          // Member & Discounts Badges (Read-Only)
           _buildAppliedMemberAndDiscounts(
             context: context,
             targetId: invoice.id,
@@ -1517,28 +1350,49 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
             discountPlayPercent: discountPlayPercent,
             discountServicePercent: discountServicePercent,
             discountBillPercent: discountBillPercent,
+            isReadOnly: true,
           ),
 
-          // Product List
+          // Note Banner if exists
+          if (invoice.note != null && invoice.note!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.notes_outlined, size: 16, color: Colors.amber.shade800),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Ghi chú: ${invoice.note}',
+                        style: TextStyle(fontSize: 12, color: Colors.amber.shade900, fontFamily: 'Inter'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Product List Header
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('DỊCH VỤ ĐÃ GỌI', style: AppTextStyles.titleSmall),
-                TextButton.icon(
-                  onPressed: () => _openAddProductPanel(context, invoice.id),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Thêm'),
-                  style: TextButton.styleFrom(minimumSize: Size.zero, padding: EdgeInsets.zero, foregroundColor: AppColors.primary),
-                )
+                Text('${products.length} món', style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary)),
               ],
             ),
           ),
 
-          // Product List Header (DỊCH VỤ ĐÃ GỌI / Thêm)
-          // No inline buildProductRow declaration here
-
+          // Product List
           Expanded(
             child: (products.isEmpty && pendingProducts.isEmpty)
                 ? Center(
@@ -1547,273 +1401,95 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       children: [
                         Icon(Icons.fastfood_outlined, size: 48, color: AppColors.textMuted),
                         const SizedBox(height: 8),
-                        Text('Chưa gọi dịch vụ nào', style: AppTextStyles.bodySmall),
+                        Text('Không có dịch vụ nào', style: AppTextStyles.bodySmall),
                       ],
                     ),
                   )
                 : CustomScrollView(
                     slivers: [
                       if (products.isNotEmpty) ...[
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            child: Text('Đã duyệt (${products.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green, fontFamily: 'Inter')),
-                          ),
-                        ),
                         SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, idx) {
                               final p = products[idx];
-                              final isLocked = state.connectedIp != null;
-                              return buildProductRow(context, p, isLocked: isLocked);
+                              return buildReadOnlyProductRow(p);
                             },
                             childCount: products.length,
-                          ),
-                        ),
-                      ],
-                      if (pendingProducts.isNotEmpty) ...[
-                        SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            child: Text('Chờ duyệt (${pendingProducts.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.orange, fontFamily: 'Inter')),
-                          ),
-                        ),
-                        SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, idx) {
-                              final p = pendingProducts[idx];
-                              return buildProductRow(context, p, isLocked: false);
-                            },
-                            childCount: pendingProducts.length,
                           ),
                         ),
                       ],
                     ],
                   ),
           ),
-
-          // Quick Operations Grid
-          if (state.connectedIp == null)
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              child: GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 3,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                childAspectRatio: 3.2,
-                children: [
-                  _buildQuickActionBtn(
-                    icon: Icons.person_add_alt_1_outlined,
-                    label: 'Chọn TV',
-                    color: AppColors.primary,
-                    onTap: () => showDialog(context: context, builder: (_) => MemberLookupDialog(tableId: invoice.id)),
-                  ),
-                  _buildQuickActionBtn(
-                    icon: Icons.local_offer_outlined,
-                    label: 'Khuyến mãi',
-                    color: AppColors.accent,
-                    onTap: () => showDialog(context: context, builder: (_) => DiscountPanel(tableId: invoice.id)),
-                  ),
-                  _buildQuickActionBtn(
-                    icon: Icons.merge_type,
-                    label: 'Gộp bàn',
-                    color: AppColors.info,
-                    onTap: () => showDialog(context: context, builder: (_) => TableMergeDialog(sourceInvoiceId: invoice.id)),
-                  ),
-                  _buildQuickActionBtn(
-                    icon: Icons.swap_horiz,
-                    label: 'Chuyển bàn',
-                    color: AppColors.transfer,
-                    onTap: () => showDialog(context: context, builder: (_) => TableTransferDialog(sourceInvoiceId: invoice.id)),
-                  ),
-                  _buildQuickActionBtn(
-                    icon: Icons.print_outlined,
-                    label: 'In hóa đơn',
-                    color: Colors.blueGrey,
-                    onTap: () {
-                      final currentUser = ref.read(currentUserProvider);
-                      final cashierName = currentUser?.displayName ?? currentUser?.username ?? 'Hệ thống';
-                      final activeShift = ref.read(shiftProvider).activeShift;
-
-                      showDialog(
-                        context: context,
-                        builder: (_) => InvoicePrintPreviewDialog(
-                          tableName: invoice.tableName,
-                          startTime: startTime,
-                          endTime: endTime,
-                          playMinutes: invoice.playMinutes,
-                          playAmount: playAmount,
-                          hourlyRate: rate,
-                          products: products,
-                          totalAmount: playAmount + productTotal,
-                          discountPlayPercent: discountPlayPercent,
-                          discountServicePercent: discountServicePercent,
-                          discountBillPercent: discountBillPercent,
-                          discountPercent: discountBillPercent,
-                          discountAmount: discountAmount,
-                          netTotal: netTotal,
-                          member: member,
-                          cashierName: cashierName,
-                          shiftLabel: activeShift != null ? 'Ca ${activeShift.id.replaceAll('shift-', '')}' : null,
-                          status: 'paid',
-                        ),
-                      );
-                    },
-                  ),
-                  _buildQuickActionBtn(
-                    icon: Icons.notes_outlined,
-                    label: 'Ghi chú',
-                    color: Colors.brown,
-                    onTap: () async {
-                      final notifier = ref.read(tablesProvider.notifier);
-                      final ctrl = TextEditingController(text: invoice.note ?? '');
-                      final note = await showDialog<String>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Ghi chú hóa đơn'),
-                          content: TextField(
-                            controller: ctrl,
-                            decoration: const InputDecoration(hintText: 'Nhập ghi chú...'),
-                          ),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
-                            ElevatedButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Lưu')),
-                          ],
-                        ),
-                      );
-                      if (note != null) {
-                        final updated = List<UnpaidInvoice>.from(notifier.state.unpaidInvoices);
-                        final index = updated.indexWhere((inv) => inv.id == invoice.id);
-                        if (index >= 0) {
-                          updated[index] = updated[index].copyWith(note: note);
-                          notifier.state = notifier.state.copyWith(unpaidInvoices: updated);
-                          notifier.selectTable(widget.tableId); // Triggers save state internally or forces rebuild
-                        }
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-
-          // Summary and Payment
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: Colors.grey.shade200)),
-              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, -2))],
-            ),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (rate > 0)
-                    _buildSummaryRow('Tiền giờ chơi', _fmtCurrency(playAmount)),
-                  _buildSummaryRow('Dịch vụ', _fmtCurrency(productTotal)),
-                  if (discountPlayPercent > 0)
-                    _buildSummaryRow(
-                      'Chiết khấu giờ chơi (${discountPlayPercent.toInt()}%)',
-                      '-${_fmtCurrency(playDiscountAmount)}',
-                      isDiscount: true,
-                    ),
-                  if (discountServicePercent > 0)
-                    _buildSummaryRow(
-                      'Chiết khấu dịch vụ (${discountServicePercent.toInt()}%)',
-                      '-${_fmtCurrency(serviceDiscountAmount)}',
-                      isDiscount: true,
-                    ),
-                  if (discountBillPercent > 0 || memberDiscountPercent > 0)
-                    _buildSummaryRow(
-                      memberDiscountPercent > 0
-                          ? 'Chiết khấu HĐ & TV (${(discountBillPercent + memberDiscountPercent).toInt()}%)'
-                          : 'Chiết khấu hóa đơn (${discountBillPercent.toInt()}%)',
-                      '-${_fmtCurrency(billDiscountAmount)}',
-                      isDiscount: true,
-                    ),
-                  const Divider(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('TỔNG CỘNG:', style: AppTextStyles.labelLarge.copyWith(fontSize: 14)),
-                      Text(_fmtCurrency(netTotal), style: AppTextStyles.currency.copyWith(fontSize: 22)),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  if (state.connectedIp == null) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => _handleCheckoutUnpaid(
-                              context,
-                              invoice,
-                              'unpaid',
-                              playAmount,
-                              productTotal,
-                              discountPlayPercent,
-                              discountServicePercent,
-                              discountBillPercent,
-                              discountAmount,
-                              netTotal,
-                              startTime,
-                              endTime,
-                              products,
-                              rate,
-                              member,
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: AppColors.error, width: 1.5),
-                              foregroundColor: AppColors.error,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            ),
-                            child: const Text('Không thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () => _handleCheckoutUnpaid(
-                              context,
-                              invoice,
-                              'paid',
-                              playAmount,
-                              productTotal,
-                              discountPlayPercent,
-                              discountServicePercent,
-                              discountBillPercent,
-                              discountAmount,
-                              netTotal,
-                              startTime,
-                              endTime,
-                              products,
-                              rate,
-                              member,
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              elevation: 0,
-                            ),
-                            child: const Text('Thanh toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          )
         ],
+      ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Colors.grey.shade200)),
+          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, -2))],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (rate > 0)
+                _buildSummaryRow('Tiền giờ chơi', _fmtCurrency(playAmount)),
+              _buildSummaryRow('Dịch vụ', _fmtCurrency(productTotal)),
+              if (discountPlayPercent > 0)
+                _buildSummaryRow(
+                  'Chiết khấu giờ chơi (${discountPlayPercent.toInt()}%)',
+                  '-${_fmtCurrency(playDiscountAmount)}',
+                  isDiscount: true,
+                ),
+              if (discountServicePercent > 0)
+                _buildSummaryRow(
+                  'Chiết khấu dịch vụ (${discountServicePercent.toInt()}%)',
+                  '-${_fmtCurrency(serviceDiscountAmount)}',
+                  isDiscount: true,
+                ),
+              if (discountBillPercent > 0 || memberDiscountPercent > 0)
+                _buildSummaryRow(
+                  memberDiscountPercent > 0
+                      ? 'Chiết khấu HĐ & TV (${(discountBillPercent + memberDiscountPercent).toInt()}%)'
+                      : 'Chiết khấu hóa đơn (${discountBillPercent.toInt()}%)',
+                  '-${_fmtCurrency(billDiscountAmount)}',
+                  isDiscount: true,
+                ),
+              const Divider(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('TỔNG CỘNG:', style: AppTextStyles.labelLarge.copyWith(fontSize: 14)),
+                  Text(_fmtCurrency(netTotal), style: AppTextStyles.currency.copyWith(fontSize: 22)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: Center(
+                  child: Text(
+                    'Hóa đơn chờ thanh toán tại quầy thu ngân',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                      fontFamily: 'Inter',
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1865,6 +1541,7 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     required double discountPlayPercent,
     required double discountServicePercent,
     required double discountBillPercent,
+    bool isReadOnly = false,
   }) {
     if (member == null && discountPlayPercent <= 0 && discountServicePercent <= 0 && discountBillPercent <= 0) {
       return const SizedBox.shrink();
@@ -1898,20 +1575,21 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  InkWell(
-                    onTap: () {
-                      ref.read(tablesProvider.notifier).removeMember(targetId);
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Đã bỏ thành viên'),
-                        behavior: SnackBarBehavior.floating,
-                        duration: Duration(seconds: 1),
-                      ));
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      child: Icon(Icons.cancel, size: 20, color: AppColors.success),
+                  if (!isReadOnly)
+                    InkWell(
+                      onTap: () {
+                        ref.read(tablesProvider.notifier).removeMember(targetId);
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Đã bỏ thành viên'),
+                          behavior: SnackBarBehavior.floating,
+                          duration: Duration(seconds: 1),
+                        ));
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        child: Icon(Icons.cancel, size: 20, color: AppColors.success),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -1939,20 +1617,21 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       ),
                     ),
                   ),
-                  InkWell(
-                    onTap: () {
-                      ref.read(tablesProvider.notifier).removeDiscount(targetId);
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Đã bỏ khuyến mãi giờ chơi'),
-                        behavior: SnackBarBehavior.floating,
-                        duration: Duration(seconds: 1),
-                      ));
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      child: Icon(Icons.cancel, size: 20, color: AppColors.accent),
+                  if (!isReadOnly)
+                    InkWell(
+                      onTap: () {
+                        ref.read(tablesProvider.notifier).removeDiscount(targetId);
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Đã bỏ khuyến mãi giờ chơi'),
+                          behavior: SnackBarBehavior.floating,
+                          duration: Duration(seconds: 1),
+                        ));
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        child: Icon(Icons.cancel, size: 20, color: AppColors.accent),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -1980,20 +1659,21 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       ),
                     ),
                   ),
-                  InkWell(
-                    onTap: () {
-                      ref.read(tablesProvider.notifier).removeDiscount(targetId);
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Đã bỏ khuyến mãi dịch vụ'),
-                        behavior: SnackBarBehavior.floating,
-                        duration: Duration(seconds: 1),
-                      ));
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      child: Icon(Icons.cancel, size: 20, color: AppColors.accent),
+                  if (!isReadOnly)
+                    InkWell(
+                      onTap: () {
+                        ref.read(tablesProvider.notifier).removeDiscount(targetId);
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Đã bỏ khuyến mãi dịch vụ'),
+                          behavior: SnackBarBehavior.floating,
+                          duration: Duration(seconds: 1),
+                        ));
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        child: Icon(Icons.cancel, size: 20, color: AppColors.accent),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -2020,20 +1700,21 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       ),
                     ),
                   ),
-                  InkWell(
-                    onTap: () {
-                      ref.read(tablesProvider.notifier).removeDiscount(targetId);
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Đã bỏ khuyến mãi hóa đơn'),
-                        behavior: SnackBarBehavior.floating,
-                        duration: Duration(seconds: 1),
-                      ));
-                    },
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      child: Icon(Icons.cancel, size: 20, color: AppColors.accent),
+                  if (!isReadOnly)
+                    InkWell(
+                      onTap: () {
+                        ref.read(tablesProvider.notifier).removeDiscount(targetId);
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Đã bỏ khuyến mãi hóa đơn'),
+                          behavior: SnackBarBehavior.floating,
+                          duration: Duration(seconds: 1),
+                        ));
+                      },
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        child: Icon(Icons.cancel, size: 20, color: AppColors.accent),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),

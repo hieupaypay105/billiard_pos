@@ -48,21 +48,33 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _tryRestoreSession();
   }
 
-  /// Xóa phiên đăng nhập cũ khi khởi chạy ứng dụng để yêu cầu đăng nhập lại.
+  /// Khôi phục phiên đăng nhập cũ khi khởi chạy ứng dụng.
   Future<void> _tryRestoreSession() async {
     state = state.copyWith(isLoading: true);
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('auth_token');
-      await prefs.remove('refresh_token');
-      await prefs.remove('current_user');
+      final token = prefs.getString('auth_token');
+      final userJson = prefs.getString('current_user');
+      
+      if (token != null && token.isNotEmpty && userJson != null && userJson.isNotEmpty) {
+        final userMap = jsonDecode(userJson) as Map<String, dynamic>;
+        final user = _userFromMap(userMap);
+        if (mounted) {
+          state = AuthState(
+            user: user,
+            isAuthenticated: true,
+            isLoading: false,
+          );
+        }
+        return;
+      }
       
       if (mounted) {
-        state = const AuthState(isLoading: false);
+        state = const AuthState(isLoading: false, isAuthenticated: false);
       }
     } catch (_) {
       if (mounted) {
-        state = const AuthState(isLoading: false);
+        state = const AuthState(isLoading: false, isAuthenticated: false);
       }
     }
   }

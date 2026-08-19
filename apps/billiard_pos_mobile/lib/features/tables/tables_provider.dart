@@ -5,15 +5,51 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:core_shared/core_shared.dart';
 import 'package:iot_controller/iot_controller.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/services/api_client.dart';
 import '../../core/services/local_db_service.dart';
 import '../../core/services/sync_service.dart';
+import '../../core/services/notification_service.dart';
 import '../../core/providers/providers.dart';
 import '../sync/sync_provider.dart';
 import 'shift_provider.dart';
 
 // ─── State ────────────────────────────────────────────────────────────────────
+
+/// Loại thông báo từ Desktop
+enum DesktopNotificationType { serviceApproved, serviceUpdated }
+
+/// Sự kiện thông báo từ Desktop để hiển thị overlay trên UI
+class DesktopNotificationEvent {
+  final DesktopNotificationType type;
+  final String tableName;
+  final DateTime timestamp;
+
+  const DesktopNotificationEvent({
+    required this.type,
+    required this.tableName,
+    required this.timestamp,
+  });
+
+  String get message {
+    switch (type) {
+      case DesktopNotificationType.serviceApproved:
+        return 'Thu ngân đã duyệt dịch vụ cho $tableName';
+      case DesktopNotificationType.serviceUpdated:
+        return 'Thu ngân đã cập nhật dịch vụ cho $tableName';
+    }
+  }
+
+  String get iconAsset {
+    switch (type) {
+      case DesktopNotificationType.serviceApproved:
+        return 'Duyệt dịch vụ ✓';
+      case DesktopNotificationType.serviceUpdated:
+        return 'Cập nhật dịch vụ';
+    }
+  }
+}
 
 class UnpaidInvoice {
   final String id;
@@ -165,6 +201,8 @@ class TablesState {
   final Map<String, int> tableExtraPlayMinutes;
   final Map<String, String> tableNotes;
   final bool isDesktopConnected;
+  /// Sự kiện thông báo mới nhất từ Desktop (null = không có thông báo mới)
+  final DesktopNotificationEvent? desktopNotification;
 
   const TablesState({
     this.tables = const [],
@@ -199,6 +237,7 @@ class TablesState {
     this.tableExtraPlayMinutes = const {},
     this.tableNotes = const {},
     this.isDesktopConnected = false,
+    this.desktopNotification,
   });
 
   // Sử dụng Object? sentinel để phân biệt "không truyền" và "truyền null"
@@ -231,6 +270,7 @@ class TablesState {
     Map<String, int>? tableExtraPlayMinutes,
     Map<String, String>? tableNotes,
     bool? isDesktopConnected,
+    Object? desktopNotification = _absent,
   }) {
     return TablesState(
       tables: tables ?? this.tables,
@@ -268,7 +308,15 @@ class TablesState {
           tableExtraPlayMinutes ?? this.tableExtraPlayMinutes,
       tableNotes: tableNotes ?? this.tableNotes,
       isDesktopConnected: isDesktopConnected ?? this.isDesktopConnected,
+      desktopNotification: identical(desktopNotification, _absent)
+          ? this.desktopNotification
+          : desktopNotification as DesktopNotificationEvent?,
     );
+  }
+
+  /// Xóa sự kiện thông báo sau khi đã hiển thị
+  TablesState clearDesktopNotification() {
+    return copyWith(desktopNotification: null);
   }
 
   /// Bàn đang được chọn; null nếu danh sách rỗng hoặc chưa chọn.
@@ -373,6 +421,28 @@ class TablesNotifier extends StateNotifier<TablesState> {
   Timer? _reconnectTimer;
   String? _connectedIp;
   String? _lastSessionStr;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  Timer? _bellTimer;
+  bool _isInitialLoadDone = false;
+
+  /// Phát tiếng chuông rò rỉ trong 4 giây bằng cách lặp lại file âm thanh
+  void _playNotificationSound() {
+    try {
+      _bellTimer?.cancel();
+      _audioPlayer.stop();
+      _audioPlayer.setVolume(1.0);
+      // Bắt đầu phát lặp (loop)
+      _audioPlayer.setReleaseMode(ReleaseMode.loop);
+      _audioPlayer.play(AssetSource('sounds/notification.mp3'));
+      // Dừng sau 4 giây
+      _bellTimer = Timer(const Duration(seconds: 4), () {
+        _audioPlayer.stop();
+        _audioPlayer.setReleaseMode(ReleaseMode.release);
+      });
+    } catch (e) {
+      print('Lỗi phát âm thanh thông báo: $e');
+    }
+  }
 
   bool get _isOnline {
     final desktopIp = _prefs?.getString('desktop_server_ip') ?? '';
@@ -960,6 +1030,62 @@ class TablesNotifier extends StateNotifier<TablesState> {
         final prefs = _prefs;
         final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
 
+        // Detect if desktop updated orders or approved pending orders
+        DesktopNotificationEvent? notificationEvent;
+        if (_isInitialLoadDone && desktopIp.isNotEmpty) {
+          // 1. Check if pending orders were approved (priority: show first approved table)
+          for (final t in restoredTables) {
+            final prevPending = state.tablePendingOrders[t.id] ?? [];
+            final newPending = restoredPendingOrders[t.id] ?? [];
+            final prevOrders = state.tableOrders[t.id] ?? [];
+            final newOrders = restoredOrders[t.id] ?? [];
+
+            if (prevPending.isNotEmpty && newPending.length < prevPending.length && newOrders.length >= prevOrders.length) {
+              notificationEvent = DesktopNotificationEvent(
+                type: DesktopNotificationType.serviceApproved,
+                tableName: t.tableName,
+                timestamp: DateTime.now(),
+              );
+              break;
+            }
+          }
+
+          // 2. Check if desktop updated/modified services on any table
+          if (notificationEvent == null) {
+            final prevOrdersJson = jsonEncode(state.tableOrders);
+            final newOrdersJson = jsonEncode(restoredOrders);
+            if (prevOrdersJson != newOrdersJson && prevOrdersJson != '{}') {
+              // Find which table was updated
+              String updatedTableName = 'bàn';
+              for (final t in restoredTables) {
+                final prevOrders = state.tableOrders[t.id];
+                final newOrders = restoredOrders[t.id];
+                if (jsonEncode(prevOrders) != jsonEncode(newOrders)) {
+                  updatedTableName = t.tableName;
+                  break;
+                }
+              }
+              notificationEvent = DesktopNotificationEvent(
+                type: DesktopNotificationType.serviceUpdated,
+                tableName: updatedTableName,
+                timestamp: DateTime.now(),
+              );
+            }
+          }
+
+          if (notificationEvent != null) {
+            _playNotificationSound();
+            // Gửi system push notification — hoạt động kể cả khi app background
+            NotificationService().showDesktopUpdateNotification(
+              title: notificationEvent.iconAsset,
+              body: notificationEvent.message,
+              isApproved: notificationEvent.type ==
+                  DesktopNotificationType.serviceApproved,
+            );
+          }
+        }
+        _isInitialLoadDone = true;
+
         state = state.copyWith(
           tables: restoredTables,
           tableStartTimes: restoredStartTimes,
@@ -977,6 +1103,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
           selectedUnpaidInvoiceId: newSelectedUnpaidId,
           selectedTableId: newSelectedTableId,
           connectedIp: desktopIp.isNotEmpty ? desktopIp : null,
+          desktopNotification: notificationEvent,
         );
       }
     } catch (e) {
@@ -2565,11 +2692,17 @@ class TablesNotifier extends StateNotifier<TablesState> {
     state = state.copyWith(iotConfigs: updated);
   }
 
+  void clearDesktopNotification() {
+    state = state.copyWith(desktopNotification: null);
+  }
+
   @override
   void dispose() {
     _syncTimer?.cancel();
     _reconnectTimer?.cancel();
+    _bellTimer?.cancel();
     _ws?.close();
+    _audioPlayer.dispose();
     for (final c in _controllers.values) {
       c.disconnect();
     }

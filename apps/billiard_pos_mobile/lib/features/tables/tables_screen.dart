@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/router/app_router.dart';
+import '../../core/widgets/desktop_update_banner.dart';
 import 'tables_provider.dart';
 
 class TablesScreen extends ConsumerStatefulWidget {
@@ -12,7 +13,8 @@ class TablesScreen extends ConsumerStatefulWidget {
   ConsumerState<TablesScreen> createState() => _TablesScreenState();
 }
 
-class _TablesScreenState extends ConsumerState<TablesScreen> {
+class _TablesScreenState extends ConsumerState<TablesScreen>
+    with DesktopUpdateBannerMixin {
   @override
   void initState() {
     super.initState();
@@ -25,17 +27,24 @@ class _TablesScreenState extends ConsumerState<TablesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Listen for desktop notifications
+    ref.listen<TablesState>(tablesProvider, (previous, next) {
+      handleDesktopNotification(previous, next);
+    });
+
     final state = ref.watch(tablesProvider);
     final isDataEmpty = state.tables.isEmpty && state.tableTypes.isEmpty;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Danh sách bàn'),
-        centerTitle: true,
+    return buildDesktopBannerOverlay(
+      Scaffold(
+        appBar: AppBar(
+          title: const Text('Danh sách bàn'),
+          centerTitle: true,
+        ),
+        body: state.isLoading && isDataEmpty
+            ? const Center(child: CircularProgressIndicator())
+            : _buildTabbedContent(context, state),
       ),
-      body: state.isLoading && isDataEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : _buildTabbedContent(context, state),
     );
   }
 
