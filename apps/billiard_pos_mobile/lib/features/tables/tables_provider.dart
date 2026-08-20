@@ -146,11 +146,15 @@ class UnpaidInvoice {
   }
 
   factory UnpaidInvoice.fromJson(Map<String, dynamic> json) {
-    final double playPct = (json['discountPlayPercent'] as num?)?.toDouble() ?? 0.0;
-    final double svcPct = (json['discountServicePercent'] as num?)?.toDouble() ?? 0.0;
-    final double fallbackManual = (json['manualDiscountPercent'] as num?)?.toDouble() ?? 0.0;
-    final double billPct = (json['discountBillPercent'] as num?)?.toDouble() ?? fallbackManual;
-    
+    final double playPct =
+        (json['discountPlayPercent'] as num?)?.toDouble() ?? 0.0;
+    final double svcPct =
+        (json['discountServicePercent'] as num?)?.toDouble() ?? 0.0;
+    final double fallbackManual =
+        (json['manualDiscountPercent'] as num?)?.toDouble() ?? 0.0;
+    final double billPct =
+        (json['discountBillPercent'] as num?)?.toDouble() ?? fallbackManual;
+
     return UnpaidInvoice(
       id: json['id'] as String,
       tableId: json['tableId'] as String,
@@ -201,6 +205,7 @@ class TablesState {
   final Map<String, int> tableExtraPlayMinutes;
   final Map<String, String> tableNotes;
   final bool isDesktopConnected;
+
   /// Sự kiện thông báo mới nhất từ Desktop (null = không có thông báo mới)
   final DesktopNotificationEvent? desktopNotification;
 
@@ -452,7 +457,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
     return _syncService?.isOnline ?? true;
   }
 
-  Future<T> _executeWithTableLock<T>(String tableId, Future<T> Function() action) async {
+  Future<T> _executeWithTableLock<T>(
+    String tableId,
+    Future<T> Function() action,
+  ) async {
     final previous = _tableSyncLocks[tableId] ?? Future.value();
     final completer = Completer<void>();
     _tableSyncLocks[tableId] = completer.future;
@@ -503,37 +511,46 @@ class TablesNotifier extends StateNotifier<TablesState> {
     try {
       final deviceId = prefs?.getString('device_id') ?? '';
       WebSocket.connect(
-        'ws://$desktopIp:8085/ws',
-        headers: {'x-device-id': deviceId},
-      ).then((socket) {
-        _ws = socket;
-        print("Đã kết nối WebSocket tới Desktop Server");
-        state = state.copyWith(isDesktopConnected: true);
-        
-        socket.listen((message) {
-          try {
-            final data = jsonDecode(message as String) as Map<String, dynamic>;
-            if (data['event'] == 'session_updated') {
-              print("Nhận sự kiện session_updated từ Desktop: Reloading...");
-              loadTables(preventAutoPull: true, isSilent: true);
-            }
-          } catch (e) {
-            print("Lỗi xử lý tin nhắn WebSocket: $e");
-          }
-        }, onDone: () {
-          print("Mất kết nối WebSocket tới Desktop, đang kết nối lại...");
-          state = state.copyWith(isDesktopConnected: false);
-          _scheduleReconnect();
-        }, onError: (e) {
-          print("Lỗi kết nối WebSocket: $e, đang kết nối lại...");
-          state = state.copyWith(isDesktopConnected: false);
-          _scheduleReconnect();
-        });
-      }).catchError((e) {
-        print("Lỗi kết nối WebSocket tới Desktop: $e");
-        state = state.copyWith(isDesktopConnected: false);
-        _scheduleReconnect();
-      });
+            'ws://$desktopIp:8085/ws',
+            headers: {'x-device-id': deviceId},
+          )
+          .then((socket) {
+            _ws = socket;
+            print("Đã kết nối WebSocket tới Desktop Server");
+            state = state.copyWith(isDesktopConnected: true);
+
+            socket.listen(
+              (message) {
+                try {
+                  final data =
+                      jsonDecode(message as String) as Map<String, dynamic>;
+                  if (data['event'] == 'session_updated') {
+                    print(
+                      "Nhận sự kiện session_updated từ Desktop: Reloading...",
+                    );
+                    loadTables(preventAutoPull: true, isSilent: true);
+                  }
+                } catch (e) {
+                  print("Lỗi xử lý tin nhắn WebSocket: $e");
+                }
+              },
+              onDone: () {
+                print("Mất kết nối WebSocket tới Desktop, đang kết nối lại...");
+                state = state.copyWith(isDesktopConnected: false);
+                _scheduleReconnect();
+              },
+              onError: (e) {
+                print("Lỗi kết nối WebSocket: $e, đang kết nối lại...");
+                state = state.copyWith(isDesktopConnected: false);
+                _scheduleReconnect();
+              },
+            );
+          })
+          .catchError((e) {
+            print("Lỗi kết nối WebSocket tới Desktop: $e");
+            state = state.copyWith(isDesktopConnected: false);
+            _scheduleReconnect();
+          });
     } catch (e) {
       print("Lỗi khởi tạo kết nối WebSocket: $e");
       state = state.copyWith(isDesktopConnected: false);
@@ -548,7 +565,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
     });
   }
 
-  Future<void> loadTables({bool preventAutoPull = false, bool isSilent = false}) async {
+  Future<void> loadTables({
+    bool preventAutoPull = false,
+    bool isSilent = false,
+  }) async {
     if (!isSilent) {
       state = state.copyWith(isLoading: true);
     }
@@ -562,8 +582,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
     if (desktopIp.isNotEmpty) {
       try {
-        final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
-        final request = await client.getUrl(Uri.parse('http://$desktopIp:8085/api/session'));
+        final client = HttpClient()
+          ..connectionTimeout = const Duration(seconds: 3);
+        final request = await client.getUrl(
+          Uri.parse('http://$desktopIp:8085/api/session'),
+        );
         final deviceId = prefs?.getString('device_id') ?? '';
         if (deviceId.isNotEmpty) {
           request.headers.add('x-device-id', deviceId);
@@ -574,7 +597,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
           await prefs?.remove('desktop_server_ip');
           _connectedIp = null;
           _ws?.close();
-          state = state.copyWith(connectedIp: null, isDesktopConnected: false, tablePendingOrders: const {});
+          state = state.copyWith(
+            connectedIp: null,
+            isDesktopConnected: false,
+            tablePendingOrders: const {},
+          );
           return;
         }
         if (response.statusCode == 200) {
@@ -583,7 +610,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
           final res = jsonDecode(body) as Map<String, dynamic>;
           if (res['status'] == 1 && _localDb != null) {
             final sessionStr = res['session'] as String?;
-            if (isSilent && sessionStr != null && sessionStr == _lastSessionStr) {
+            if (isSilent &&
+                sessionStr != null &&
+                sessionStr == _lastSessionStr) {
               // No change in session data, skip updates to prevent UI stutter/rebuilds
               return;
             }
@@ -601,46 +630,72 @@ class TablesNotifier extends StateNotifier<TablesState> {
             if (!isSilent) {
               if (res['products'] != null) {
                 await _localDb!.clearCachedProducts();
-                await _localDb!.cacheProducts(List<Map<String, dynamic>>.from(
-                  (res['products'] as List).map((e) => Map<String, dynamic>.from(e as Map))
-                ));
+                await _localDb!.cacheProducts(
+                  List<Map<String, dynamic>>.from(
+                    (res['products'] as List).map(
+                      (e) => Map<String, dynamic>.from(e as Map),
+                    ),
+                  ),
+                );
               }
               if (res['categories'] != null) {
                 await _localDb!.clearCachedProductCategories();
-                await _localDb!.cacheProductCategories(List<Map<String, dynamic>>.from(
-                  (res['categories'] as List).map((e) => Map<String, dynamic>.from(e as Map))
-                ));
+                await _localDb!.cacheProductCategories(
+                  List<Map<String, dynamic>>.from(
+                    (res['categories'] as List).map(
+                      (e) => Map<String, dynamic>.from(e as Map),
+                    ),
+                  ),
+                );
               }
               if (res['members'] != null) {
                 await _localDb!.clearCachedMembers();
-                await _localDb!.cacheMembers(List<Map<String, dynamic>>.from(
-                  (res['members'] as List).map((e) => Map<String, dynamic>.from(e as Map))
-                ));
+                await _localDb!.cacheMembers(
+                  List<Map<String, dynamic>>.from(
+                    (res['members'] as List).map(
+                      (e) => Map<String, dynamic>.from(e as Map),
+                    ),
+                  ),
+                );
               }
               if (res['prices'] != null) {
                 await _localDb!.clearCachedTablePrices();
-                await _localDb!.cacheTablePrices(List<Map<String, dynamic>>.from(
-                  (res['prices'] as List).map((e) => Map<String, dynamic>.from(e as Map))
-                ));
+                await _localDb!.cacheTablePrices(
+                  List<Map<String, dynamic>>.from(
+                    (res['prices'] as List).map(
+                      (e) => Map<String, dynamic>.from(e as Map),
+                    ),
+                  ),
+                );
               }
               if (res['types'] != null) {
                 await _localDb!.clearCachedTableTypes();
-                await _localDb!.cacheTableTypes(List<Map<String, dynamic>>.from(
-                  (res['types'] as List).map((e) => Map<String, dynamic>.from(e as Map))
-                ));
+                await _localDb!.cacheTableTypes(
+                  List<Map<String, dynamic>>.from(
+                    (res['types'] as List).map(
+                      (e) => Map<String, dynamic>.from(e as Map),
+                    ),
+                  ),
+                );
               }
               if (res['tiers'] != null) {
                 await _localDb!.clearCachedMembershipTiers();
-                await _localDb!.cacheMembershipTiers(List<Map<String, dynamic>>.from(
-                  (res['tiers'] as List).map((e) => Map<String, dynamic>.from(e as Map))
-                ));
+                await _localDb!.cacheMembershipTiers(
+                  List<Map<String, dynamic>>.from(
+                    (res['tiers'] as List).map(
+                      (e) => Map<String, dynamic>.from(e as Map),
+                    ),
+                  ),
+                );
               }
               if (res['invoice_template'] != null) {
                 await _localDb!.clearInvoiceTemplate();
-                await _localDb!.saveInvoiceTemplate(Map<String, dynamic>.from(res['invoice_template'] as Map));
+                await _localDb!.saveInvoiceTemplate(
+                  Map<String, dynamic>.from(res['invoice_template'] as Map),
+                );
               }
             }
-            
+
             if (sessionStr != null) {
               await _localDb!.setSetting('billiard_active_session', sessionStr);
             } else {
@@ -650,10 +705,17 @@ class TablesNotifier extends StateNotifier<TablesState> {
         }
       } catch (e) {
         print("Lỗi đồng bộ từ Desktop: $e");
-        state = state.copyWith(isDesktopConnected: false, tablePendingOrders: const {});
+        state = state.copyWith(
+          isDesktopConnected: false,
+          tablePendingOrders: const {},
+        );
       }
     } else {
-      state = state.copyWith(connectedIp: null, isDesktopConnected: false, tablePendingOrders: const {});
+      state = state.copyWith(
+        connectedIp: null,
+        isDesktopConnected: false,
+        tablePendingOrders: const {},
+      );
     }
 
     // ── Nguồn duy nhất: SQLite local DB ──────────────────────────────────────
@@ -723,7 +785,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
           if (currentSelectedUnpaidInvoiceId != null) {
             newSelectedTableId = null;
           } else {
-            newSelectedTableId = (currentSelectedTableId != null &&
+            newSelectedTableId =
+                (currentSelectedTableId != null &&
                     loadedTables.any((t) => t.id == currentSelectedTableId))
                 ? currentSelectedTableId
                 : (loadedTables.isNotEmpty ? loadedTables.first.id : null);
@@ -808,8 +871,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
       final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
       if (desktopIp.isNotEmpty) {
         try {
-          final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
-          final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/session'));
+          final client = HttpClient()
+            ..connectionTimeout = const Duration(seconds: 3);
+          final request = await client.postUrl(
+            Uri.parse('http://$desktopIp:8085/api/session'),
+          );
           request.headers.contentType = ContentType.json;
           final deviceId = prefs?.getString('device_id') ?? '';
           if (deviceId.isNotEmpty) {
@@ -835,7 +901,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
   }
 
-  Future<void> _updateTableCache(String tableId, String status, String? orderId) async {
+  Future<void> _updateTableCache(
+    String tableId,
+    String status,
+    String? orderId,
+  ) async {
     if (_localDb == null) return;
     try {
       final cachedTables = await _localDb!.getCachedTables();
@@ -884,7 +954,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
         // Restore table pending orders (only if connected to Desktop Server)
         final prefs = _prefs;
         final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
-        final bool isDesktopActive = desktopIp.isNotEmpty && state.isDesktopConnected;
+        final bool isDesktopActive =
+            desktopIp.isNotEmpty && state.isDesktopConnected;
 
         final restoredPendingOrders = <String, List<Map<String, dynamic>>>{};
         if (isDesktopActive && data['tablePendingOrders'] != null) {
@@ -912,7 +983,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
 
         final restoredServiceDiscounts = <String, double>{};
         if (data['tableServiceDiscounts'] != null) {
-          (data['tableServiceDiscounts'] as Map<String, dynamic>).forEach((k, v) {
+          (data['tableServiceDiscounts'] as Map<String, dynamic>).forEach((
+            k,
+            v,
+          ) {
             restoredServiceDiscounts[k] = double.tryParse(v.toString()) ?? 0.0;
           });
         }
@@ -941,8 +1015,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
         final restoredTables = List<TableModel>.from(state.tables);
         for (int i = 0; i < restoredTables.length; i++) {
           final t = restoredTables[i];
-          final bool isDbActive = t.status == 'active' && t.currentOrderId != null;
-          
+          final bool isDbActive =
+              t.status == 'active' && t.currentOrderId != null;
+
           if (isDbActive) {
             restoredTables[i] = t;
           } else {
@@ -1028,7 +1103,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
         if (currentSelectedUnpaidId != null &&
             !restoredUnpaid.any((inv) => inv.id == currentSelectedUnpaidId)) {
           newSelectedUnpaidId = null;
-          newSelectedTableId = restoredTables.isNotEmpty ? restoredTables.first.id : null;
+          newSelectedTableId = restoredTables.isNotEmpty
+              ? restoredTables.first.id
+              : null;
         }
 
         final prefs = _prefs;
@@ -1044,7 +1121,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
             final prevOrders = state.tableOrders[t.id] ?? [];
             final newOrders = restoredOrders[t.id] ?? [];
 
-            if (prevPending.isNotEmpty && newPending.length < prevPending.length && newOrders.length >= prevOrders.length) {
+            if (prevPending.isNotEmpty &&
+                newPending.length < prevPending.length &&
+                newOrders.length >= prevOrders.length) {
               notificationEvent = DesktopNotificationEvent(
                 type: DesktopNotificationType.serviceApproved,
                 tableName: t.tableName,
@@ -1083,7 +1162,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
             NotificationService().showDesktopUpdateNotification(
               title: notificationEvent.iconAsset,
               body: notificationEvent.message,
-              isApproved: notificationEvent.type ==
+              isApproved:
+                  notificationEvent.type ==
                   DesktopNotificationType.serviceApproved,
             );
           }
@@ -1244,17 +1324,17 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final success = await _executeWithTableLock(tableId, () async {
       if (desktopIp.isNotEmpty) {
         try {
-          final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
-          final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/iot/control'));
+          final client = HttpClient()
+            ..connectionTimeout = const Duration(seconds: 3);
+          final request = await client.postUrl(
+            Uri.parse('http://$desktopIp:8085/api/iot/control'),
+          );
           request.headers.contentType = ContentType.json;
           final deviceId = prefs?.getString('device_id') ?? '';
           if (deviceId.isNotEmpty) {
             request.headers.add('x-device-id', deviceId);
           }
-          request.write(jsonEncode({
-            'tableId': tableId,
-            'turnOn': true,
-          }));
+          request.write(jsonEncode({'tableId': tableId, 'turnOn': true}));
           final response = await request.close();
           if (response.statusCode == 200) {
             final body = await utf8.decodeStream(response);
@@ -1269,7 +1349,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
           return ignoreIotError;
         }
       } else {
-        print('Không có kết nối tới desktop, không thực thi điều khiển relay IoT cục bộ.');
+        print(
+          'Không có kết nối tới desktop, không thực thi điều khiển relay IoT cục bộ.',
+        );
         return true;
       }
     });
@@ -1337,7 +1419,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
     return true;
   }
 
-  Future<bool> deactivateTable(String tableId, {bool ignoreIotError = false}) async {
+  Future<bool> deactivateTable(
+    String tableId, {
+    bool ignoreIotError = false,
+  }) async {
     final prefs = _prefs;
     final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
 
@@ -1345,17 +1430,17 @@ class TablesNotifier extends StateNotifier<TablesState> {
       if (desktopIp.isNotEmpty) {
         while (true) {
           try {
-            final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
-            final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/iot/control'));
+            final client = HttpClient()
+              ..connectionTimeout = const Duration(seconds: 3);
+            final request = await client.postUrl(
+              Uri.parse('http://$desktopIp:8085/api/iot/control'),
+            );
             request.headers.contentType = ContentType.json;
             final deviceId = prefs?.getString('device_id') ?? '';
             if (deviceId.isNotEmpty) {
               request.headers.add('x-device-id', deviceId);
             }
-            request.write(jsonEncode({
-              'tableId': tableId,
-              'turnOn': false,
-            }));
+            request.write(jsonEncode({'tableId': tableId, 'turnOn': false}));
             final response = await request.close();
             if (response.statusCode == 200) {
               final body = await utf8.decodeStream(response);
@@ -1365,18 +1450,24 @@ class TablesNotifier extends StateNotifier<TablesState> {
               }
             }
             if (ignoreIotError) return true;
-            print('Lỗi gửi lệnh tắt relay tới desktop, đang thử lại sau 2 giây...');
+            print(
+              'Lỗi gửi lệnh tắt relay tới desktop, đang thử lại sau 2 giây...',
+            );
             await Future.delayed(const Duration(seconds: 2));
             continue;
           } catch (e) {
-            print('Lỗi gửi lệnh tắt relay tới desktop: $e, đang thử lại sau 2 giây...');
+            print(
+              'Lỗi gửi lệnh tắt relay tới desktop: $e, đang thử lại sau 2 giây...',
+            );
             if (ignoreIotError) return true;
             await Future.delayed(const Duration(seconds: 2));
             continue;
           }
         }
       } else {
-        print('Không có kết nối tới desktop, không thực thi điều khiển relay IoT cục bộ.');
+        print(
+          'Không có kết nối tới desktop, không thực thi điều khiển relay IoT cục bộ.',
+        );
         return true;
       }
     });
@@ -1421,13 +1512,19 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final updatedDiscounts = Map<String, double>.from(state.tableDiscounts);
     updatedDiscounts.remove(tableId);
 
-    final updatedPlayDiscounts = Map<String, double>.from(state.tablePlayDiscounts);
+    final updatedPlayDiscounts = Map<String, double>.from(
+      state.tablePlayDiscounts,
+    );
     updatedPlayDiscounts.remove(tableId);
 
-    final updatedServiceDiscounts = Map<String, double>.from(state.tableServiceDiscounts);
+    final updatedServiceDiscounts = Map<String, double>.from(
+      state.tableServiceDiscounts,
+    );
     updatedServiceDiscounts.remove(tableId);
 
-    final updatedBillDiscounts = Map<String, double>.from(state.tableBillDiscounts);
+    final updatedBillDiscounts = Map<String, double>.from(
+      state.tableBillDiscounts,
+    );
     updatedBillDiscounts.remove(tableId);
 
     final updatedMembers = Map<String, Map<String, dynamic>>.from(
@@ -1463,7 +1560,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
     return true;
   }
 
-  Future<bool> deactivateTableAndFreezeInvoice(String tableId, {bool ignoreIotError = false}) async {
+  Future<bool> deactivateTableAndFreezeInvoice(
+    String tableId, {
+    bool ignoreIotError = false,
+  }) async {
     final prefs = _prefs;
     final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
 
@@ -1471,17 +1571,17 @@ class TablesNotifier extends StateNotifier<TablesState> {
       if (desktopIp.isNotEmpty) {
         while (true) {
           try {
-            final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
-            final request = await client.postUrl(Uri.parse('http://$desktopIp:8085/api/iot/control'));
+            final client = HttpClient()
+              ..connectionTimeout = const Duration(seconds: 3);
+            final request = await client.postUrl(
+              Uri.parse('http://$desktopIp:8085/api/iot/control'),
+            );
             request.headers.contentType = ContentType.json;
             final deviceId = prefs?.getString('device_id') ?? '';
             if (deviceId.isNotEmpty) {
               request.headers.add('x-device-id', deviceId);
             }
-            request.write(jsonEncode({
-              'tableId': tableId,
-              'turnOn': false,
-            }));
+            request.write(jsonEncode({'tableId': tableId, 'turnOn': false}));
             final response = await request.close();
             if (response.statusCode == 200) {
               final body = await utf8.decodeStream(response);
@@ -1491,18 +1591,24 @@ class TablesNotifier extends StateNotifier<TablesState> {
               }
             }
             if (ignoreIotError) return true;
-            print('Lỗi gửi lệnh tắt relay tới desktop khi treo, đang thử lại sau 2 giây...');
+            print(
+              'Lỗi gửi lệnh tắt relay tới desktop khi treo, đang thử lại sau 2 giây...',
+            );
             await Future.delayed(const Duration(seconds: 2));
             continue;
           } catch (e) {
-            print('Lỗi gửi lệnh tắt relay tới desktop khi treo: $e, đang thử lại sau 2 giây...');
+            print(
+              'Lỗi gửi lệnh tắt relay tới desktop khi treo: $e, đang thử lại sau 2 giây...',
+            );
             if (ignoreIotError) return true;
             await Future.delayed(const Duration(seconds: 2));
             continue;
           }
         }
       } else {
-        print('Không có kết nối tới desktop, không thực thi điều khiển relay IoT cục bộ.');
+        print(
+          'Không có kết nối tới desktop, không thực thi điều khiển relay IoT cục bộ.',
+        );
         return true;
       }
     });
@@ -1529,12 +1635,12 @@ class TablesNotifier extends StateNotifier<TablesState> {
         (state.tableExtraPlayAmounts[tableId] ?? 0.0);
 
     final products = state.tableOrders[tableId] ?? [];
-    
+
     final discountPlay = state.tablePlayDiscounts[tableId] ?? 0.0;
     final discountService = state.tableServiceDiscounts[tableId] ?? 0.0;
     final discountBill = state.tableBillDiscounts[tableId] ?? 0.0;
     final discount = state.tableDiscounts[tableId] ?? 0.0;
-    
+
     final member = state.tableMembers[tableId];
     final note = state.tableNotes[tableId];
     final orderId =
@@ -1581,16 +1687,19 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final updatedPending = Map<String, List<Map<String, dynamic>>>.from(
       state.tablePendingOrders,
     )..remove(tableId);
-    
+
     final updatedDiscounts = Map<String, double>.from(state.tableDiscounts)
       ..remove(tableId);
-    final updatedPlayDiscounts = Map<String, double>.from(state.tablePlayDiscounts)
-      ..remove(tableId);
-    final updatedServiceDiscounts = Map<String, double>.from(state.tableServiceDiscounts)
-      ..remove(tableId);
-    final updatedBillDiscounts = Map<String, double>.from(state.tableBillDiscounts)
-      ..remove(tableId);
-      
+    final updatedPlayDiscounts = Map<String, double>.from(
+      state.tablePlayDiscounts,
+    )..remove(tableId);
+    final updatedServiceDiscounts = Map<String, double>.from(
+      state.tableServiceDiscounts,
+    )..remove(tableId);
+    final updatedBillDiscounts = Map<String, double>.from(
+      state.tableBillDiscounts,
+    )..remove(tableId);
+
     final updatedMembers = Map<String, Map<String, dynamic>>.from(
       state.tableMembers,
     )..remove(tableId);
@@ -1633,14 +1742,23 @@ class TablesNotifier extends StateNotifier<TablesState> {
               (double.tryParse(p['price']?.toString() ?? '') ?? 0.0) *
                   (int.tryParse(p['qty']?.toString() ?? '') ?? 1),
         );
-        
+
         final playDiscountAmount = playAmount * (discountPlay / 100.0);
         final serviceDiscountAmount = productTotal * (discountService / 100.0);
-        final memberDiscountPercent = member != null ? (double.tryParse(member['discount']?.toString() ?? '') ?? 0.0) : 0.0;
-        final billDiscountPercentTotal = (discountBill + memberDiscountPercent).clamp(0.0, 100.0);
-        final billDiscountAmount = (playAmount + productTotal - playDiscountAmount - serviceDiscountAmount) * (billDiscountPercentTotal / 100.0);
-        final totalDiscountAmount = playDiscountAmount + serviceDiscountAmount + billDiscountAmount;
-        
+        final memberDiscountPercent = member != null
+            ? (double.tryParse(member['discount']?.toString() ?? '') ?? 0.0)
+            : 0.0;
+        final billDiscountPercentTotal = (discountBill + memberDiscountPercent)
+            .clamp(0.0, 100.0);
+        final billDiscountAmount =
+            (playAmount +
+                productTotal -
+                playDiscountAmount -
+                serviceDiscountAmount) *
+            (billDiscountPercentTotal / 100.0);
+        final totalDiscountAmount =
+            playDiscountAmount + serviceDiscountAmount + billDiscountAmount;
+
         final orderModel = OrderModel(
           id: orderId,
           tableId: tableId,
@@ -1723,7 +1841,9 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
 
     final updatedPlay = Map<String, double>.from(state.tablePlayDiscounts);
-    final updatedService = Map<String, double>.from(state.tableServiceDiscounts);
+    final updatedService = Map<String, double>.from(
+      state.tableServiceDiscounts,
+    );
     final updatedBill = Map<String, double>.from(state.tableBillDiscounts);
     final updatedManual = Map<String, double>.from(state.tableDiscounts);
 
@@ -1758,10 +1878,14 @@ class TablesNotifier extends StateNotifier<TablesState> {
       return;
     }
 
-    final updatedPlay = Map<String, double>.from(state.tablePlayDiscounts)..remove(targetId);
-    final updatedService = Map<String, double>.from(state.tableServiceDiscounts)..remove(targetId);
-    final updatedBill = Map<String, double>.from(state.tableBillDiscounts)..remove(targetId);
-    final updatedManual = Map<String, double>.from(state.tableDiscounts)..remove(targetId);
+    final updatedPlay = Map<String, double>.from(state.tablePlayDiscounts)
+      ..remove(targetId);
+    final updatedService = Map<String, double>.from(state.tableServiceDiscounts)
+      ..remove(targetId);
+    final updatedBill = Map<String, double>.from(state.tableBillDiscounts)
+      ..remove(targetId);
+    final updatedManual = Map<String, double>.from(state.tableDiscounts)
+      ..remove(targetId);
 
     state = state.copyWith(
       tablePlayDiscounts: updatedPlay,
@@ -1893,19 +2017,25 @@ class TablesNotifier extends StateNotifier<TablesState> {
       updatedDiscounts[targetTableId] = discount;
     }
 
-    final updatedPlayDiscounts = Map<String, double>.from(state.tablePlayDiscounts);
+    final updatedPlayDiscounts = Map<String, double>.from(
+      state.tablePlayDiscounts,
+    );
     final playDiscount = updatedPlayDiscounts.remove(sourceTableId);
     if (playDiscount != null) {
       updatedPlayDiscounts[targetTableId] = playDiscount;
     }
 
-    final updatedServiceDiscounts = Map<String, double>.from(state.tableServiceDiscounts);
+    final updatedServiceDiscounts = Map<String, double>.from(
+      state.tableServiceDiscounts,
+    );
     final serviceDiscount = updatedServiceDiscounts.remove(sourceTableId);
     if (serviceDiscount != null) {
       updatedServiceDiscounts[targetTableId] = serviceDiscount;
     }
 
-    final updatedBillDiscounts = Map<String, double>.from(state.tableBillDiscounts);
+    final updatedBillDiscounts = Map<String, double>.from(
+      state.tableBillDiscounts,
+    );
     final billDiscount = updatedBillDiscounts.remove(sourceTableId);
     if (billDiscount != null) {
       updatedBillDiscounts[targetTableId] = billDiscount;
@@ -1957,7 +2087,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
     );
 
     final orderId = sourceTable.currentOrderId;
-    if (_apiClient != null && _isOnline && orderId != null && !orderId.startsWith('ord-')) {
+    if (_apiClient != null &&
+        _isOnline &&
+        orderId != null &&
+        !orderId.startsWith('ord-')) {
       try {
         await _apiClient!.updateOrder(orderId, {
           'table_id': targetTableId,
@@ -1971,7 +2104,11 @@ class TablesNotifier extends StateNotifier<TablesState> {
     }
 
     await _updateTableCache(sourceTableId, 'idle', null);
-    await _updateTableCache(targetTableId, 'active', targetTable.currentOrderId ?? sourceTable.currentOrderId);
+    await _updateTableCache(
+      targetTableId,
+      'active',
+      targetTable.currentOrderId ?? sourceTable.currentOrderId,
+    );
     await _saveSessionState();
     return true;
   }
@@ -2049,7 +2186,8 @@ class TablesNotifier extends StateNotifier<TablesState> {
         targetPending[existingIndex] = {
           ...targetPending[existingIndex],
           'qty':
-              (targetPending[existingIndex]['qty'] as int) + (item['qty'] as int),
+              (targetPending[existingIndex]['qty'] as int) +
+              (item['qty'] as int),
         };
       } else {
         targetPending.add(Map<String, dynamic>.from(item));
@@ -2060,9 +2198,15 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final updatedDiscounts = Map<String, double>.from(state.tableDiscounts);
     updatedDiscounts.remove(sourceTableId);
 
-    final updatedPlayDiscounts = Map<String, double>.from(state.tablePlayDiscounts)..remove(sourceTableId);
-    final updatedServiceDiscounts = Map<String, double>.from(state.tableServiceDiscounts)..remove(sourceTableId);
-    final updatedBillDiscounts = Map<String, double>.from(state.tableBillDiscounts)..remove(sourceTableId);
+    final updatedPlayDiscounts = Map<String, double>.from(
+      state.tablePlayDiscounts,
+    )..remove(sourceTableId);
+    final updatedServiceDiscounts = Map<String, double>.from(
+      state.tableServiceDiscounts,
+    )..remove(sourceTableId);
+    final updatedBillDiscounts = Map<String, double>.from(
+      state.tableBillDiscounts,
+    )..remove(sourceTableId);
 
     final updatedMembers = Map<String, Map<String, dynamic>>.from(
       state.tableMembers,
@@ -2207,13 +2351,19 @@ class TablesNotifier extends StateNotifier<TablesState> {
     final updatedDiscounts = Map<String, double>.from(state.tableDiscounts);
     updatedDiscounts[targetTableId] = invoice.discountBillPercent;
 
-    final updatedPlayDiscounts = Map<String, double>.from(state.tablePlayDiscounts);
+    final updatedPlayDiscounts = Map<String, double>.from(
+      state.tablePlayDiscounts,
+    );
     updatedPlayDiscounts[targetTableId] = invoice.discountPlayPercent;
 
-    final updatedServiceDiscounts = Map<String, double>.from(state.tableServiceDiscounts);
+    final updatedServiceDiscounts = Map<String, double>.from(
+      state.tableServiceDiscounts,
+    );
     updatedServiceDiscounts[targetTableId] = invoice.discountServicePercent;
 
-    final updatedBillDiscounts = Map<String, double>.from(state.tableBillDiscounts);
+    final updatedBillDiscounts = Map<String, double>.from(
+      state.tableBillDiscounts,
+    );
     updatedBillDiscounts[targetTableId] = invoice.discountBillPercent;
 
     final updatedMembers = Map<String, Map<String, dynamic>>.from(
@@ -2458,16 +2608,26 @@ class TablesNotifier extends StateNotifier<TablesState> {
       status: isMaintenance ? 'maintenance' : 'idle',
     );
     state = state.copyWith(tables: updated);
-    await _updateTableCache(tableId, isMaintenance ? 'maintenance' : 'idle', null);
+    await _updateTableCache(
+      tableId,
+      isMaintenance ? 'maintenance' : 'idle',
+      null,
+    );
     _saveSessionState();
   }
 
   void addProductToTable(String targetId, Map<String, dynamic> product) {
     if (state.connectedIp != null) {
-      final updatedPending = Map<String, List<Map<String, dynamic>>>.from(state.tablePendingOrders);
-      final items = List<Map<String, dynamic>>.from(updatedPending[targetId] ?? []);
-      
-      final existing = items.indexWhere((p) => p['product_id'] == product['product_id']);
+      final updatedPending = Map<String, List<Map<String, dynamic>>>.from(
+        state.tablePendingOrders,
+      );
+      final items = List<Map<String, dynamic>>.from(
+        updatedPending[targetId] ?? [],
+      );
+
+      final existing = items.indexWhere(
+        (p) => p['product_id'] == product['product_id'],
+      );
       final int addedQty = product['qty'] as int? ?? 1;
 
       if (existing >= 0) {
@@ -2538,8 +2698,12 @@ class TablesNotifier extends StateNotifier<TablesState> {
 
   void removeProductFromTable(String targetId, String productId) {
     if (state.connectedIp != null) {
-      final updatedPending = Map<String, List<Map<String, dynamic>>>.from(state.tablePendingOrders);
-      final items = List<Map<String, dynamic>>.from(updatedPending[targetId] ?? []);
+      final updatedPending = Map<String, List<Map<String, dynamic>>>.from(
+        state.tablePendingOrders,
+      );
+      final items = List<Map<String, dynamic>>.from(
+        updatedPending[targetId] ?? [],
+      );
       items.removeWhere((p) => p['product_id'] == productId);
       updatedPending[targetId] = items;
       state = state.copyWith(tablePendingOrders: updatedPending);
@@ -2575,8 +2739,12 @@ class TablesNotifier extends StateNotifier<TablesState> {
 
   void updateProductQty(String targetId, String productId, int delta) {
     if (state.connectedIp != null) {
-      final updatedPending = Map<String, List<Map<String, dynamic>>>.from(state.tablePendingOrders);
-      final items = List<Map<String, dynamic>>.from(updatedPending[targetId] ?? []);
+      final updatedPending = Map<String, List<Map<String, dynamic>>>.from(
+        state.tablePendingOrders,
+      );
+      final items = List<Map<String, dynamic>>.from(
+        updatedPending[targetId] ?? [],
+      );
       final existing = items.indexWhere((p) => p['product_id'] == productId);
       if (existing >= 0) {
         final newQty = (items[existing]['qty'] as int) + delta;
@@ -2635,22 +2803,36 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   void approvePendingProduct(String targetId, String productId) {
-    final pendingItems = List<Map<String, dynamic>>.from(state.tablePendingOrders[targetId] ?? []);
-    final itemIndex = pendingItems.indexWhere((p) => p['product_id'] == productId);
+    final pendingItems = List<Map<String, dynamic>>.from(
+      state.tablePendingOrders[targetId] ?? [],
+    );
+    final itemIndex = pendingItems.indexWhere(
+      (p) => p['product_id'] == productId,
+    );
     if (itemIndex < 0) return;
     final approvedItem = pendingItems.removeAt(itemIndex);
 
-    final updatedPending = Map<String, List<Map<String, dynamic>>>.from(state.tablePendingOrders);
+    final updatedPending = Map<String, List<Map<String, dynamic>>>.from(
+      state.tablePendingOrders,
+    );
     updatedPending[targetId] = pendingItems;
 
-    final updatedOrders = Map<String, List<Map<String, dynamic>>>.from(state.tableOrders);
-    final approvedItems = List<Map<String, dynamic>>.from(state.tableOrders[targetId] ?? []);
-    
-    final existingIndex = approvedItems.indexWhere((p) => p['product_id'] == productId);
+    final updatedOrders = Map<String, List<Map<String, dynamic>>>.from(
+      state.tableOrders,
+    );
+    final approvedItems = List<Map<String, dynamic>>.from(
+      state.tableOrders[targetId] ?? [],
+    );
+
+    final existingIndex = approvedItems.indexWhere(
+      (p) => p['product_id'] == productId,
+    );
     if (existingIndex >= 0) {
       approvedItems[existingIndex] = {
         ...approvedItems[existingIndex],
-        'qty': (approvedItems[existingIndex]['qty'] as int) + (approvedItem['qty'] as int),
+        'qty':
+            (approvedItems[existingIndex]['qty'] as int) +
+            (approvedItem['qty'] as int),
       };
     } else {
       approvedItems.add(approvedItem);
@@ -2665,17 +2847,21 @@ class TablesNotifier extends StateNotifier<TablesState> {
   }
 
   void denyPendingProduct(String targetId, String productId) {
-    final pendingItems = List<Map<String, dynamic>>.from(state.tablePendingOrders[targetId] ?? []);
-    final itemIndex = pendingItems.indexWhere((p) => p['product_id'] == productId);
+    final pendingItems = List<Map<String, dynamic>>.from(
+      state.tablePendingOrders[targetId] ?? [],
+    );
+    final itemIndex = pendingItems.indexWhere(
+      (p) => p['product_id'] == productId,
+    );
     if (itemIndex < 0) return;
     pendingItems.removeAt(itemIndex);
 
-    final updatedPending = Map<String, List<Map<String, dynamic>>>.from(state.tablePendingOrders);
+    final updatedPending = Map<String, List<Map<String, dynamic>>>.from(
+      state.tablePendingOrders,
+    );
     updatedPending[targetId] = pendingItems;
 
-    state = state.copyWith(
-      tablePendingOrders: updatedPending,
-    );
+    state = state.copyWith(tablePendingOrders: updatedPending);
     _saveSessionState();
   }
 
