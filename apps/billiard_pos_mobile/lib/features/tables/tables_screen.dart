@@ -156,7 +156,8 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
               final titleSize = isCompact ? 15.0 : 18.0;
               final spacing = isCompact ? 4.0 : 8.0;
               
-              final pendingCount = state.tablePendingOrders[table.id]?.length ?? 0;
+              final isDesktopConnected = state.connectedIp != null && state.isDesktopConnected;
+              final pendingCount = isDesktopConnected ? (state.tablePendingOrders[table.id]?.length ?? 0) : 0;
               
               return InkWell(
                 onTap: () {

@@ -606,7 +606,8 @@ class _BillingScreenState extends ConsumerState<BillingScreen>
   // ───────────────────────────────────────────────────────────────────────────
   Widget _buildActiveTableScreen(BuildContext context, TableModel table, TablesState state) {
     final products = state.tableOrders[table.id] ?? [];
-    final pendingProducts = state.tablePendingOrders[table.id] ?? [];
+    final isDesktopConnected = state.connectedIp != null && state.isDesktopConnected;
+    final pendingProducts = isDesktopConnected ? (state.tablePendingOrders[table.id] ?? []) : <Map<String, dynamic>>[];
     final startTime = state.tableStartTimes[table.id] ?? DateTime.now();
     final endTime = DateTime.now();
     final rate = state.getTableHourlyRate(table, startTime);
@@ -1187,7 +1188,8 @@ class _BillingScreenState extends ConsumerState<BillingScreen>
   // ───────────────────────────────────────────────────────────────────────────
   Widget _buildUnpaidInvoiceDetailScreen(BuildContext context, UnpaidInvoice invoice, TablesState state) {
     final products = invoice.products;
-    final pendingProducts = state.tablePendingOrders[invoice.id] ?? [];
+    final isDesktopConnected = state.connectedIp != null && state.isDesktopConnected;
+    final pendingProducts = isDesktopConnected ? (state.tablePendingOrders[invoice.id] ?? []) : <Map<String, dynamic>>[];
     final startTime = invoice.startTime;
     final endTime = invoice.endTime;
     final rate = invoice.hourlyRate;

@@ -574,7 +574,7 @@ class TablesNotifier extends StateNotifier<TablesState> {
           await prefs?.remove('desktop_server_ip');
           _connectedIp = null;
           _ws?.close();
-          state = state.copyWith(connectedIp: null, isDesktopConnected: false);
+          state = state.copyWith(connectedIp: null, isDesktopConnected: false, tablePendingOrders: const {});
           return;
         }
         if (response.statusCode == 200) {
@@ -650,10 +650,10 @@ class TablesNotifier extends StateNotifier<TablesState> {
         }
       } catch (e) {
         print("Lỗi đồng bộ từ Desktop: $e");
-        state = state.copyWith(isDesktopConnected: false);
+        state = state.copyWith(isDesktopConnected: false, tablePendingOrders: const {});
       }
     } else {
-      state = state.copyWith(connectedIp: null, isDesktopConnected: false);
+      state = state.copyWith(connectedIp: null, isDesktopConnected: false, tablePendingOrders: const {});
     }
 
     // ── Nguồn duy nhất: SQLite local DB ──────────────────────────────────────
@@ -881,9 +881,13 @@ class TablesNotifier extends StateNotifier<TablesState> {
           });
         }
 
-        // Restore table pending orders
+        // Restore table pending orders (only if connected to Desktop Server)
+        final prefs = _prefs;
+        final desktopIp = prefs?.getString('desktop_server_ip') ?? '';
+        final bool isDesktopActive = desktopIp.isNotEmpty && state.isDesktopConnected;
+
         final restoredPendingOrders = <String, List<Map<String, dynamic>>>{};
-        if (data['tablePendingOrders'] != null) {
+        if (isDesktopActive && data['tablePendingOrders'] != null) {
           (data['tablePendingOrders'] as Map<String, dynamic>).forEach((k, v) {
             restoredPendingOrders[k] = List<Map<String, dynamic>>.from(
               (v as List).map((item) => Map<String, dynamic>.from(item as Map)),
